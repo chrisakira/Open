@@ -322,5 +322,121 @@ int main() {
 		expect_true("another character has no residual xp", second.basic(open::BasicSkill::Endurance).xp == 0u);
 	}
 
+	{
+		// Break this catches: a title unlocking at the wrong count, decaying, or
+		// keeping a counter that runs past its threshold.
+		for (int t = 0; t < static_cast<int>(open::Title::Count); ++t) {
+			const open::Title title = static_cast<open::Title>(t);
+			const unsigned threshold = open::title_rule(title).threshold;
+			open::Skills skills;
+			expect_true("no title at zero", !skills.has_title(title));
+			expect_true("no count at zero", skills.title_count(title) == 0u);
+			for (unsigned i = 0; i + 1u < threshold; ++i) {
+				expect_true("title progress accepted", skills.record_title_progress(title, true));
+			}
+			expect_true("title is absent one short of its threshold", !skills.has_title(title));
+			expect_true("counter sits one short", skills.title_count(title) == threshold - 1u);
+			expect_true("the final achievement is accepted", skills.record_title_progress(title, true));
+			expect_true("title is present at its threshold", skills.has_title(title));
+			expect_true("counter reached its threshold", skills.title_count(title) == threshold);
+			for (unsigned i = 0; i < 3u; ++i) {
+				expect_true("extra progress is accepted", skills.record_title_progress(title, true));
+			}
+			expect_true("an unlocked title never drops", skills.has_title(title));
+			expect_true("the counter saturates at the threshold", skills.title_count(title) == threshold);
+		}
+	}
+	{
+		// Break this catches: a failed achievement counting toward a title.
+		open::Skills skills;
+		for (unsigned i = 0; i < 400u; ++i) {
+			expect_true("a failed achievement is accepted",
+						skills.record_title_progress(open::Title::Duelist, false));
+		}
+		expect_true("failed achievements grant no count", skills.title_count(open::Title::Duelist) == 0u);
+		expect_true("failed achievements grant no title", !skills.has_title(open::Title::Duelist));
+		expect_true("title progress grants no skill xp",
+					skills.basic(open::BasicSkill::OneHandedWeapons).rank == 1u);
+		expect_true("title progress leaves no skill xp residual",
+					skills.basic(open::BasicSkill::OneHandedWeapons).xp == 0u);
+	}
+	{
+		// Break this catches: a title bonus applied to the wrong skill, or twice.
+		for (int t = 0; t < static_cast<int>(open::Title::Count); ++t) {
+			const open::Title title = static_cast<open::Title>(t);
+			const open::TitleRule &rule = open::title_rule(title);
+			open::Skills skills;
+			for (unsigned i = 0; i < rule.threshold; ++i) {
+				skills.record_title_progress(title, true);
+			}
+			expect_true("the title is held", skills.has_title(title));
+			for (int b = 0; b < static_cast<int>(open::BasicSkill::Count); ++b) {
+				const open::BasicSkill basic = static_cast<open::BasicSkill>(b);
+				const bool named = rule.skill.has_value() && rule.skill.value() == basic;
+				if (named) {
+					expect_close("a held title multiplies the skill it names",
+								 skills.title_multiplier(basic), 1.1f);
+				} else {
+					expect_true("a title leaves every other skill alone",
+								skills.title_multiplier(basic) == 1.0f);
+				}
+			}
+		}
+	}
+	{
+		// Break this catches: Dragonslayer becoming a second skill bonus, or a
+		// specialist bonus that is not gated on the target.
+		open::Skills skills;
+		expect_true("an unearned dragonslayer does not boost the target",
+					skills.target_multiplier(true) == 1.0f);
+		expect_true("an unearned dragonslayer does not boost a normal target",
+					skills.target_multiplier(false) == 1.0f);
+		for (unsigned i = 0; i < open::title_rule(open::Title::Dragonslayer).threshold; ++i) {
+			expect_true("dragon kill recorded",
+						skills.record_title_progress(open::Title::Dragonslayer, true));
+		}
+		expect_true("dragonslayer is held", skills.has_title(open::Title::Dragonslayer));
+		expect_close("dragonslayer boosts its target", skills.target_multiplier(true), 1.25f);
+		expect_true("dragonslayer leaves other targets alone", skills.target_multiplier(false) == 1.0f);
+		for (int b = 0; b < static_cast<int>(open::BasicSkill::Count); ++b) {
+			expect_true("dragonslayer is not a skill-wide bonus",
+						skills.title_multiplier(static_cast<open::BasicSkill>(b)) == 1.0f);
+		}
+	}
+	{
+		// Break this catches: several held titles not all applying through the
+		// same query, and a dragon kill double-reporting.
+		open::Skills skills;
+		for (unsigned i = 0; i < open::title_rule(open::Title::Duelist).threshold; ++i) {
+			skills.record_title_progress(open::Title::Duelist, true);
+		}
+		for (unsigned i = 0; i < open::title_rule(open::Title::Dragonslayer).threshold; ++i) {
+			skills.record_title_progress(open::Title::Dragonslayer, true);
+		}
+		expect_close("the one-handed title still applies alongside dragonslayer",
+					 skills.title_multiplier(open::BasicSkill::OneHandedWeapons), 1.1f);
+		expect_close("and the target bonus is separate", skills.target_multiplier(true), 1.25f);
+		expect_true("the two reports did not train anything else",
+					skills.basic(open::BasicSkill::OneHandedWeapons).rank == 1u);
+	}
+	{
+		// Break this catches: a bad title id reaching the counter array.
+		open::Skills skills;
+		expect_true("a bad title id is refused",
+					!skills.record_title_progress(static_cast<open::Title>(14), true));
+		expect_true("a negative title id is refused",
+					!skills.record_title_progress(static_cast<open::Title>(-1), true));
+		expect_throws_invalid("title_count rejects a bad id",
+							  [&skills] { skills.title_count(static_cast<open::Title>(14)); });
+		expect_throws_invalid("has_title rejects a bad id",
+							  [&skills] { skills.has_title(static_cast<open::Title>(-1)); });
+		for (int t = 0; t < static_cast<int>(open::Title::Count); ++t) {
+			expect_true("a refused id mutated nothing",
+						skills.title_count(static_cast<open::Title>(t)) == 0u);
+		}
+		expect_true("a refused title is not held", !skills.has_title(open::Title::Duelist));
+		expect_true("a refused title does not boost the target", skills.target_multiplier(true) == 1.0f);
+	}
+
 	return test_summary();
 }

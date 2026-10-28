@@ -49,10 +49,25 @@ public:
 	// Failures and capped tracks change nothing but are still accepted.
 	bool record_use(BasicSkill skill, std::optional<AdvancedSkill> option, bool successful);
 
+	// The authoritative action caller reports each relevant achievement once.
+	// Counters saturate at the threshold; an earned title never drops, and a
+	// title report never grants skill XP.
+	bool record_title_progress(Title title, bool successful);
+	unsigned title_count(Title title) const;
+	bool has_title(Title title) const;
+
+	// Product of every held title that names this skill (×1.1 each).
+	float title_multiplier(BasicSkill skill) const;
+
+	// Specialist titles change what a skill does against a target, not the skill
+	// itself, so they are asked about separately.
+	float target_multiplier(bool target_is_dragon) const;
+
 private:
 	std::array<Training, static_cast<std::size_t>(BasicSkill::Count)> basics_{};
 	std::array<Training, static_cast<std::size_t>(AdvancedSkill::Count)> advanced_{};
 	std::array<std::optional<AdvancedSkill>, static_cast<std::size_t>(BasicSkill::Count)> chosen_{};
+	std::array<unsigned, static_cast<std::size_t>(Title::Count)> titles_{};
 };
 
 }  // namespace open

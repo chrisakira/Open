@@ -14,6 +14,10 @@ std::size_t advanced_slot(AdvancedSkill skill) {
 	return static_cast<std::size_t>(static_cast<int>(skill));
 }
 
+std::size_t title_slot(Title title) {
+	return static_cast<std::size_t>(static_cast<int>(title));
+}
+
 }  // namespace
 
 unsigned basic_xp_to_next(unsigned rank) {
@@ -133,6 +137,57 @@ bool Skills::record_use(BasicSkill skill, std::optional<AdvancedSkill> option, b
 		entry.rank += 1u;
 	}
 	return true;
+}
+
+bool Skills::record_title_progress(Title title, bool successful) {
+	if (!valid(title)) {
+		return false;
+	}
+	if (!successful) {
+		return true;
+	}
+	const unsigned threshold = title_rule(title).threshold;
+	if (titles_[title_slot(title)] >= threshold) {
+		return true;  // saturated; an earned title never drops
+	}
+	titles_[title_slot(title)] += 1u;
+	return true;
+}
+
+unsigned Skills::title_count(Title title) const {
+	if (!valid(title)) {
+		throw std::invalid_argument("Skills::title_count: unknown title id");
+	}
+	return titles_[title_slot(title)];
+}
+
+bool Skills::has_title(Title title) const {
+	if (!valid(title)) {
+		throw std::invalid_argument("Skills::has_title: unknown title id");
+	}
+	return titles_[title_slot(title)] >= title_rule(title).threshold;
+}
+
+float Skills::title_multiplier(BasicSkill skill) const {
+	if (!valid(skill)) {
+		throw std::invalid_argument("Skills::title_multiplier: unknown basic skill id");
+	}
+	float multiplier = 1.0f;
+	for (int t = 0; t < static_cast<int>(Title::Count); ++t) {
+		const Title title = static_cast<Title>(t);
+		const std::optional<BasicSkill> &named = title_rule(title).skill;
+		if (named.has_value() && named.value() == skill && has_title(title)) {
+			multiplier *= kTitleSkillMultiplier;
+		}
+	}
+	return multiplier;
+}
+
+float Skills::target_multiplier(bool target_is_dragon) const {
+	if (target_is_dragon && has_title(Title::Dragonslayer)) {
+		return kSpecialistTargetMultiplier;
+	}
+	return 1.0f;
 }
 
 }  // namespace open
