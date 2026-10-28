@@ -1,0 +1,13 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/characters/quaternius/Superhero_Male_FullBody.gltf" id="1_body"]
+[ext_resource type="PackedScene" path="res://assets/characters/quaternius/Hair_Buzzed.gltf" id="2_hair"]
+[ext_resource type="Script" path="res://scripts/character_model_pose.gd" id="3_pose"]
+
+[node name="Male" type="Node3D"]
+rotation = Vector3(0, 3.1415927, 0)
+script = ExtResource("3_pose")
+
+[node name="Body" parent="." instance=ExtResource("1_body")]
+
+[node name="Hair" parent="." instance=ExtResource("2_hair")]

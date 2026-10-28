@@ -1,0 +1,6 @@
+[configuration]
+entry_symbol = "open_library_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+linux.x86_64 = "res://extension/bin/libopen.so"
