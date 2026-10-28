@@ -1,10 +1,9 @@
 #pragma once
 
+#include "open/character_rules.hpp"
 #include "open/move_order.hpp"
 
 namespace open {
-
-enum class Faction { Friendly, Enemy };
 
 struct Limbs {
 	bool left_arm = false;
