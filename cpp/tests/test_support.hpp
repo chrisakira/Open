@@ -29,6 +29,14 @@ inline void expect_close(const char *name, float got, float want, float toleranc
 	}
 }
 
+template <class Vec>
+inline void expect_vec(const char *name, const Vec &got, float x, float y, float z) {
+	if (!close(got.x, x) || !close(got.y, y) || !close(got.z, z)) {
+		std::cerr << "FAIL " << name << ": got (" << got.x << ", " << got.y << ", " << got.z << ")\n";
+		g_failed++;
+	}
+}
+
 inline void expect_throws_invalid(const char *name, const std::function<void ()> &fn) {
 	bool thrown = false;
 	bool wrong_type = false;
