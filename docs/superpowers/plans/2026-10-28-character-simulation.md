@@ -110,11 +110,11 @@ The signatures below are the implementation contract. Checked getters throw `std
 - `BlessingRule { const char* god; const char* name; }` and `const BlessingRule& blessing_rule(Attribute)`.
 - Constants for pool bases `100`, blessing `1.25`, skill title `1.1`, specialist target `1.25`, walking `4.5`, resource costs and regen. Keep existing `MoveOrder::kArriveRadius=0.4`.
 
-- [ ] **1. Write catalog tests:** exactly `10` attributes, `35` basics, `72` advanced options, `14` titles, `6` parts, `3` pools, `20` slots; every row/parent/link matches the tables below and the source spec. Test all seven multipliers and invalid IDs/levels. Check definition names are nonempty and no enum row is missing/duplicated.
-- [ ] **2. Observe RED:** configure and build/run `character_rules_tests`; record the missing API or wrong catalog assertion.
-- [ ] **3. Implement the fixed rule tables and register their source/test.** Preserve `open_sim` C++20, warnings and Godot-free linkage. Explicitly list sources; no runtime configuration loader.
-- [ ] **4. Verify GREEN:** build and run all headless tests; existing spike tests still pass.
-- [ ] **5. Review/stage only this task and commit:** `feat: define character sheet rules`.
+- [x] **1. Write catalog tests:** exactly `10` attributes, `35` basics, `72` advanced options, `14` titles, `6` parts, `3` pools, `20` slots; every row/parent/link matches the tables below and the source spec. Test all seven multipliers and invalid IDs/levels. Check definition names are nonempty and no enum row is missing/duplicated.
+- [x] **2. Observe RED:** configure and build/run `character_rules_tests`; record the missing API or wrong catalog assertion.
+- [x] **3. Implement the fixed rule tables and register their source/test.** Preserve `open_sim` C++20, warnings and Godot-free linkage. Explicitly list sources; no runtime configuration loader.
+- [x] **4. Verify GREEN:** build and run all headless tests; existing spike tests still pass.
+- [x] **5. Review/stage only this task and commit:** `feat: define character sheet rules`.
 
 #### Basic links and advanced options
 
@@ -168,11 +168,11 @@ Body parts: Head, Torso, LeftArm, RightArm, LeftLeg, RightLeg. Pools: Hp, Stamin
 
 **Interfaces:** `Attributes(int level, Attribute blessing)` initializes all bases to `1`; validated constructor. Getters `int level() const`, `Attribute blessing() const`, `float base(Attribute) const`, `float effective(Attribute) const`. Mutations `bool set_level(int)`, `bool set_base(Attribute,float)`. `Attribute random_blessing(std::mt19937_64&)` uses an injected C++ generator and `std::uniform_int_distribution` over ten attributes; no global RNG or per-character clock reseeding.
 
-- [ ] **1. Write tests:** all bases `1`; level-1 Strength blessing gives Strength `1.25`, other attributes `1`; level 7 gives `125` and `100`. Strength base `2` gives `250` at level 7. Check each of ten blessings affects only its own attribute. Reject level `0/8`, invalid IDs, zero/negative/NaN/infinite bases and finite inputs that overflow effective values, without mutation. Same-seed generators produce the same valid sequence; do not assert a library-specific random sequence.
-- [ ] **2. Observe RED:** build/run `attributes_tests`.
-- [ ] **3. Implement:** canonical state is ten bases, one level, one blessing; calculate `base * level_multiplier * (blessed ? 1.25f : 1.0f)` on demand. No duplicated effective-value storage or blessing-switch mechanism.
-- [ ] **4. Verify GREEN:** build/run all headless tests.
-- [ ] **5. Narrow commit:** `feat: calculate character attributes and blessings`.
+- [x] **1. Write tests:** all bases `1`; level-1 Strength blessing gives Strength `1.25`, other attributes `1`; level 7 gives `125` and `100`. Strength base `2` gives `250` at level 7. Check each of ten blessings affects only its own attribute. Reject level `0/8`, invalid IDs, zero/negative/NaN/infinite bases and finite inputs that overflow effective values, without mutation. Same-seed generators produce the same valid sequence; do not assert a library-specific random sequence.
+- [x] **2. Observe RED:** build/run `attributes_tests`.
+- [x] **3. Implement:** canonical state is ten bases, one level, one blessing; calculate `base * level_multiplier * (blessed ? 1.25f : 1.0f)` on demand. No duplicated effective-value storage or blessing-switch mechanism.
+- [x] **4. Verify GREEN:** build/run all headless tests.
+- [x] **5. Narrow commit:** `feat: calculate character attributes and blessings`.
 
 Representative assertions in `attributes_test.cpp`:
 
@@ -194,11 +194,11 @@ expect_true("level-seven unblessed dexterity", a.effective(open::Attribute::Dext
 - `bool record_use(BasicSkill,std::optional<AdvancedSkill>,bool successful)` adds one XP only on success. No effect on failure or at cap. Return false for invalid IDs/context; true for valid no-ops.
 - `unsigned basic_xp_to_next(unsigned rank)`, `advanced_xp_to_next(unsigned rank)` return `0` at cap, reject outside the valid rank range.
 
-- [ ] **1. Write tests:** all basics start `1/0`; seven uses give `1/7`, eighth gives `2/0`, next rank costs `16`. Pin thresholds basic `50→51=400`, `99→100=792`; advanced `0→1=8`, `99→100=792`, `100→101=4000`, `199→200=7960`. Basic cap takes `39,600` successes; advanced cap takes `637,608`. Capped uses discard XP. Before basic `100`, advancement fails; selected Katana starts `0`; Axe falls back to basic `100`; only Katana grows; no later Sword selection. Separate basics may each advance once; Fire excludes the other elements. Endurance/Lockpicking have no options. Failure and invalid parent/IDs do not mutate training.
-- [ ] **2. Observe RED:** build/run `skills_tests`.
-- [ ] **3. Implement integer thresholds and direct lookup.** No separate skill subclasses or unlock registry. At basic cap, the counter stays `100`; selected advanced overrides only its exact job.
-- [ ] **4. Verify GREEN:** build/run all headless tests, including both sides of advanced rank `100`.
-- [ ] **5. Narrow commit:** `feat: train skills and choose advanced specializations`.
+- [x] **1. Write tests:** all basics start `1/0`; seven uses give `1/7`, eighth gives `2/0`, next rank costs `16`. Pin thresholds basic `50→51=400`, `99→100=792`; advanced `0→1=8`, `99→100=792`, `100→101=4000`, `199→200=7960`. Basic cap takes `39,600` successes; advanced cap takes `637,608`. Capped uses discard XP. Before basic `100`, advancement fails; selected Katana starts `0`; Axe falls back to basic `100`; only Katana grows; no later Sword selection. Separate basics may each advance once; Fire excludes the other elements. Endurance/Lockpicking have no options. Failure and invalid parent/IDs do not mutate training.
+- [x] **2. Observe RED:** build/run `skills_tests`.
+- [x] **3. Implement integer thresholds and direct lookup.** No separate skill subclasses or unlock registry. At basic cap, the counter stays `100`; selected advanced overrides only its exact job.
+- [x] **4. Verify GREEN:** build/run all headless tests, including both sides of advanced rank `100`.
+- [x] **5. Narrow commit:** `feat: train skills and choose advanced specializations`.
 
 ```cpp
 // After validation and cap checks:
@@ -240,11 +240,11 @@ expect_true("rank-up consumes residual XP", skills.basic(open::BasicSkill::Endur
 | SilverTongue | 50 successful persuasions | Persuasion ×1.1 |
 | IronBack | 100 completed labour jobs | Endurance ×1.1 |
 
-- [ ] **1. Write table-driven tests:** each title absent at threshold-minus-one, present at threshold and forever afterward; failed progress does nothing. Check exact named-skill ×1.1 and unaffected skills ×1. Advanced inheritance is tested via its parent in Task 7. Dragonslayer is ×1.25 only against its target, never a second skill bonus. Invalid title IDs cannot mutate counters.
-- [ ] **2. Observe RED:** build/run `skills_tests` with the new assertions.
-- [ ] **3. Implement the small fixed counter array and modifiers.** Apply all held relevant title modifiers; keep specialist result modifiers separate. No dragons, quests, achievement dispatcher or other world systems are created.
-- [ ] **4. Verify GREEN:** build/run all headless tests.
-- [ ] **5. Narrow commit:** `feat: award permanent starter titles`.
+- [x] **1. Write table-driven tests:** each title absent at threshold-minus-one, present at threshold and forever afterward; failed progress does nothing. Check exact named-skill ×1.1 and unaffected skills ×1. Advanced inheritance is tested via its parent in Task 7. Dragonslayer is ×1.25 only against its target, never a second skill bonus. Invalid title IDs cannot mutate counters.
+- [x] **2. Observe RED:** build/run `skills_tests` with the new assertions.
+- [x] **3. Implement the small fixed counter array and modifiers.** Apply all held relevant title modifiers; keep specialist result modifiers separate. No dragons, quests, achievement dispatcher or other world systems are created.
+- [x] **4. Verify GREEN:** build/run all headless tests.
+- [x] **5. Narrow commit:** `feat: award permanent starter titles`.
 
 ### Task 5: Implement pools, body health, resource use and death
 
@@ -254,13 +254,13 @@ expect_true("rank-up consumes residual XP", skills.basic(open::BasicSkill::Endur
 
 `recalculate` validates every derived maximum before committing and preserves current/clamps. Main HP maximum is `100 * Constitution base`; stamina `100 * trained basic Endurance * Constitution base`; mana `100 * trained basic ManaControl * average(Constitution base, Profanity base)`. Body maxima are head `0.25`, torso `0.5`, each arm/leg `0.4` times main maximum.
 
-- [ ] **1. Write tests:** fresh pools `100`, head `25`, torso `50`, limbs `40`. Constitution base `2`, Profanity `4`, Endurance rank `3`, ManaControl rank `2` gives HP/stamina/mana maxima `200/600/600`; body `50/100/80`. Level/blessing/title/advanced selection do not affect those maxima. Costs: sprint `10/s`, melee `8`, labour `5`, swimming `6/s`, spell `20`. Sprint/swim quantity means seconds, other uses require quantity `1`. Reject insufficient/invalid spend atomically; exact funds reach zero. At bases `1`, regen per second is stamina/mana `10/4` out of combat, `5/1` in combat; Intelligence `3`, Profanity `5` gives mana `16/4`. No HP/part regen; clamp at max; fractional ticks match whole ticks within tolerance when no clipping occurs. Reject negative/NaN/infinite duration/amount, invalid IDs and arithmetic overflow without mutation.
+- [x] **1. Write tests:** fresh pools `100`, head `25`, torso `50`, limbs `40`. Constitution base `2`, Profanity `4`, Endurance rank `3`, ManaControl rank `2` gives HP/stamina/mana maxima `200/600/600`; body `50/100/80`. Level/blessing/title/advanced selection do not affect those maxima. Costs: sprint `10/s`, melee `8`, labour `5`, swimming `6/s`, spell `20`. Sprint/swim quantity means seconds, other uses require quantity `1`. Reject insufficient/invalid spend atomically; exact funds reach zero. At bases `1`, regen per second is stamina/mana `10/4` out of combat, `5/1` in combat; Intelligence `3`, Profanity `5` gives mana `16/4`. No HP/part regen; clamp at max; fractional ticks match whole ticks within tolerance when no clipping occurs. Reject negative/NaN/infinite duration/amount, invalid IDs and arithmetic overflow without mutation.
 
   Damage tests: head hit `10` gives head `15`, main `90`; head hit `30` gives head `0`, main `70`, dead. Torso hit `50` kills with main `50`. Two `40` leg hits leave main `20` and prevent walking; just one halves speed. On another fresh character, two `40` arm hits leave main `20` and prevent carrying/held use; one forbids two-handing only. Multiple hits can kill through main HP while head/torso stay positive. Zero damage is a no-op. Recalculation never refills or revives a zero part.
-- [ ] **2. Observe RED:** build/run `vitals_tests`.
-- [ ] **3. Implement fixed arrays and direct formulas.** `damage` validates first, subtracts the incoming amount from main and selected part once each, clamps at zero. Death is main/head/torso at zero. Spend/regen on dead characters fails. Do not expose arbitrary current-HP setters or add healing/limb severing.
-- [ ] **4. Verify GREEN:** build/run all headless tests.
-- [ ] **5. Narrow commit:** `feat: simulate character pools and body damage`.
+- [x] **2. Observe RED:** build/run `vitals_tests`.
+- [x] **3. Implement fixed arrays and direct formulas.** `damage` validates first, subtracts the incoming amount from main and selected part once each, clamps at zero. Death is main/head/torso at zero. Spend/regen on dead characters fails. Do not expose arbitrary current-HP setters or add healing/limb severing.
+- [x] **4. Verify GREEN:** build/run all headless tests.
+- [x] **5. Narrow commit:** `feat: simulate character pools and body damage`.
 
 Representative damage test (fresh fixture for this case):
 
@@ -283,11 +283,11 @@ expect_true("main HP also loses ten", v.pool(open::PoolKind::Hp).current == 90.0
 - `std::optional<ItemId> equipped(Slot) const`; `std::vector<ItemId> backpack_items() const`; `bool held_usable(ItemId,bool one_hand,bool two_hands) const`.
 - Linear ID lookup is sufficient for a character's small inventory; no hash registry, global item owner or generic container framework. Prevent duplicates by searching stored/equipped entries.
 
-- [ ] **1. Write tests:** all twenty slots empty; each armour/extra/ring slot works with compatible fictional items; gloves and held slots are distinct. Add/equip/unequip round trip; invalid/duplicate IDs, masks and occupied slots fail without losing the source item. Two-handed equip requires both hands free, both allowed by the record, and two usable arms. Both hand queries return one ID; unequipping either returns exactly one backpack entry. One-handed needs at least one usable arm (no invented same-side requirement). Disabled arms prevent incompatible use/new pickup, not item retention or unequipping. Existing armour remains on disabled limbs. Reject held types targeting non-held slots and invalid enum/mask inputs.
-- [ ] **2. Observe RED:** build/run `equipment_tests`.
-- [ ] **3. Implement atomic vector/slot transfers.** Normal one-handed items occupy one compatible held slot. Two-handed entries use a fixed primary held slot and reserve the other through query/occupancy logic. Before changing state, validate source, compatibility, destination and capabilities. Backpack contents remain stored when the bag slot changes; capacity/loaded-bag rules are deferred.
-- [ ] **4. Verify GREEN:** build/run all headless tests.
-- [ ] **5. Narrow commit:** `feat: store character equipment and backpack references`.
+- [x] **1. Write tests:** all twenty slots empty; each armour/extra/ring slot works with compatible fictional items; gloves and held slots are distinct. Add/equip/unequip round trip; invalid/duplicate IDs, masks and occupied slots fail without losing the source item. Two-handed equip requires both hands free, both allowed by the record, and two usable arms. Both hand queries return one ID; unequipping either returns exactly one backpack entry. One-handed needs at least one usable arm (no invented same-side requirement). Disabled arms prevent incompatible use/new pickup, not item retention or unequipping. Existing armour remains on disabled limbs. Reject held types targeting non-held slots and invalid enum/mask inputs.
+- [x] **2. Observe RED:** build/run `equipment_tests`.
+- [x] **3. Implement atomic vector/slot transfers.** Normal one-handed items occupy one compatible held slot. Two-handed entries use a fixed primary held slot and reserve the other through query/occupancy logic. Before changing state, validate source, compatibility, destination and capabilities. Backpack contents remain stored when the bag slot changes; capacity/loaded-bag rules are deferred.
+- [x] **4. Verify GREEN:** build/run all headless tests.
+- [x] **5. Narrow commit:** `feat: store character equipment and backpack references`.
 
 ### Task 7: Compose Character and expose a minimal bridge
 
@@ -309,15 +309,15 @@ Preserve existing convenience getters; `get_strength` now returns effective Stre
 
 No full dictionary serialization/snapshot API, item catalog bindings, generic action parser or editor framework. The C++ API implements the complete sheet; expose additional thin getters/commands later when a real UI needs them. Keep current `OpenMoveOrder` registered as a utility, but stop using it as the player sheet.
 
-- [ ] **1. Write aggregate and bridge tests.** Replace obsolete Strength `10` expectation with base `1`, effective `1.25` for a Strength-blessed level-1 character. Validate factory inputs, independent characters and empty names. At level 7 with Strength blessing, OneHandedWeapons rank `1` is `(125+100)/2=112.5`. Train parent `100`, select Katana: Katana `0`, Axe fallback `11,250`; eight Katana successes give `112.5`; Duelist gives `123.75` and fallback `12,375`. No squared level or duplicate title application. Selecting ManaControl advanced at parent `100` leaves mana max `10,000` with bases `1`. Endurance `1→2` raises stamina max `100→200` without refilling current. Invalid base changes that overflow any derived pool are atomic. Failed/cancelled uses/title progress do nothing. Death stops spending, regen, training, advancement, pickup/equip and walking, while read/unequip remain possible. Lethal injury retains equipment.
+- [x] **1. Write aggregate and bridge tests.** Replace obsolete Strength `10` expectation with base `1`, effective `1.25` for a Strength-blessed level-1 character. Validate factory inputs, independent characters and empty names. At level 7 with Strength blessing, OneHandedWeapons rank `1` is `(125+100)/2=112.5`. Train parent `100`, select Katana: Katana `0`, Axe fallback `11,250`; eight Katana successes give `112.5`; Duelist gives `123.75` and fallback `12,375`. No squared level or duplicate title application. Selecting ManaControl advanced at parent `100` leaves mana max `10,000` with bases `1`. Endurance `1→2` raises stamina max `100→200` without refilling current. Invalid base changes that overflow any derived pool are atomic. Failed/cancelled uses/title progress do nothing. Death stops spending, regen, training, advancement, pickup/equip and walking, while read/unequip remain possible. Lethal injury retains equipment.
 
   Movement assertions: no order → zero; healthy speed `4.5`, one zero leg `2.25`, both zero/death/raw switch false → zero. Switch true cannot override legs/death. Exactly `0.4` distance stops; just above moves; Y is ignored; clear stops. Reject non-finite destinations without replacing the valid order; non-finite positions or negative/non-finite low-level speed yield zero.
 
   Bridge assertions: valid explicit blessing, repeatable seeded NPC assignment, bad IDs/faction/level/blessing rejected, failed creation leaves unconfigured, second successful configuration rejected, head hit `10` gives `15/90`, and velocity requires no Godot speed. Unconfigured reads return safe zero/false (`get_faction=-1`), mutation fails/no-ops, velocity zero; invalid getter IDs report an error and return zero rather than throwing across Godot.
-- [ ] **2. Observe RED:** build/run updated C++ tests, then rebuild/import and run `character_sheet_test.gd`; record named failures/missing APIs.
-- [ ] **3. Implement composition and bindings.** Validate base/level changes on a candidate copy before committing attributes/vitals. Recalculate maxima only when inputs change, including an Endurance/ManaControl rank gain. Return effective values on demand. Move walking `4.5` to C++; speed is alive + raw switch + leg multiplier only. Bind methods explicitly and retain model-independent simulation. Bridge creation and mutation must not put Godot types into `cpp/`.
-- [ ] **4. Verify GREEN:** run all headless C++ tests; configure/build `cpp/build` with extension ON, run CTest, import Godot, run the direct bridge test. The old scene call sites are updated immediately in Task 8; do not treat that temporary mismatch as a finished integration.
-- [ ] **5. Narrow commit:** `feat: compose C++ characters and expose the shared bridge`.
+- [x] **2. Observe RED:** build/run updated C++ tests, then rebuild/import and run `character_sheet_test.gd`; record named failures/missing APIs.
+- [x] **3. Implement composition and bindings.** Validate base/level changes on a candidate copy before committing attributes/vitals. Recalculate maxima only when inputs change, including an Endurance/ManaControl rank gain. Return effective values on demand. Move walking `4.5` to C++; speed is alive + raw switch + leg multiplier only. Bind methods explicitly and retain model-independent simulation. Bridge creation and mutation must not put Godot types into `cpp/`.
+- [x] **4. Verify GREEN:** run all headless C++ tests; configure/build `cpp/build` with extension ON, run CTest, import Godot, run the direct bridge test. The old scene call sites are updated immediately in Task 8; do not treat that temporary mismatch as a finished integration.
+- [x] **5. Narrow commit:** `feat: compose C++ characters and expose the shared bridge`.
 
 ### Task 8: Migrate the existing scene, without adding UI
 
@@ -327,11 +327,11 @@ No full dictionary serialization/snapshot API, item catalog bindings, generic ac
 
 `StandingDummy.setup(faction:int,level:int,id:int,seed:int,name:String="")` calls `configure_npc`, checks success, then sets can_move false. Main uses IDs `2/3` and fixture seeds `2002/3003`; alternate-model tests supply other IDs. These are demonstration IDs, not a world ID generator.
 
-- [ ] **1. Write/migrate scene tests:** all three characters have configured sheets, valid blessings and distinct setup IDs; player uses the explicit selection. Preserve existing model, collision, relaxed pose, walk animation, faction, stationary-NPC and alternate-model assertions. Update every alternate setup call. Test on separate fresh fixtures that one leg hit `40` halves speed, two leave HP `20` and no walk; a head hit `25` leaves main `75` but kills/stops movement. Assert existing label updates when HP changes.
-- [ ] **2. Observe RED:** run the headless scene tests against old scripts; expect old configure/velocity signatures or missing player-sheet assertions to fail.
-- [ ] **3. Implement minimal presentation changes.** Player `go_to` forwards intent to its sheet; both character scripts obtain horizontal velocity from `sheet.velocity_at(position)`. Remove GDScript `SPEED=4.5`; use `get_walk_speed()` only to normalize animation, safely handling zero. Retain gravity, collision, actual visual velocity, turning, assets, camera and marker. Each character forwards regen `delta,false` once per physics tick; no combat system exists yet. Do not tick again from rendering or getters. Keep a reference to the standing label and refresh its text only when changed; formulas remain in C++.
-- [ ] **4. Verify GREEN:** rebuild extension, import, run both Godot test scripts and CTest. Run main scene headlessly for 30 frames without script errors. Manually launch/click if display access permits; report if only headless checks were possible.
-- [ ] **5. Narrow commit:** `feat: use C++ character sheets for the player and NPCs`.
+- [x] **1. Write/migrate scene tests:** all three characters have configured sheets, valid blessings and distinct setup IDs; player uses the explicit selection. Preserve existing model, collision, relaxed pose, walk animation, faction, stationary-NPC and alternate-model assertions. Update every alternate setup call. Test on separate fresh fixtures that one leg hit `40` halves speed, two leave HP `20` and no walk; a head hit `25` leaves main `75` but kills/stops movement. Assert existing label updates when HP changes.
+- [x] **2. Observe RED:** run the headless scene tests against old scripts; expect old configure/velocity signatures or missing player-sheet assertions to fail.
+- [x] **3. Implement minimal presentation changes.** Player `go_to` forwards intent to its sheet; both character scripts obtain horizontal velocity from `sheet.velocity_at(position)`. Remove GDScript `SPEED=4.5`; use `get_walk_speed()` only to normalize animation, safely handling zero. Retain gravity, collision, actual visual velocity, turning, assets, camera and marker. Each character forwards regen `delta,false` once per physics tick; no combat system exists yet. Do not tick again from rendering or getters. Keep a reference to the standing label and refresh its text only when changed; formulas remain in C++.
+- [x] **4. Verify GREEN:** rebuild extension, import, run both Godot test scripts and CTest. Run main scene headlessly for 30 frames without script errors. Manually launch/click if display access permits; report if only headless checks were possible.
+- [x] **5. Narrow commit:** `feat: use C++ character sheets for the player and NPCs`.
 
 ### Task 9: Finish verification and update the documentation
 
@@ -339,11 +339,11 @@ No full dictionary serialization/snapshot API, item catalog bindings, generic ac
 
 **Interfaces:** No new architecture or gameplay.
 
-- [ ] **1. Audit the coverage checklist below.** Add a named failing test for any uncovered requirement; do not duplicate tests or invent requirements just to create RED.
-- [ ] **2. Observe any new test fail for the right reason.** If coverage is already complete, record that instead of weakening green tests.
-- [ ] **3. Fix confirmed gaps and document actual behavior.** Record the approved damage coupling, new Current state, setup APIs, C++ ownership, single regen clock and deferred rules. Do not rewrite unrelated user documentation edits.
-- [ ] **4. Run the full verification commands below.** Inspect final diffs for generated files, Godot leakage, leftover GDScript gameplay formulas, unrelated changes, and accidental Open mechanics. Record manual/environment limitations honestly.
-- [ ] **5. Narrow commit:** `docs: document character simulation and verification`. Hand back the result; no merge/push unless separately requested.
+- [x] **1. Audit the coverage checklist below.** Add a named failing test for any uncovered requirement; do not duplicate tests or invent requirements just to create RED.
+- [x] **2. Observe any new test fail for the right reason.** If coverage is already complete, record that instead of weakening green tests.
+- [x] **3. Fix confirmed gaps and document actual behavior.** Record the approved damage coupling, new Current state, setup APIs, C++ ownership, single regen clock and deferred rules. Do not rewrite unrelated user documentation edits.
+- [x] **4. Run the full verification commands below.** Inspect final diffs for generated files, Godot leakage, leftover GDScript gameplay formulas, unrelated changes, and accidental Open mechanics. Record manual/environment limitations honestly.
+- [x] **5. Narrow commit:** `docs: document character simulation and verification`. Hand back the result; no merge/push unless separately requested.
 
 ## Final verification
 
@@ -393,4 +393,4 @@ Expected: seven CTest cases pass in both modes; both Godot scripts exit `0`; mai
 - [x] Simplify the design after the request to avoid overcomplication.
 - [x] Map every locked section, exact catalog counts, tests and future boundaries.
 - [ ] Human reviews proposed defaults, especially overkill, preserving current values on max changes, and item retention after injury.
-- [ ] After approval, implement **native inline** using `executing-plans`, task by task.
+- [x] After approval, implemented **native inline** using `executing-plans`, task by task (Tasks 1-9, commits 71a1df5..94bd7e9, ledger in .superpowers/sdd/2026-10-28-character-simulation/ before it was deleted).
