@@ -115,6 +115,25 @@ func _run() -> void:
 	_check(absf(ally.global_position.x - ally_start.x) < 0.01 and absf(enemy.global_position.x - enemy_start.x) < 0.01, "standing characters remain in place")
 	_check(_close(player.sheet.get_walk_speed(), 4.5), "the walk speed now comes from the sheet")
 
+	# Coverage gap found in Task 9: the spike's only input path. A floor click must
+	# still reach C++ as a move order, and the marker must still show.
+	var camera: Camera3D = world.get("_camera")
+	_check(camera != null, "the world still owns its camera")
+	var marker: Node = world.get("_marker")
+	_check(marker != null and not marker.visible, "the marker starts hidden")
+	if camera != null:
+		var clicked: Vector3 = player.global_position + Vector3(3.0, 0.0, 0.0)
+		var screen: Vector2 = camera.unproject_position(clicked)
+		world._try_move_to_click(screen)
+		_check(marker != null and marker.visible, "a floor click shows the marker")
+		await physics_frame
+		var ordered: Vector3 = player.sheet.velocity_at(player.global_position)
+		_check(ordered.length() > 0.0, "the click became a C++ move order")
+		for frame in range(90):
+			await physics_frame
+		_check(absf(player.global_position.x - clicked.x) < 1.0, "the sheet walks to the clicked point")
+		_check(absf(player.global_position.z - clicked.z) < 1.0, "without drifting sideways")
+
 	var other := Player.new()
 	var alternate := PackedScene.new()
 	var alternate_node := MeshInstance3D.new()

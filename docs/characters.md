@@ -20,21 +20,42 @@ We define the sheet in this order, and we do not skip ahead:
 
 Code and tests win if they disagree with an older paragraph. Do not invent races, towns, or lore here.
 
-## Current (spike)
+## Current
+
+The sheet now exists in `cpp/`: `Attributes`, `Skills`, `Vitals`, `Equipment` and
+`MoveOrder`, composed by `Character` (`cpp/include/open/character.hpp`). Player and
+NPC are one type; Godot sends intent and draws the result.
 
 | Field | Now |
 |---|---|
-| faction | `Friendly` or `Enemy` (bridge `0` / `1`) |
-| level | int, set at `make` |
-| health / max_health | both `100` at `make` |
-| strength | `10` at `make` |
-| limbs | four bools, all `true` at `make` |
-| can_move | `true` at `make`; standers force `false` |
-| destination | nested `MoveOrder`; arrive radius `0.4`; Y ignored |
+| id / name / faction | set at creation. `Character::create` refuses a zero id, a bad faction, a level outside `1..7` and an unknown blessing. The name may be empty. |
+| level | `1`..`7`, multipliers exactly `1, 2, 4, 8, 16, 32, 100`; attributes only, never pools |
+| attributes | ten bases, all `1` at creation. Effective = base × level multiplier × blessing. |
+| blessing | one per character. The player's is supplied (`player_blessing` in `scripts/main.gd`, default Strength); an NPC's is drawn in C++ from a caller-provided seed. |
+| pools | HP `100 × Constitution base`; stamina `100 × Endurance rank × Constitution base`; mana `100 × Mana Control rank × average(Constitution base, Profanity base)`. All start full. |
+| body parts | head `25%`, torso `50%`, each limb `40%` of the main HP maximum. |
+| damage | implemented as locked: one hit subtracts once from main HP and once from the named part, each clamped at `0`. Overkill on the part is not charged to main HP again. |
+| skills | 35 basics start at rank `1`; one successful use adds one residual XP; caps `100` basic / `200` advanced; one specialization per basic, chosen at basic `100`, other jobs keep the frozen `100`. |
+| titles | fourteen counters, saturating at threshold, never dropped; `×1.1` on the named skill, Dragonslayer `×1.25` on the target result only. |
+| equipment | twenty slots plus backpack references. A two-handed item is stored once and the other held slot reports the same id. |
+| `can_move` | still a separate switch; legs at `0` or death stop walking even when it is `true`. |
+| walk speed | `4.5 × leg multiplier`, computed in C++ (`Character::walk_speed`). No GDScript speed constant. |
+| regen | one clock: each character forwards `regenerate(delta, false)` to its sheet once per physics tick. |
 
-No dexterity, agility, toughness, constitution, perception, intelligence, charisma, luck, profanity, stamina, or mana.
+Standing characters still call `set_can_move(false)`, so they never walk. Arrive
+radius is `MoveOrder::kArriveRadius = 0.4`; movement is horizontal, Y is ignored.
 
-The brown walker is only `OpenMoveOrder`. Speed `4.5` is still in `player.gd`.
+The bridge is `OpenCharacter` (`extension/character_bridge.cpp`):
+`configure(id, name, faction, level, blessing)` for the player and
+`configure_npc(id, name, faction, level, seed)` for an NPC, one successful
+configuration per object. Reads answer `0` / `false` / `-1` and bad ids report an
+error instead of throwing across Godot. `velocity_at(position)` takes no speed —
+the sheet owns it.
+
+Not built: earning levels or attribute bases, healing, combat resolution, crit and
+drop rolls, item stats/weights/bonuses, backpack capacity, the encumbrance formula,
+recruiting, squads, hunger/bleed, prosthetics, save/load. `OpenMoveOrder` stays
+registered as a utility, but it is no longer the player's sheet.
 
 ## 1. Attributes — locked
 
