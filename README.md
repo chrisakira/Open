@@ -14,8 +14,15 @@ model with green and red labels. Their presentation is assigned independently
 using `model_scene` in `scripts/main.gd`. To use a different model, make a
 Godot scene for it and assign that scene to the desired character before it is
 added to the world (and, for a standing character, before calling `setup`).
-The player uses a procedural walking animation and returns to a relaxed pose
-when stationary. Models without the optional walking-pose script still work.
+The player uses the animation library's normal walk and folded-arms idle as a
+visual test; the standing characters use the idle. Models without the optional
+animation script still work. To try different clips, open
+`scenes/characters/male.tscn` or `scenes/characters/female.tscn` in Godot and
+change the root node's `Idle Animation` or `Walk Animation` property. Use names
+from either imported library in `assets/animations/` (for example `Jog_Fwd` or
+`Zombie_Walk_Fwd`); Godot removes the `_Loop` suffix on import. If a name exists
+in both libraries, library 2 takes precedence. The selected clips are loaded when the scene starts. These
+in-place animations are presentation only; movement remains controlled by C++.
 
 The player's blessing is chosen by hand for now: set `player_blessing` on the
 root of `scenes/main.tscn` (`0` is Strength). Character creation will supply it
@@ -25,6 +32,9 @@ The character models and hair are from [Universal Base Characters by
 Quaternius](https://quaternius.com/packs/universalbasecharacters.html),
 released under CC0. The original license is included at
 `assets/characters/quaternius/License_Standard.txt`.
+The animations are from Quaternius's [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)
+and [Universal Animation Library 2](https://quaternius.com/packs/universalanimationlibrary2.html),
+also CC0; their licenses are included in their respective `assets/animations/` directories.
 
 ```
 ./scripts/build_and_run.sh
@@ -39,6 +49,7 @@ ctest --test-dir cpp/build --output-on-failure
 godot --path . --headless --import --quit
 godot --path . --headless --script res://scripts/tests/character_sheet_test.gd
 godot --path . --headless --script res://scripts/tests/character_visuals_test.gd
+godot --path . --headless --script res://scripts/tests/character_animation_test.gd
 ```
 
 `character_sheet_test.gd` drives the bridge directly; `character_visuals_test.gd`
