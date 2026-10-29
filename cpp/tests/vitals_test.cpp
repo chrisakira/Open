@@ -491,6 +491,49 @@ int main() {
 		expect_close("the other character's hp is untouched",
 					 second.pool(open::PoolKind::Hp).current, 100.0f);
 	}
+	{
+		// Break this catches: stamina regen ignoring Constitution base, or level
+		// leaking into regen the way it must not leak into pool maxima.
+		open::Attributes attributes = basic_sheet();
+		expect_true("constitution base raised", attributes.set_base(open::Attribute::Constitution, 2.0f));
+		open::Skills skills;
+		open::Vitals vitals(attributes, skills);
+		expect_close("stamina bar grew with constitution", vitals.pool(open::PoolKind::Stamina).maximum,
+					 200.0f);
+		expect_true("room made", vitals.spend(open::ResourceUse::Sprint, 10.0f));
+		expect_close("ten seconds of sprint costs one hundred",
+					 vitals.pool(open::PoolKind::Stamina).current, 100.0f);
+		expect_true("out of combat regen accepted", vitals.regenerate(1.0f, false, attributes));
+		expect_close("stamina regens twenty per second at constitution two",
+					 vitals.pool(open::PoolKind::Stamina).current, 120.0f);
+		expect_true("in combat regen accepted", vitals.regenerate(1.0f, true, attributes));
+		expect_close("stamina regens ten per second in combat at constitution two",
+					 vitals.pool(open::PoolKind::Stamina).current, 130.0f);
+
+		open::Attributes levelled(7, open::Attribute::Strength);
+		open::Vitals levelled_vitals(levelled, skills);
+		expect_true("room made at level seven", levelled_vitals.spend(open::ResourceUse::Sprint, 10.0f));
+		expect_true("regen at level seven accepted",
+					levelled_vitals.regenerate(1.0f, false, levelled));
+		expect_close("level does not change stamina regen",
+					 levelled_vitals.pool(open::PoolKind::Stamina).current, 10.0f);
+	}
+	{
+		// Break this catches: damage refused on a corpse, or a second hit that
+		// does not still subtract (clamped at zero).
+		const open::Attributes attributes = basic_sheet();
+		const open::Skills skills;
+		open::Vitals vitals(attributes, skills);
+		expect_true("killing blow", vitals.damage(open::BodyPart::Head, 25.0f));
+		expect_true("dead", !vitals.alive());
+		expect_close("main hp after the killing blow", vitals.pool(open::PoolKind::Hp).current, 75.0f);
+		expect_true("damage still lands on a corpse", vitals.damage(open::BodyPart::Torso, 10.0f));
+		expect_close("the corpse still paid main hp", vitals.pool(open::PoolKind::Hp).current, 65.0f);
+		expect_close("the corpse still paid the torso", vitals.part(open::BodyPart::Torso).current, 40.0f);
+		expect_true("overkill on a corpse still clamps", vitals.damage(open::BodyPart::Head, 100.0f));
+		expect_close("the head stays at zero", vitals.part(open::BodyPart::Head).current, 0.0f);
+		expect_close("main hp clamps at zero on a corpse", vitals.pool(open::PoolKind::Hp).current, 0.0f);
+	}
 
 	return test_summary();
 }

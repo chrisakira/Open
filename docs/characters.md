@@ -5,7 +5,7 @@ A character is an ordered actor: you give orders, they carry them out.
 Player and NPC are the same type. The player is the character you currently issue orders to.
 
 - **Current** — true in `cpp/` today.
-- **Locked** — decided for this file. Still not a build order.
+- **Locked** — decided for this file. Built in `cpp/` unless a sentence is marked Open.
 - **Open** — do not implement until the human locks it.
 
 We define the sheet in this order, and we do not skip ahead:
@@ -41,6 +41,10 @@ NPC are one type; Godot sends intent and draws the result.
 | `can_move` | still a separate switch; legs at `0` or death stop walking even when it is `true`. |
 | walk speed | `4.5 × leg multiplier`, computed in C++ (`Character::walk_speed`). No GDScript speed constant. |
 | regen | one clock: each character forwards `regenerate(delta, false)` to its sheet once per physics tick. |
+
+The scene walks, takes damage, and regens. `spend`, `record_use`, `advance`, `record_title_progress`, `add_item` / `equip` / `unequip`, `effective_skill`, `target_multiplier`, and `held_usable` exist in C++ and tests only — `OpenCharacter` does not expose them yet.
+
+Death gates actions, not every sheet edit: `record_use`, `advance`, `add_item`, `equip`, `spend`, `regenerate`, and `set_destination` refuse when dead; `record_title_progress`, `set_level`, `set_base`, `set_name`, and `unequip` still work. Reads still work.
 
 Standing characters still call `set_can_move(false)`, so they never walk. Arrive
 radius is `MoveOrder::kArriveRadius = 0.4`; movement is horizontal, Y is ignored.
@@ -97,9 +101,7 @@ Pools, skills, titles, and blessings are not multiplied by level. A skill may be
 | Luck | Chance of drops and critical strikes |
 | Profanity | Used for magic |
 
-Spike `strength` is this Strength. The other nine do not exist in code yet.
-
-Every attribute **base** starts at `1` (before level and blessing).
+Every attribute **base** starts at `1` (before level and blessing). All ten exist in `cpp/`.
 
 ### Pools — locked
 
@@ -113,7 +115,7 @@ Level does not multiply pools. Pool maxima use attribute **bases**, not effectiv
 | Stamina | `stamina_base` × trained Endurance × Constitution base |
 | Mana | `mana_base` × trained Mana Control × average(Constitution base, Profanity base) |
 
-Stamina and mana can still grow at the same level by training Endurance and Mana Control. HP has no trained health skill; it only moves when Constitution **base** changes.
+Stamina and mana can still grow at the same level by training Endurance and Mana Control. HP has no trained health skill; it only moves when Constitution **base** changes. Pool formulas use the **basic** Endurance / Mana Control ranks. Specializing Mana Control freezes that basic at 100, so the mana bar stays at that frozen rank (Channeling does not change max mana).
 
 `hp_base`, `stamina_base`, and `mana_base` are all `100`.
 
@@ -447,7 +449,7 @@ A character has **one** blessing. The player picks it at game start. Every other
 
 Effective attribute = base × level multiplier × blessing.
 
-No blessing: blessing = 1 (should not happen on a living character once assigned). Blessed: ×1.25 on that attribute.
+Every living character has exactly one blessing (`Character::create` requires a valid blessing id). Blessed: ×1.25 on that attribute. There is no unblessed living sheet.
 
 Blessings do not apply to pools (pools use attribute bases). Skills use effective attributes, so a Strength blessing also shows up in Strength-linked skills.
 
@@ -502,7 +504,9 @@ Damage: each hit names one body part. Subtract that amount from the part **and**
 
 ## 7. Equipment — locked
 
-The character owns equipped slots plus what the backpack holds. What an item *is* (damage, armour value, weight) belongs to items, not this file.
+The character owns equipped slots plus a carried list (`Equipment::stored_`). What an item *is* (damage, armour value, weight) belongs to items, not this file.
+
+Carried storage does not require a backpack item in the Backpack slot. Unequipping the bag leaves the list in place. Capacity is not implemented.
 
 ### Armour
 - Head
@@ -525,9 +529,9 @@ Two-handed use needs two arms that are not at 0 HP. One arm at 0: one-handed onl
 - Belt: one
 - Collar: one
 
-Encumbrance comes from carried weight vs Strength and slows walk. Equipped armour on a limb at 0 HP stays on. It can be unequipped. It does not drop. Held items stay too; a disabled arm only blocks new pickup and held-item **use**.
+Equipped armour on a limb at 0 HP stays on. It can be unequipped. It does not drop. Held items stay too; a disabled arm only blocks new pickup and held-item **use**.
 
-Item catalog, weights, and slot bonuses: Open.
+Item catalog, weights, slot bonuses, and encumbrance (carried weight vs Strength slowing walk): Open. `Character::walk_speed()` has a hook and no formula.
 
 ## Also on the sheet (not this item)
 
