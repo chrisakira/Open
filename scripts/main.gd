@@ -7,6 +7,10 @@ const FLOOR_SIZE := 40.0
 const MALE_MODEL := preload("res://scenes/characters/male.tscn")
 const FEMALE_MODEL := preload("res://scenes/characters/female.tscn")
 
+# The spike picks the player's blessing by hand. Character creation will supply it
+# later; no selection UI exists yet.
+@export var player_blessing: int = 0
+
 var _player: Player
 var _camera: Camera3D
 var _marker: MeshInstance3D
@@ -135,6 +139,8 @@ func _build_player() -> void:
 	_player = Player.new()
 	_player.name = "Player"
 	_player.model_scene = MALE_MODEL
+	_player.character_id = 1
+	_player.blessing = player_blessing
 	_player.position = Vector3(0.0, 0.1, 0.0)
 	add_child(_player)
 
@@ -144,14 +150,14 @@ func _build_standing_dummies() -> void:
 	friend.name = "Friendly"
 	friend.model_scene = FEMALE_MODEL
 	friend.position = Vector3(-6.0, 0.1, -2.0)
-	friend.setup(0, 1)
+	friend.setup(0, 1, 2, 2002)
 	add_child(friend)
 
 	var enemy := StandingDummy.new()
 	enemy.name = "Enemy"
 	enemy.model_scene = FEMALE_MODEL
 	enemy.position = Vector3(6.0, 0.1, -2.0)
-	enemy.setup(1, 1)
+	enemy.setup(1, 1, 3, 3003)
 	add_child(enemy)
 
 

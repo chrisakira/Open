@@ -176,6 +176,18 @@ func _run() -> void:
 	_check(not sheet.set_destination(Vector3(NAN, 0.0, 0.0)), "a nan destination fails")
 	_check(sheet.is_configured() and sheet.get_character_id() == 1, "bad ids did not disturb the sheet")
 
+	# The scene clock will call regenerate(delta, false) once per physics tick; the
+	# sheet must accept that and clamp, without ever healing hp.
+	var clocked := _configured_sheet()
+	_check(clocked.apply_damage(1, 10.0), "a hit lands to make room in a body part")
+	_check(clocked.apply_damage(0, 10.0), "and another in the head")
+	for tick in range(60):
+		_check(clocked.regenerate(1.0 / 60.0, false), "a delta-sized regen tick is accepted")
+	_check(_close(clocked.get_mana(), clocked.get_max_mana()), "a full mana bar stays at its maximum")
+	_check(_close(clocked.get_max_mana(), 100.0), "and the maximum never grew from regen")
+	_check(_close(clocked.get_health(), 80.0), "hp stayed where the hit left it")
+	_check(_close(clocked.get_part_health(0), 15.0), "the head stayed where the hit left it")
+
 	if failures == 0:
 		print("Character sheet: all checks passed")
 	quit(1 if failures else 0)
