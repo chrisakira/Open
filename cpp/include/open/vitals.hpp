@@ -31,7 +31,10 @@ bool valid(ResourceUse use);
 // Character can own all of these by value.
 class Vitals {
 public:
-	// A created character starts full.
+	// A created character starts full. A constructor cannot report failure, so it
+	// never refuses a sheet: an impossible maximum is clamped to the float range
+	// instead of becoming infinity. recalculate() is the gate that says no, and
+	// Character is the layer that validates before it gets here.
 	Vitals(const Attributes &attributes, const Skills &skills);
 
 	// Checked getters: throw std::invalid_argument for a bad id.

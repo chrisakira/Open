@@ -4,9 +4,28 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cstdint>
+#include <limits>
 #include <random>
 
 namespace {
+
+// Godot integers are 64-bit. Check the domain before narrowing to the int the
+// simulation enums use, so an id that only becomes legal after truncation is
+// refused instead of silently reinterpreted.
+template <class Enum>
+bool enum_id_is_valid(std::int64_t id) {
+	if (id < std::numeric_limits<int>::min() || id > std::numeric_limits<int>::max()) {
+		return false;
+	}
+	return open::valid(static_cast<Enum>(static_cast<int>(id)));
+}
+
+bool level_id_is_valid(std::int64_t level) {
+	if (level < std::numeric_limits<int>::min() || level > std::numeric_limits<int>::max()) {
+		return false;
+	}
+	return open::valid(static_cast<int>(level));
+}
 
 void report_bad_id(const char *what, std::int64_t id) {
 	godot::UtilityFunctions::push_error(godot::String("OpenCharacter: unknown ") +
@@ -63,19 +82,20 @@ void OpenCharacter::_bind_methods() {
 							   &OpenCharacter::regenerate);
 }
 
-bool OpenCharacter::configure(int64_t id, const godot::String &name, int faction, int level,
-							  int blessing) {
+bool OpenCharacter::configure(int64_t id, const godot::String &name, int64_t faction, int64_t level,
+							  int64_t blessing) {
 	if (character_.has_value()) {
 		return false;  // one configuration per object
 	}
 	if (id <= 0) {
 		return false;
 	}
-	const open::Faction team = static_cast<open::Faction>(faction);
-	const open::Attribute blessed = static_cast<open::Attribute>(blessing);
-	if (!open::valid(team) || !open::valid(level) || !open::valid(blessed)) {
+	if (!enum_id_is_valid<open::Faction>(faction) || !level_id_is_valid(level) ||
+		!enum_id_is_valid<open::Attribute>(blessing)) {
 		return false;
 	}
+	const open::Faction team = static_cast<open::Faction>(static_cast<int>(faction));
+	const open::Attribute blessed = static_cast<open::Attribute>(static_cast<int>(blessing));
 	const std::optional<open::Character> made = open::Character::create(open::CharacterConfig{
 		static_cast<std::uint64_t>(id), std::string(name.utf8().get_data()), team, level, blessed});
 	if (!made.has_value()) {
@@ -85,18 +105,18 @@ bool OpenCharacter::configure(int64_t id, const godot::String &name, int faction
 	return true;
 }
 
-bool OpenCharacter::configure_npc(int64_t id, const godot::String &name, int faction, int level,
-								  int64_t seed) {
+bool OpenCharacter::configure_npc(int64_t id, const godot::String &name, int64_t faction,
+								  int64_t level, int64_t seed) {
 	if (character_.has_value()) {
 		return false;
 	}
 	if (id <= 0) {
 		return false;
 	}
-	const open::Faction team = static_cast<open::Faction>(faction);
-	if (!open::valid(team) || !open::valid(level)) {
+	if (!enum_id_is_valid<open::Faction>(faction) || !level_id_is_valid(level)) {
 		return false;
 	}
+	const open::Faction team = static_cast<open::Faction>(static_cast<int>(faction));
 	std::mt19937_64 rng(static_cast<std::uint64_t>(seed));
 	const open::Attribute blessed = open::random_blessing(rng);
 	const std::optional<open::Character> made = open::Character::create(open::CharacterConfig{
@@ -169,29 +189,29 @@ float OpenCharacter::get_strength() const {
 	return c == nullptr ? 0.0f : c->attribute(open::Attribute::Strength);
 }
 
-float OpenCharacter::get_attribute(int attribute_id) const {
+float OpenCharacter::get_attribute(int64_t attribute_id) const {
 	const open::Character *c = sheet();
 	if (c == nullptr) {
 		return 0.0f;
 	}
-	const open::Attribute attribute = static_cast<open::Attribute>(attribute_id);
-	if (!open::valid(attribute)) {
+	if (!enum_id_is_valid<open::Attribute>(attribute_id)) {
 		report_bad_id("attribute", attribute_id);
 		return 0.0f;
 	}
+	const open::Attribute attribute = static_cast<open::Attribute>(static_cast<int>(attribute_id));
 	return c->attribute(attribute);
 }
 
-float OpenCharacter::get_attribute_base(int attribute_id) const {
+float OpenCharacter::get_attribute_base(int64_t attribute_id) const {
 	const open::Character *c = sheet();
 	if (c == nullptr) {
 		return 0.0f;
 	}
-	const open::Attribute attribute = static_cast<open::Attribute>(attribute_id);
-	if (!open::valid(attribute)) {
+	if (!enum_id_is_valid<open::Attribute>(attribute_id)) {
 		report_bad_id("attribute", attribute_id);
 		return 0.0f;
 	}
+	const open::Attribute attribute = static_cast<open::Attribute>(static_cast<int>(attribute_id));
 	return c->base(attribute);
 }
 
@@ -215,29 +235,29 @@ float OpenCharacter::get_max_mana() const {
 	return c == nullptr ? 0.0f : c->pool(open::PoolKind::Mana).maximum;
 }
 
-float OpenCharacter::get_part_health(int part_id) const {
+float OpenCharacter::get_part_health(int64_t part_id) const {
 	const open::Character *c = sheet();
 	if (c == nullptr) {
 		return 0.0f;
 	}
-	const open::BodyPart part = static_cast<open::BodyPart>(part_id);
-	if (!open::valid(part)) {
+	if (!enum_id_is_valid<open::BodyPart>(part_id)) {
 		report_bad_id("body part", part_id);
 		return 0.0f;
 	}
+	const open::BodyPart part = static_cast<open::BodyPart>(static_cast<int>(part_id));
 	return c->body_part(part).current;
 }
 
-float OpenCharacter::get_part_max_health(int part_id) const {
+float OpenCharacter::get_part_max_health(int64_t part_id) const {
 	const open::Character *c = sheet();
 	if (c == nullptr) {
 		return 0.0f;
 	}
-	const open::BodyPart part = static_cast<open::BodyPart>(part_id);
-	if (!open::valid(part)) {
+	if (!enum_id_is_valid<open::BodyPart>(part_id)) {
 		report_bad_id("body part", part_id);
 		return 0.0f;
 	}
+	const open::BodyPart part = static_cast<open::BodyPart>(static_cast<int>(part_id));
 	return c->body_part(part).maximum;
 }
 
@@ -314,16 +334,16 @@ godot::Vector3 OpenCharacter::velocity_at(const godot::Vector3 &position) const 
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
-bool OpenCharacter::apply_damage(int part_id, float amount) {
+bool OpenCharacter::apply_damage(int64_t part_id, float amount) {
 	open::Character *c = sheet();
 	if (c == nullptr) {
 		return false;
 	}
-	const open::BodyPart part = static_cast<open::BodyPart>(part_id);
-	if (!open::valid(part)) {
+	if (!enum_id_is_valid<open::BodyPart>(part_id)) {
 		report_bad_id("body part", part_id);
 		return false;
 	}
+	const open::BodyPart part = static_cast<open::BodyPart>(static_cast<int>(part_id));
 	return c->damage(part, amount);
 }
 

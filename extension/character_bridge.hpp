@@ -19,8 +19,9 @@ protected:
 
 public:
 	// One successful configuration per object.
-	bool configure(int64_t id, const godot::String &name, int faction, int level, int blessing);
-	bool configure_npc(int64_t id, const godot::String &name, int faction, int level, int64_t seed);
+	bool configure(int64_t id, const godot::String &name, int64_t faction, int64_t level,
+			   int64_t blessing);
+	bool configure_npc(int64_t id, const godot::String &name, int64_t faction, int64_t level, int64_t seed);
 
 	bool is_configured() const;
 	int64_t get_character_id() const;
@@ -32,14 +33,14 @@ public:
 	float get_health() const;
 	float get_max_health() const;
 	float get_strength() const;
-	float get_attribute(int attribute_id) const;
-	float get_attribute_base(int attribute_id) const;
+	float get_attribute(int64_t attribute_id) const;
+	float get_attribute_base(int64_t attribute_id) const;
 	float get_stamina() const;
 	float get_max_stamina() const;
 	float get_mana() const;
 	float get_max_mana() const;
-	float get_part_health(int part_id) const;
-	float get_part_max_health(int part_id) const;
+	float get_part_health(int64_t part_id) const;
+	float get_part_max_health(int64_t part_id) const;
 
 	bool is_alive() const;
 	bool can_walk() const;
@@ -58,7 +59,7 @@ public:
 	void clear_order();
 	godot::Vector3 velocity_at(const godot::Vector3 &position) const;
 
-	bool apply_damage(int part_id, float amount);
+	bool apply_damage(int64_t part_id, float amount);
 	bool regenerate(float seconds, bool in_combat);
 
 private:

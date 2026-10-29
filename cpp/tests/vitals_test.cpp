@@ -464,11 +464,21 @@ int main() {
 		expect_close("current hp is unchanged", vitals.pool(open::PoolKind::Hp).current, 80.0f);
 		expect_close("the body maximum is unchanged", vitals.part(open::BodyPart::Torso).maximum, 50.0f);
 
-		const open::Vitals created(attributes, skills);
+		// A constructor cannot report failure, so it refuses nothing: it keeps the
+		// state finite. recalculate is the gate, and Character (Task 7) is the
+		// layer that validates a sheet. This pins that split so a future edit
+		// cannot turn it into an accident.
+		open::Vitals created(attributes, skills);
 		expect_true("a created vitals set stays finite", std::isfinite(created.pool(open::PoolKind::Hp).maximum));
 		expect_true("its hp is finite", std::isfinite(created.pool(open::PoolKind::Hp).current));
 		expect_true("a body part is finite", std::isfinite(created.part(open::BodyPart::LeftLeg).current));
 		expect_true("the created character is alive", created.alive());
+		expect_true("an impossible maximum clamps to the float range, not to zero",
+					created.pool(open::PoolKind::Hp).maximum == std::numeric_limits<float>::max());
+		expect_true("its current value is clamped the same way",
+					created.pool(open::PoolKind::Hp).current == std::numeric_limits<float>::max());
+		expect_true("recalculate is the gate that refuses the same sheet",
+					!created.recalculate(attributes, skills));
 	}
 	{
 		// Break this catches: two characters sharing one set of bars.

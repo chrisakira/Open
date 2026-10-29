@@ -176,6 +176,26 @@ func _run() -> void:
 	_check(not sheet.set_destination(Vector3(NAN, 0.0, 0.0)), "a nan destination fails")
 	_check(sheet.is_configured() and sheet.get_character_id() == 1, "bad ids did not disturb the sheet")
 
+	# Godot integers are 64-bit. A parameter that only becomes a legal enum id after
+	# the binding narrows it to 32 bits must be refused, not accepted.
+	var wide := OpenCharacter.new()
+	_check(not wide.configure(1, "Wide", 0, 1, (1 << 32) + 9), "a blessing id that only fits after narrowing is refused")
+	_check(not wide.configure(1, "Wide", (1 << 32) + 0, 1, 0), "a faction id that only fits after narrowing is refused")
+	_check(not wide.configure(1, "Wide", 0, (1 << 32) + 1, 0), "a level id that only fits after narrowing is refused")
+	_check(not wide.is_configured(), "none of those wide ids configured a sheet")
+	_check(wide.configure((1 << 32) + 1, "Wide", 0, 1, 0), "a real 64-bit character id is not truncated")
+	_check(wide.get_character_id() == (1 << 32) + 1, "and the id round trips through the bridge")
+	var wide_npc := OpenCharacter.new()
+	_check(not wide_npc.configure_npc(2, "", (1 << 32) + 1, 1, 2002), "an npc faction id that only fits after narrowing is refused")
+	_check(not wide_npc.configure_npc(2, "", 0, (1 << 32) + 3, 2002), "an npc level id that only fits after narrowing is refused")
+	_check(not wide_npc.is_configured(), "and the npc sheet stayed unconfigured")
+	_check(not sheet.apply_damage(1 << 32, 5.0), "a part id that only looks valid after narrowing is refused")
+	_check(not sheet.apply_damage((1 << 32) + 1, 5.0), "and so is the next one")
+	_check(_close(sheet.get_part_health(1 << 32), 0.0), "a wide part id reports zero, not the head")
+	_check(_close(sheet.get_attribute(1 << 32), 0.0), "a wide attribute id reports zero, not strength")
+	_check(_close(sheet.get_attribute_base(1 << 32), 0.0), "and the same for a base lookup")
+	_check(_close(sheet.get_health(), 90.0), "the wide ids changed nothing on the real sheet")
+
 	# The scene clock will call regenerate(delta, false) once per physics tick; the
 	# sheet must accept that and clamp, without ever healing hp.
 	var clocked := _configured_sheet()

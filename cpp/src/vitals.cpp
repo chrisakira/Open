@@ -107,6 +107,8 @@ bool valid(ResourceUse use) {
 	return id >= 0 && id < static_cast<int>(ResourceUse::Count);
 }
 
+// See the header: this cannot refuse. clamp_to_float keeps the state finite and
+// finite-but-absurd; Vitals::recalculate is the predicate that refuses.
 Vitals::Vitals(const Attributes &attributes, const Skills &skills) {
 	const Maxima maxima = compute_maxima(attributes, skills);
 	for (std::size_t i = 0; i < pools_.size(); ++i) {
