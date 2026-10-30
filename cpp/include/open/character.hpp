@@ -83,6 +83,10 @@ public:
 	bool advance(AdvancedSkill skill);
 	bool record_use(BasicSkill skill, std::optional<AdvancedSkill> option, bool successful);
 	bool record_title_progress(Title title, bool successful);
+	// Settlement-only: pays a completed work action's progress on the job it resolved
+	// to. Not exposed to the bridge, so no script can train a skill with an arbitrary
+	// number, and a dead sheet earns nothing.
+	bool award_work_xp(const SkillJob &job, unsigned amount);
 	bool spend(ResourceUse use, float quantity = 1.0f);
 	bool spend_stamina(float amount);
 	bool regenerate(float seconds, bool in_combat);

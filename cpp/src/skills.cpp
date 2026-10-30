@@ -143,6 +143,45 @@ bool Skills::record_use(BasicSkill skill, std::optional<AdvancedSkill> option, b
 	return true;
 }
 
+bool Skills::award_work_xp(BasicSkill skill, std::optional<AdvancedSkill> option, unsigned amount) {
+	if (amount == 0) {
+		return false;  // nothing was earned: there is nothing to pay
+	}
+	if (!valid(skill)) {
+		return false;
+	}
+	if (option.has_value()) {
+		if (!valid(*option) || advanced_rule(*option).parent != skill) {
+			return false;
+		}
+	}
+
+	// The same track record_use would have used, including the frozen parent when the
+	// caller names an option this sheet did not choose.
+	const bool trained = option.has_value() && chosen_[basic_slot(skill)] == *option;
+	Training &entry = trained ? advanced_[advanced_slot(*option)] : basics_[basic_slot(skill)];
+	const unsigned cap = trained ? kAdvancedRankCap : kBasicRankCap;
+
+	// Applied rank by rank, so a large award cannot cross a rank it has not paid for
+	// and an absurd one stops at the cap instead of wrapping the counter.
+	unsigned left = amount;
+	while (left > 0 && entry.rank < cap) {
+		const unsigned cost = trained ? advanced_xp_to_next(entry.rank) : basic_xp_to_next(entry.rank);
+		const unsigned remaining = cost > entry.xp ? cost - entry.xp : 0u;
+		if (left < remaining) {
+			entry.xp += left;
+			left = 0;
+		} else {
+			left -= remaining;
+			entry.xp = 0u;
+			entry.rank += 1u;
+		}
+	}
+	// Whatever is left over at a capped track is discarded, exactly as one use at the
+	// cap discards its single point: no progress is banked to fire later.
+	return true;
+}
+
 bool Skills::record_title_progress(Title title, bool successful) {
 	if (!valid(title)) {
 		return false;

@@ -52,6 +52,13 @@ public:
 	// Failures and capped tracks change nothing but are still accepted.
 	bool record_use(BasicSkill skill, std::optional<AdvancedSkill> option, bool successful);
 
+	// Pays a completed action's progress on the track its job resolves to, with the
+	// same curve, the same carry, and the same discard-at-cap as record_use. This is
+	// the seam the workbench settlement uses; there is no amount the sheet can be told
+	// to grant from a script, and an ordinary use is still exactly one point.
+	// Invalid jobs and a zero amount are refused without changing anything.
+	bool award_work_xp(BasicSkill skill, std::optional<AdvancedSkill> option, unsigned amount);
+
 	// The authoritative action caller reports each relevant achievement once.
 	// Counters saturate at the threshold; an earned title never drops, and a
 	// title report never grants skill XP.

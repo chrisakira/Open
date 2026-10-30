@@ -184,6 +184,20 @@ bool Character::record_use(BasicSkill skill, std::optional<AdvancedSkill> option
 	return true;
 }
 
+bool Character::award_work_xp(const SkillJob &job, unsigned amount) {
+	if (!alive() || amount == 0) {
+		return false;
+	}
+	const Skills before = skills_;
+	if (!skills_.award_work_xp(job.basic, job.option, amount)) {
+		return false;
+	}
+	if (pool_relevant_rank_changed(before, skills_)) {
+		vitals_.recalculate(attributes_, skills_);
+	}
+	return true;
+}
+
 bool Character::record_title_progress(Title title, bool successful) {
 	return skills_.record_title_progress(title, successful);
 }
