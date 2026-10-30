@@ -44,6 +44,9 @@ struct SwingResult {
 	// and the item a block was made with. A dodge names neither.
 	std::optional<ItemId> attack_item;
 	std::optional<ItemId> defense_item;
+	// The technique this swing performed, when it performed one. A basic attack reports
+	// none, which is a different fact from a technique that did no damage.
+	std::optional<TechniqueId> technique;
 };
 
 // The part a landed hit takes: uniform over the six parts a sheet has, with the

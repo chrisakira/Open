@@ -1,6 +1,7 @@
 #include "open/character.hpp"
 
 #include "open/combat_rules.hpp"
+#include "open/techniques.hpp"
 #include "open/weapon_rules.hpp"
 
 #include <algorithm>
@@ -82,12 +83,21 @@ bool Character::advance_combat_clocks(float seconds) {
 	ClockState clocks;
 	clocks.attack = static_cast<double>(attack_cooldown_);
 	clocks.defense = static_cast<double>(defend_cooldown_);
-	clocks.technique = 0.0;  // the technique clock joins this in Task 13
+	// The technique clocks are handed over in the sheet's own id order and written back in
+	// it, so the frozen-time rule below is the single policy for all three kinds of clock:
+	// one call, one unstunned remainder, one clamp at ready, and a stun that freezes every
+	// one of them. There is no second tick anywhere else, which is what keeps a frame from
+	// buying back a technique.
+	clocks.techniques.reserve(techniques_.cooldowns.size());
+	for (const auto &owed : techniques_.cooldowns) {
+		clocks.techniques.push_back(owed.second);
+	}
 	if (!advance_frozen_time(clocks, stagger_, static_cast<double>(seconds), stagger_threshold())) {
 		return false;
 	}
 	attack_cooldown_ = static_cast<float>(clocks.attack);
 	defend_cooldown_ = static_cast<float>(clocks.defense);
+	apply_ran_technique_clocks(std::move(clocks.techniques));
 	return true;
 }
 
@@ -132,9 +142,26 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 		defender.is_stunned() ? std::nullopt : weapon_defend_profile(defender);
 	const bool defence_ready = defence.has_value() && defender.defend_cooldown_ <= 0.0f;
 
+	// The technique for this swing is chosen here, once: after everything that could refuse
+	// has refused, and before a single number is priced, because the choice decides the
+	// stamina cost, the damage factors and which clock starts. Nothing is committed by it -
+	// neither the sequence position nor the technique clock moves unless this attempt is
+	// actually performed below - and an NPC's draw is spent exactly once per attempt.
+	const TechniqueSelection choice = select_technique(*this, *attack, techniques_, rng);
+	const TechniqueDefinition *technique = nullptr;
+	if (choice.technique.has_value() && catalog_ != nullptr) {
+		technique = catalog_->technique(*choice.technique);
+	}
+
 	// Every number the exchange will use, settled and checked before the first point of
-	// stamina moves, so a refusal cannot leave a bill half paid.
-	const double attack_cost = weapon_attack_cost(attack->stats.stamina_cost, attack->effectiveness);
+	// stamina moves, so a refusal cannot leave a bill half paid. A technique that names its
+	// own cost replaces the weapon's - and only then is the cost adjusted for effectiveness,
+	// so a cost override is not a discount.
+	const double base_cost =
+		technique != nullptr && technique->stamina_cost.has_value()
+			? *technique->stamina_cost
+			: attack->stats.stamina_cost;
+	const double attack_cost = weapon_attack_cost(base_cost, attack->effectiveness);
 	if (!std::isfinite(attack_cost) || attack_cost < 0.0) {
 		return std::nullopt;
 	}
@@ -143,9 +170,14 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	const bool paid = attack_cost <= static_cast<double>(pool(PoolKind::Stamina).current);
 	const bool exhausted = !paid;
 	const double min_factor = minimum_range_factor(separation, attack->stats.min_reach);
-	const DamageComponents basic_technique{1.0, 1.0, 1.0};  // Task 13 selects a real one
+	// A basic attack is the identity: it multiplies each of the weapon's own components by
+	// one. A technique's factors join the same product inside scaled_offense, which is where
+	// quality, the trained fraction, effectiveness, exhaustion, minimum range and a
+	// zero-durability blade are all applied independently to the combination.
+	const DamageComponents basic_technique{1.0, 1.0, 1.0};
 	const std::optional<DamageComponents> offense =
-		scaled_offense(*attack, basic_technique, exhausted, min_factor);
+		scaled_offense(*attack, technique != nullptr ? technique->factors : basic_technique,
+					   exhausted, min_factor);
 	if (!offense.has_value()) {
 		return std::nullopt;
 	}
@@ -186,6 +218,16 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	// The swing pays its own price, exactly once, in full or not at all.
 	if (paid) {
 		spend_stamina(static_cast<float>(attack_cost));
+	}
+	// Performing the technique is what commits it, and this is the first point past which
+	// the attempt cannot be refused. The clock starts whatever the blow then achieves -
+	// blocked, soaked by armour, or harmless - and the sequence moves to where the
+	// selection said it would, which is also how a Wait entry stays where it was.
+	if (technique != nullptr) {
+		techniques_.cooldowns[*choice.technique] = technique->cooldown;
+	}
+	if (choice.proposed_index.has_value()) {
+		techniques_.index = *choice.proposed_index;
 	}
 	// A ready defence is spent on the attempt win or lose, and its clock starts whether
 	// or not it prevented anything - that is what makes a worthless guard a real action.
@@ -254,6 +296,9 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	result.final = resolution->final;
 	result.attack_item = attack->item;
 	result.defense_item = defence_ready ? defence->item : std::nullopt;
+	// What was performed, so presentation can show the move and a test can tell a technique
+	// from a basic attack that happens to do the same damage.
+	result.technique = technique != nullptr ? choice.technique : std::nullopt;
 	return result;
 }
 

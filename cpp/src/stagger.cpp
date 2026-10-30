@@ -18,7 +18,11 @@ void decay(StaggerState &state, double seconds, double threshold) {
 void run_clocks(ClockState &clocks, double seconds) {
 	clocks.attack = std::max(0.0, clocks.attack - seconds);
 	clocks.defense = std::max(0.0, clocks.defense - seconds);
-	clocks.technique = std::max(0.0, clocks.technique - seconds);
+	// Every technique clock runs for the same unstunned remainder and clamps at ready:
+	// overdue time is not banked against the next technique, exactly as for the other two.
+	for (double &remaining : clocks.techniques) {
+		remaining = std::max(0.0, remaining - seconds);
+	}
 }
 
 }  // namespace

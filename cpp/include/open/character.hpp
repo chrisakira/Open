@@ -8,6 +8,7 @@
 #include "open/move_order.hpp"
 #include "open/skills.hpp"
 #include "open/stagger.hpp"
+#include "open/techniques.hpp"
 #include "open/vitals.hpp"
 
 #include <cstdint>
@@ -15,6 +16,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <span>
 #include <vector>
 
 namespace open {
@@ -170,6 +172,23 @@ bool can_move() const;
 	std::optional<SwingResult> try_melee_swing(Character &defender, const Vec3 &self_position,
 											   const Vec3 &target_position, std::mt19937_64 &rng);
 
+	// --- techniques -----------------------------------------------------------
+	//
+	// The player's technique configuration, and who is driving it. `technique_state()` is
+	// what a popup reads; these two are the only ways to change it.
+	//
+	// Configuring writes the saved sequence and the enabled switch. It is an edit, so the
+	// sequence restarts at its first entry - and it is nothing else: the clocks the last
+	// fight started keep running, and the controller is whoever the last handover left.
+	// Refused, changing nothing, for an entry that names no technique (id 0), and for any
+	// change to a dead sheet, which has no popup and no next attack.
+	bool configure_techniques(bool enabled, std::span<const TechniqueStep> sequence);
+	// Handing the sheet to the player or back to the simulation. The sequence, its position
+	// and every clock survive the swap: switching who chooses does not refund what was
+	// chosen. Refused for a dead sheet.
+	bool set_player_controlled(bool player_controlled);
+	TechniqueState technique_state() const;
+
 private:
 	Character() = default;
 
@@ -200,6 +219,15 @@ private:
 	// Blunt is remembered here, not in Vitals: a stun is a pause with a schedule, and
 	// it neither heals nor injures. The hits that fill it arrive with the typed switch.
 	StaggerState stagger_;
+	// What this character has configured, who is driving it, and what it owes. On the sheet
+	// and not on the weapon: swapping a sword does not reset a technique clock, and neither
+	// does switching control or reordering the sequence. Advanced by
+	// `advance_combat_clocks`, which is the one clock owner, frozen by a stun with the rest.
+	TechniqueState techniques_;
+
+	// Writes back the technique clocks after one step of time, in the order they were
+	// handed over, and forgets the ones that reached ready.
+	void apply_ran_technique_clocks(std::vector<double> ran);
 	float attack_cooldown_ = 0.0f;
 	float defend_cooldown_ = 0.0f;
 };

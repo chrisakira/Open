@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 namespace open {
 
 // Blunt damage accumulates between hits, and when it reaches the threshold the
@@ -14,13 +16,19 @@ struct StaggerState {
 	double stun_remaining = 0.0;  // seconds of stun left, 0 when standing
 };
 
-// The clocks a stunned character cannot run. The technique clock joins the other two
-// for the same reason: a stun that froze attack and defence but let a technique
-// cooldown tick would hand back a move the stun was meant to deny.
+// The clocks a stunned character cannot run. The technique clocks join the other two for
+// the same reason: a stun that froze attack and defence but let a technique cooldown tick
+// would hand back a move the stun was meant to deny.
+//
+// Techniques are a list rather than a number because there are no shared technique
+// cooldowns - performing one starts only its own - so a character owes one clock per
+// technique it has performed. They are positional: the caller passes its own order in and
+// gets the same order back, which keeps this record free of technique ids and of the item
+// catalog.
 struct ClockState {
 	double attack = 0.0;
 	double defense = 0.0;
-	double technique = 0.0;
+	std::vector<double> techniques;
 };
 
 // Stagger threshold = 10 x the defender's effective Toughness. The coefficient is a

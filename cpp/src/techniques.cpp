@@ -2,6 +2,7 @@
 
 #include "open/character.hpp"
 #include "open/items.hpp"
+#include "open/weapon_rules.hpp"
 
 #include <algorithm>
 #include <cstddef>

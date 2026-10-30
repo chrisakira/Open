@@ -1,7 +1,6 @@
 #pragma once
 
 #include "open/items.hpp"
-#include "open/weapon_rules.hpp"
 
 #include <cstddef>
 #include <map>
@@ -11,7 +10,11 @@
 
 namespace open {
 
+// Both are read-only inputs here, so this header stays free of `weapon_rules.hpp` (which
+// includes `character.hpp`, and `character.hpp` includes this one to hold a
+// TechniqueState). Naming the types is all the declarations below need.
 class Character;
+struct WeaponAttackProfile;
 
 // The three locked starter techniques, as production data. Task 15 puts them on the
 // starter weapons and Task 14a shows them in a popup; they are not test fixtures, and no

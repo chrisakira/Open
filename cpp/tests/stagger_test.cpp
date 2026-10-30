@@ -16,9 +16,11 @@
 // from outside the simulation.
 //
 // The frozen-clock oracle is the one written out in the plan's technical defaults,
-// hand-checked here: stun 0.75 with attack 1 / defense 0.5 / technique 2, a 0.5 step
-// leaves stun 0.25 and every clock where it was, and the next 0.5 step ends the stun
-// and advances each clock by the 0.25 that was actually unstunned.
+// hand-checked here: stun 0.75 with attack 1 / defense 0.5 / technique clocks 2 and 20, a
+// 0.5 step leaves stun 0.25 and every clock where it was, and the next 0.5 step ends the
+// stun and advances each clock by the 0.25 that was actually unstunned. Two technique
+// clocks, not one: there are no shared technique cooldowns, so a stun that froze one and
+// leaked another is a bug this can actually catch.
 
 namespace {
 
@@ -33,11 +35,11 @@ open::StaggerState state(double buildup = 0.0, double stun_remaining = 0.0) {
 	return made;
 }
 
-open::ClockState clocks(double attack, double defense, double technique) {
+open::ClockState clocks(double attack, double defense, std::vector<double> techniques) {
 	open::ClockState made;
 	made.attack = attack;
 	made.defense = defense;
-	made.technique = technique;
+	made.techniques = std::move(techniques);
 	return made;
 }
 
@@ -217,14 +219,15 @@ void the_frozen_clock_oracle() {
 	// docs/weapons.md Stagger: cooldowns freeze for the stun, and a tick that crosses
 	// the end advances them only by the part after it. Plan default 7 pins the numbers.
 	open::StaggerState stagger = state(10.0, 0.75);
-	open::ClockState running = clocks(1.0, 0.5, 2.0);
+	open::ClockState running = clocks(1.0, 0.5, {2.0, 20.0});
 
 	expect_true("the first half second is taken",
 				open::advance_frozen_time(running, stagger, 0.5, kThreshold));
 	expect_true("the stun shortened", close_enough(stagger.stun_remaining, 0.25));
 	expect_true("every clock is exactly as it was while stunned",
 				close_enough(running.attack, 1.0) && close_enough(running.defense, 0.5) &&
-					close_enough(running.technique, 2.0));
+					close_enough(running.techniques[0], 2.0) &&
+					close_enough(running.techniques[1], 20.0));
 	expect_true("and the meter did not decay during the stun", close_enough(stagger.buildup, 10.0));
 
 	expect_true("the second half second is taken",
@@ -232,34 +235,39 @@ void the_frozen_clock_oracle() {
 	expect_true("the stun has just ended", close_enough(stagger.stun_remaining, 0.0));
 	expect_close("attack ran for the unstunned remainder", running.attack, 0.75, 1e-9);
 	expect_close("defense ran for the unstunned remainder", running.defense, 0.25, 1e-9);
-	expect_close("technique ran for the unstunned remainder", running.technique, 1.75, 1e-9);
+	expect_close("the first technique clock ran for the unstunned remainder", running.techniques[0],
+				 1.75, 1e-9);
+	expect_close("and so did every other technique clock, by its own amount",
+				 running.techniques[1], 19.75, 1e-9);
 	expect_close("decay ran for the unstunned remainder only", stagger.buildup, 9.5, 1e-9);
 
 	// The same elapsed time in one whole tick must reach the same state, so nothing is
 	// double-counted or lost at the boundary. The stun still ends without an attack
 	// happening inside it: the clocks moved once, not twice.
 	open::StaggerState one_shot = state(10.0, 0.75);
-	open::ClockState whole = clocks(1.0, 0.5, 2.0);
+	open::ClockState whole = clocks(1.0, 0.5, {2.0, 20.0});
 	expect_true("a single 1.0 tick", open::advance_frozen_time(whole, one_shot, 1.0, kThreshold));
 	expect_true("the stun ended", close_enough(one_shot.stun_remaining, 0.0));
 	expect_true("the whole 1-tick reaches the split-tick state",
 				close_enough(whole.attack, running.attack) && close_enough(whole.defense, running.defense) &&
-					close_enough(whole.technique, running.technique) &&
+					close_enough(whole.techniques[0], running.techniques[0]) &&
+					close_enough(whole.techniques[1], running.techniques[1]) &&
 					close_enough(one_shot.buildup, stagger.buildup));
 
 	// Clocks never go below zero, and a stun shorter than the tick cannot make them
 	// run backwards.
 	open::StaggerState short_stun = state(0.0, 0.1);
-	open::ClockState ready = clocks(0.05, 0.0, 0.0);
+	open::ClockState ready = clocks(0.05, 0.0, {0.0, 0.5});
 	expect_true("a long tick over a short stun",
 				open::advance_frozen_time(ready, short_stun, 5.0, kThreshold));
 	expect_true("no clock went negative",
-				ready.attack == 0.0 && ready.defense == 0.0 && ready.technique == 0.0);
+				ready.attack == 0.0 && ready.defense == 0.0 && ready.techniques[0] == 0.0 &&
+					ready.techniques[1] == 0.0);
 	expect_true("the stun is over", close_enough(short_stun.stun_remaining, 0.0));
 
 	// Refusals leave both the clocks and the meter alone.
 	open::StaggerState guard = state(3.0, 0.5);
-	open::ClockState frozen = clocks(1.0, 1.0, 1.0);
+	open::ClockState frozen = clocks(1.0, 1.0, {1.0, 1.0});
 	expect_true("NaN is refused", !open::advance_frozen_time(frozen, guard, kNan, kThreshold));
 	expect_true("negative is refused", !open::advance_frozen_time(frozen, guard, -1.0, kThreshold));
 	expect_true("a bad threshold is refused",
@@ -267,15 +275,17 @@ void the_frozen_clock_oracle() {
 	expect_true("nothing moved", close_enough(guard.buildup, 3.0) &&
 									 close_enough(guard.stun_remaining, 0.5) &&
 									 close_enough(frozen.attack, 1.0) &&
-									 close_enough(frozen.technique, 1.0));
+									 close_enough(frozen.techniques[0], 1.0) &&
+									 close_enough(frozen.techniques[1], 1.0));
 
 	// With no stun running, time is simply time.
 	open::StaggerState standing = state(10.0, 0.0);
-	open::ClockState ticking = clocks(2.0, 1.0, 4.0);
+	open::ClockState ticking = clocks(2.0, 1.0, {4.0, 40.0});
 	expect_true("an ordinary tick", open::advance_frozen_time(ticking, standing, 1.0, kThreshold));
-	expect_true("all three clocks ran for the whole second",
+	expect_true("attack, defense and every technique clock ran for the whole second",
 				close_enough(ticking.attack, 1.0) && close_enough(ticking.defense, 0.0) &&
-					close_enough(ticking.technique, 3.0));
+					close_enough(ticking.techniques[0], 3.0) &&
+					close_enough(ticking.techniques[1], 39.0));
 	expect_close("and the meter decayed for the whole second", standing.buildup, 8.0, 1e-9);
 }
 
