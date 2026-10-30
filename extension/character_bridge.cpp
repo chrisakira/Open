@@ -1,6 +1,8 @@
 #include "character_bridge.hpp"
 
 #include "character_skill_snapshot.hpp"
+#include "item_bridge.hpp"
+#include "technique_bridge.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
@@ -9,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <random>
+#include <vector>
 
 namespace {
 
@@ -34,6 +37,96 @@ void report_bad_id(const char *what, std::int64_t id) {
 	godot::UtilityFunctions::push_error(godot::String("OpenCharacter: unknown ") +
 										godot::String(what) + " id " +
 										godot::String::num_int64(id));
+}
+
+// Item ids are unsigned 64-bit in the simulation and signed in Godot. Every id a script can
+// send that is not a positive signed integer is not one this sheet can own, and an id that
+// only becomes legal after truncation is refused rather than reinterpreted.
+bool item_id_is_usable(std::int64_t id) {
+	return id > 0;
+}
+
+godot::Array slot_rows(const std::vector<int> &slots) {
+	godot::Array rows;
+	for (const int slot : slots) {
+		rows.push_back(slot);
+	}
+	return rows;
+}
+
+godot::Array requirement_rows(const std::vector<open::RequirementSnapshotRow> &requirements) {
+	godot::Array rows;
+	for (const open::RequirementSnapshotRow &requirement : requirements) {
+		godot::Dictionary entry;
+		entry["attribute"] = requirement.attribute;
+		entry["value"] = requirement.value;
+		rows.push_back(entry);
+	}
+	return rows;
+}
+
+godot::Array enchantment_rows(const std::vector<open::EnchantmentSnapshotRow> &enchantments) {
+	godot::Array rows;
+	for (const open::EnchantmentSnapshotRow &enchantment : enchantments) {
+		godot::Dictionary entry;
+		entry["definition_id"] = static_cast<std::int64_t>(enchantment.definition);
+		entry["added_blunt"] = enchantment.added_blunt;
+		// -1 is "nothing asked", so a script never has to tell an absent requirement from a
+		// requirement on attribute 0.
+		entry["requirement_attribute"] = enchantment.requirement_attribute;
+		entry["requirement_value"] = enchantment.requirement_value;
+		rows.push_back(entry);
+	}
+	return rows;
+}
+
+godot::Array technique_rows(const std::vector<open::TechniqueSnapshotRow> &techniques) {
+	godot::Array rows;
+	for (const open::TechniqueSnapshotRow &technique : techniques) {
+		godot::Dictionary entry;
+		entry["technique_id"] = static_cast<std::int64_t>(technique.id);
+		entry["defined"] = technique.defined;
+		entry["available"] = technique.available;
+		entry["skip_on_cooldown"] = technique.skip_on_cooldown;
+		entry["required_rank"] = static_cast<std::int64_t>(technique.required_rank);
+		entry["trained"] = static_cast<std::int64_t>(technique.trained);
+		entry["cut"] = technique.cut;
+		entry["pierce"] = technique.pierce;
+		entry["blunt"] = technique.blunt;
+		entry["cooldown"] = technique.cooldown;
+		entry["has_stamina_cost"] = technique.has_stamina_cost;
+		// Only meaningful beside `has_stamina_cost`: an absent cost means the weapon's own.
+		entry["stamina_cost"] = technique.stamina_cost;
+		entry["cooldown_remaining"] = technique.cooldown_remaining;
+		rows.push_back(entry);
+	}
+	return rows;
+}
+
+// One step of a configured sequence, validated to the declared schema before any of it is
+// sent to C++: a dictionary of exactly `technique_id` (int, positive) and
+// `skip_on_cooldown` (bool). The types are checked rather than coerced, so a float, a string
+// or an int standing in for a bool is a refusal and not a silent conversion.
+bool read_technique_step(const godot::Variant &value, open::TechniqueStep &out) {
+	if (value.get_type() != godot::Variant::DICTIONARY) {
+		return false;
+	}
+	const godot::Dictionary step = value;
+	if (step.size() != 2 || !step.has("technique_id") || !step.has("skip_on_cooldown")) {
+		return false;
+	}
+	const godot::Variant id = step.get("technique_id", godot::Variant());
+	const godot::Variant skip = step.get("skip_on_cooldown", godot::Variant());
+	if (id.get_type() != godot::Variant::INT || skip.get_type() != godot::Variant::BOOL) {
+		return false;
+	}
+	const std::int64_t raw_id = static_cast<std::int64_t>(id);
+	if (!item_id_is_usable(raw_id)) {
+		return false;
+	}
+	out.id = static_cast<open::TechniqueId>(raw_id);
+	out.skip_on_cooldown = static_cast<bool>(skip);
+	return true;
 }
 
 }  // namespace
@@ -82,6 +175,18 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "position"), &OpenCharacter::velocity_at);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_attack_target_id"),
 							   &OpenCharacter::get_attack_target_id);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_equipment_snapshot"),
+							   &OpenCharacter::get_equipment_snapshot);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_weapon_snapshot", "item_id"),
+							   &OpenCharacter::get_weapon_snapshot);
+	godot::ClassDB::bind_method(
+		godot::D_METHOD("equip_item", "item_id", "slot"), &OpenCharacter::equip_item);
+	godot::ClassDB::bind_method(godot::D_METHOD("unequip_item", "slot"),
+							   &OpenCharacter::unequip_item);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_technique_snapshot"),
+							   &OpenCharacter::get_technique_snapshot);
+	godot::ClassDB::bind_method(godot::D_METHOD("configure_techniques", "enabled", "steps"),
+							   &OpenCharacter::configure_techniques);
 	godot::ClassDB::bind_method(godot::D_METHOD("apply_damage", "part_id", "amount"),
 							   &OpenCharacter::apply_damage);
 	godot::ClassDB::bind_method(godot::D_METHOD("regenerate", "seconds", "in_combat"),
@@ -385,4 +490,153 @@ bool OpenCharacter::regenerate(float seconds, bool in_combat) {
 		return false;
 	}
 	return c->regenerate(seconds, in_combat);
+}
+
+godot::Array OpenCharacter::get_equipment_snapshot() const {
+	godot::Array rows;
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return rows;
+	}
+	for (const open::EquipmentSnapshotRow &row : open::equipment_snapshot(*c)) {
+		godot::Dictionary entry;
+		entry["item_id"] = static_cast<std::int64_t>(row.item);
+		entry["definition_id"] = static_cast<std::int64_t>(row.definition);
+		entry["model_key"] = godot::String(row.model_key.c_str());
+		entry["slots"] = slot_rows(row.slots);
+		entry["allowed_slots"] = slot_rows(row.allowed_slots);
+		entry["hand_use"] = row.hand_use;
+		entry["quality"] = static_cast<std::int64_t>(row.quality);
+		entry["durability"] = static_cast<std::int64_t>(row.durability);
+		entry["max_durability"] = static_cast<std::int64_t>(row.max_durability);
+		entry["enchantments_used"] = static_cast<std::int64_t>(row.enchantments_used);
+		entry["enchantment_capacity"] = static_cast<std::int64_t>(row.enchantment_capacity);
+		entry["enchantments"] = enchantment_rows(row.enchantments);
+		entry["requirements"] = requirement_rows(row.requirements);
+		rows.push_back(entry);
+	}
+	return rows;
+}
+
+godot::Dictionary OpenCharacter::get_weapon_snapshot(int64_t item_id) const {
+	godot::Dictionary empty;
+	const open::Character *c = sheet();
+	if (c == nullptr || !item_id_is_usable(item_id)) {
+		return empty;
+	}
+	const std::optional<open::WeaponSnapshot> weapon =
+		open::weapon_snapshot(*c, static_cast<open::ItemId>(item_id));
+	if (!weapon.has_value()) {
+		return empty;
+	}
+	godot::Dictionary snapshot;
+	snapshot["item_id"] = static_cast<std::int64_t>(weapon->item);
+	snapshot["definition_id"] = static_cast<std::int64_t>(weapon->definition);
+	snapshot["model_key"] = godot::String(weapon->model_key.c_str());
+	snapshot["job_name"] = godot::String(weapon->job_name.c_str());
+	snapshot["option_name"] = godot::String(weapon->option_name.c_str());
+	snapshot["trained"] = static_cast<std::int64_t>(weapon->trained);
+	snapshot["effectiveness"] = weapon->effectiveness;
+	snapshot["cut"] = weapon->damage.cut;
+	snapshot["pierce"] = weapon->damage.pierce;
+	snapshot["blunt"] = weapon->damage.blunt;
+	snapshot["penetration_cut"] = weapon->penetration.cut;
+	snapshot["penetration_pierce"] = weapon->penetration.pierce;
+	snapshot["penetration_blunt"] = weapon->penetration.blunt;
+	snapshot["min_reach"] = weapon->min_reach;
+	snapshot["max_reach"] = weapon->max_reach;
+	snapshot["speed"] = weapon->speed;
+	snapshot["stamina_cost"] = weapon->stamina_cost;
+	snapshot["attack_cost"] = weapon->attack_cost;
+	snapshot["block_percent"] = weapon->block_percent;
+	snapshot["weight"] = weapon->weight;
+	snapshot["weight_class"] = weapon->weight_class;
+	snapshot["required_trained_rank"] = static_cast<std::int64_t>(weapon->required_trained_rank);
+	snapshot["quality"] = static_cast<std::int64_t>(weapon->quality);
+	snapshot["durability"] = static_cast<std::int64_t>(weapon->durability);
+	snapshot["max_durability"] = static_cast<std::int64_t>(weapon->max_durability);
+	godot::Array techniques;
+	for (const std::uint64_t id : weapon->techniques) {
+		techniques.push_back(static_cast<std::int64_t>(id));
+	}
+	snapshot["techniques"] = techniques;
+	snapshot["enchantments"] = enchantment_rows(weapon->enchantments);
+	snapshot["requirements"] = requirement_rows(weapon->requirements);
+	return snapshot;
+}
+
+bool OpenCharacter::equip_item(int64_t item_id, int64_t slot) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	if (!item_id_is_usable(item_id)) {
+		report_bad_id("item", item_id);
+		return false;
+	}
+	if (!enum_id_is_valid<open::Slot>(slot)) {
+		report_bad_id("slot", slot);
+		return false;
+	}
+	// Ownership, placement, free hands and limbs are C++'s to decide, all of them, and a
+	// record the sheet does not own simply is not there to equip.
+	return c->equip(static_cast<open::ItemId>(item_id),
+					static_cast<open::Slot>(static_cast<int>(slot)));
+}
+
+bool OpenCharacter::unequip_item(int64_t slot) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	if (!enum_id_is_valid<open::Slot>(slot)) {
+		report_bad_id("slot", slot);
+		return false;
+	}
+	return c->unequip(static_cast<open::Slot>(static_cast<int>(slot)));
+}
+
+godot::Dictionary OpenCharacter::get_technique_snapshot() const {
+	godot::Dictionary snapshot;
+	const open::Character *c = sheet();
+	// The schema is answered in full even with nothing behind it: a popup that has lost its
+	// sheet should show nothing, not crash looking for a key.
+	snapshot["enabled"] = true;
+	snapshot["player_controlled"] = false;
+	snapshot["can_configure"] = false;
+	snapshot["index"] = static_cast<std::int64_t>(0);
+	snapshot["supported"] = godot::Array();
+	snapshot["sequence"] = godot::Array();
+	snapshot["cooldowns"] = godot::Array();
+	if (c == nullptr) {
+		return snapshot;
+	}
+	const open::TechniqueSnapshot state = open::technique_snapshot(*c);
+	snapshot["enabled"] = state.enabled;
+	snapshot["player_controlled"] = state.player_controlled;
+	snapshot["can_configure"] = state.can_configure;
+	snapshot["index"] = static_cast<std::int64_t>(state.index);
+	snapshot["supported"] = technique_rows(state.supported);
+	snapshot["sequence"] = technique_rows(state.sequence);
+	snapshot["cooldowns"] = technique_rows(state.cooldowns);
+	return snapshot;
+}
+
+bool OpenCharacter::configure_techniques(bool enabled, const godot::Array &steps) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	// Validated in full before anything is sent: a sequence with one bad entry in the middle
+	// must not become the player's new sequence up to that entry.
+	std::vector<open::TechniqueStep> parsed;
+	parsed.reserve(static_cast<std::size_t>(steps.size()));
+	for (std::int64_t index = 0; index < steps.size(); ++index) {
+		open::TechniqueStep entry;
+		if (!read_technique_step(steps[index], entry)) {
+			return false;
+		}
+		parsed.push_back(entry);
+	}
+	return c->configure_techniques(enabled, parsed);
 }

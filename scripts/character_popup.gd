@@ -7,6 +7,11 @@ extends PanelContainer
 # specializations render beneath their basic skill; unchosen ones never appear,
 # and resource pools are not shown.
 
+# Opened from the sheet, because a character's techniques belong to the same screen it
+# reads its skills from. The signal carries the position to open the panel at; what the
+# player's technique settings are, and whether any of this is possible at all, stays C++'s.
+signal techniques_requested(at: Vector2)
+
 const ATTRIBUTE_NAMES := ["Strength", "Dexterity", "Agility", "Toughness", "Constitution",
 	"Perception", "Intelligence", "Charisma", "Luck", "Profanity"]
 
@@ -98,6 +103,13 @@ func _on_visibility_changed() -> void:
 		_refresh()
 
 
+func _on_techniques_pressed() -> void:
+	# An entry point only: this opens a panel and sends no command. What the sheet's
+	# technique settings are is read from C++, and only the technique popup's own controls
+	# write to them.
+	techniques_requested.emit(get_global_rect().end - Vector2(0.0, 40.0))
+
+
 func _on_header_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_dragging = event.pressed
@@ -159,6 +171,20 @@ func _build_skeleton() -> void:
 	_level_label = _make_label("", 11)
 	_level_label.add_theme_color_override("font_color", MUTED_GOLD)
 	identity.add_child(_level_label)
+	var techniques := Button.new()
+	techniques.name = "TechniquesButton"
+	techniques.text = "Techniques"
+	techniques.custom_minimum_size = Vector2(120, 34)
+	techniques.add_theme_font_override("font", _serif_font)
+	techniques.add_theme_font_size_override("font_size", 15)
+	techniques.add_theme_color_override("font_color", INK)
+	techniques.add_theme_color_override("font_hover_color", Color("fff0ce"))
+	techniques.add_theme_stylebox_override("normal", _button_style(Color("382b21")))
+	techniques.add_theme_stylebox_override("hover", _button_style(Color("62472f")))
+	techniques.add_theme_stylebox_override("pressed", _button_style(Color("241b16")))
+	techniques.pressed.connect(_on_techniques_pressed)
+	header.add_child(techniques)
+
 	var close := Button.new()
 	close.name = "CloseButton"
 	close.text = "×"

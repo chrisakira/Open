@@ -28,6 +28,7 @@ var _marker_tween: Tween
 var _popup: CharacterPopup
 var _attack_popup: AttackPopup
 var _weapon_popup: WeaponPopup
+var _technique_popup: TechniquePopup
 var _combat: OpenCombat
 
 # Presentation only: the bodies whose positions the coordinator is told about.
@@ -62,6 +63,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				_attack_popup.close()
 			if _weapon_popup != null:
 				_weapon_popup.close()
+			# A click outside the technique panel closes it the same way, and then goes on
+			# to do what it would have done anyway: closing a panel is not an order.
+			if _technique_popup != null:
+				_technique_popup.close()
 			_try_character_or_floor_click(mouse.position)
 
 
@@ -72,7 +77,8 @@ func _popup_covers(point: Vector2) -> bool:
 	if _popup != null and _popup.visible and _popup.get_global_rect().has_point(point):
 		return true
 	return (_attack_popup != null and _attack_popup.covers(point)) \
-		or (_weapon_popup != null and _weapon_popup.covers(point))
+		or (_weapon_popup != null and _weapon_popup.covers(point)) \
+		or (_technique_popup != null and _technique_popup.covers(point))
 
 
 func _toggle_popup() -> void:
@@ -103,6 +109,15 @@ func _physics_process(delta: float) -> void:
 		if sheet != null:
 			_combat.set_position(sheet.get_character_id(), actor.global_position)
 	_combat.step(delta)
+
+
+# The technique panel is another view of the player's own sheet: it reads and writes that
+# sheet's technique settings and nothing else. Orders, clocks and damage stay where they
+# are, and no click on this panel can issue one.
+func _on_techniques_requested(at: Vector2) -> void:
+	if _technique_popup == null or _player == null or _player.sheet == null:
+		return
+	_technique_popup.open_for_sheet(_player.sheet, at)
 
 
 func _on_attack_requested(target_id: int) -> void:
@@ -334,6 +349,13 @@ func _build_hud() -> void:
 	_attack_popup.visible = false
 	layer.add_child(_attack_popup)
 	_attack_popup.attack_requested.connect(_on_attack_requested)
+
+	_technique_popup = TechniquePopup.new()
+	_technique_popup.name = "TechniquePopup"
+	_technique_popup.visible = false
+	layer.add_child(_technique_popup)
+	_technique_popup.bind_sheet(_player.sheet)
+	_popup.techniques_requested.connect(_on_techniques_requested)
 
 	_weapon_popup = WeaponPopup.new()
 	_weapon_popup.name = "WeaponPopup"
