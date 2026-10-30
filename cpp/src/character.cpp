@@ -16,6 +16,11 @@ bool pool_relevant_rank_changed(const Skills &before, const Skills &after) {
 }  // namespace
 
 std::optional<Character> Character::create(const CharacterConfig &config) {
+	return create(config, nullptr);
+}
+
+std::optional<Character> Character::create(const CharacterConfig &config,
+										   std::shared_ptr<const ItemCatalog> catalog) {
 	if (config.id == 0) {
 		return std::nullopt;
 	}
@@ -24,6 +29,7 @@ std::optional<Character> Character::create(const CharacterConfig &config) {
 	}
 
 	Character made;
+	made.catalog_ = std::move(catalog);
 	made.id_ = config.id;
 	made.name_ = config.name;
 	made.faction_ = config.faction;
@@ -202,11 +208,34 @@ bool Character::damage(BodyPart part, float amount) {
 	return true;
 }
 
+std::shared_ptr<const ItemCatalog> Character::catalog() const {
+	return catalog_;
+}
+
 bool Character::add_item(const ItemRef &item) {
 	if (!alive()) {
 		return false;
 	}
 	return equipment_.add(item, vitals_.can_carry());
+}
+
+bool Character::add_instance(const ItemInstance &item) {
+	if (!alive()) {
+		return false;
+	}
+	return equipment_.add_instance(item, vitals_.can_carry());
+}
+
+std::optional<ItemInstance> Character::instance(ItemId id) const {
+	return equipment_.instance(id);
+}
+
+bool Character::apply_wear(ItemId id, unsigned amount) {
+	return equipment_.apply_wear(id, amount);
+}
+
+bool Character::restore_durability(ItemId id, unsigned amount) {
+	return equipment_.restore_durability(id, amount);
 }
 
 bool Character::equip(ItemId id, Slot slot) {

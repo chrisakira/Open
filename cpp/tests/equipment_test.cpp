@@ -421,32 +421,37 @@ int main() {
 		open::ItemRef orphan_option = sword(910);
 		orphan_option.combat_option = open::AdvancedSkill::Katana;
 		expect_true("a subtype without its basic is refused", !equipment.add(orphan_option, true));
-		expect_true("a one-handed job cannot be a two-handed item",
-					!equipment.add(tagged(911, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
-										   open::BasicSkill::OneHandedWeapons),
-								   true));
-		expect_true("a two-handed job cannot be a one-handed item",
-					!equipment.add(tagged(912, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
-										   open::BasicSkill::TwoHandedWeapons),
-								   true));
-		expect_true("a polearm cannot be one-handed",
-					!equipment.add(tagged(913, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
-										   open::BasicSkill::Polearms),
-								   true));
-		expect_true("a shield cannot be a two-handed item",
-					!equipment.add(tagged(914, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
-										   open::BasicSkill::Blocking),
-								   true));
+		// Handedness is a placement property, not a consequence of the skill family:
+		// docs/weapons.md locks "Handedness is separate from its skill family", so the
+		// tag alone cannot decide how many hands an item costs. What the record
+		// declares is what the limb gates then charge for, and the malformed records
+		// above are still refused.
+		expect_true("a one-handed job may still be a two-handed item",
+					equipment.add(tagged(911, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										 open::BasicSkill::OneHandedWeapons),
+								  true));
+		expect_true("a two-handed job may still be a one-handed item",
+					equipment.add(tagged(912, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										 open::BasicSkill::TwoHandedWeapons),
+								  true));
+		expect_true("a polearm may be one-handed",
+					equipment.add(tagged(913, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										 open::BasicSkill::Polearms),
+								  true));
+		expect_true("a blocking job may be carried two-handed",
+					equipment.add(tagged(914, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										 open::BasicSkill::Blocking),
+								  true));
 		expect_true("a tag cannot sit on a worn item",
 					!equipment.add(tagged(915, {open::Slot::Chest}, open::HandUse::None,
 										   open::BasicSkill::OneHandedWeapons),
 								   true));
 		expect_true("the malformed records never entered the backpack",
-					equipment.backpack_items().size() == 5);
+					equipment.backpack_items().size() == 9);
 		expect_true("and no slot changed", !equipment.equipped(open::Slot::LeftHand).has_value());
 		expect_true("a well-formed tag is still accepted afterwards",
 					equipment.add(tagged_shield(916, open::AdvancedSkill::WallShields), true));
-		expect_true("the backpack holds exactly one more", equipment.backpack_items().size() == 6);
+		expect_true("the backpack holds exactly one more", equipment.backpack_items().size() == 10);
 	}
 	{
 		// Break this catches: a disabled hand or a dead actor still having its held

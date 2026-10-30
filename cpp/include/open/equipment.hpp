@@ -1,6 +1,6 @@
 #pragma once
 
-#include "open/character_rules.hpp"
+#include "open/item_instance.hpp"
 
 #include <array>
 #include <bitset>
@@ -11,25 +11,9 @@
 
 namespace open {
 
-// Item identity only. What an item is (damage, armour value, weight) belongs to
-// the future item system; this container needs just enough to know where an item
-// may go and how it is held.
-using ItemId = std::uint64_t;
-
-// HandUse lives in character_rules.hpp with the rest of the enum vocabulary.
-
-struct ItemRef {
-	ItemId id = 0;
-	std::bitset<static_cast<std::size_t>(Slot::Count)> allowed_slots;
-	HandUse hand_use = HandUse::None;
-	// Which combat job this item is for, if it is a weapon or a shield at all.
-	// OneHandedWeapons/TwoHandedWeapons/Polearms name a weapon, Blocking names a
-	// shield, and the optional advanced skill is that item's own specialisation.
-	// These are tags only: no damage, armour, reach or weight lives here, and an
-	// untagged held record is still a legal item.
-	std::optional<BasicSkill> combat_skill;
-	std::optional<AdvancedSkill> combat_option;
-};
+// ItemId, ItemRef and ItemInstance come from items.hpp and item_instance.hpp:
+// identity and definition first, then the owned record, then this container, so
+// the container is the only thing that knows about slots.
 
 // What a character carries plus what it wears. A two-handed item is stored once,
 // in a fixed primary held slot, and the other held slot reports the same id.
@@ -39,6 +23,13 @@ public:
 	// The caller passes the character's current capabilities; Equipment does not
 	// own vitals.
 	bool add(const ItemRef &item, bool can_carry);
+
+	// An owned instance, taken apart from any catalog: it carries quality and
+	// durability alongside the placement record, and it is stored whole. Passing a
+	// bare ItemRef through add() still works and yields a record with no
+	// definition, which is what keeps placement-only items statless.
+	bool add_instance(const ItemInstance &item, bool can_carry);
+
 	bool equip(ItemId id, Slot slot, bool one_hand, bool two_hands);
 	bool unequip(Slot slot);
 
@@ -54,16 +45,29 @@ public:
 	// container.
 	std::optional<ItemRef> item(ItemId id) const;
 
+	// The owned record itself, copied out: mutating the copy cannot wear, repair
+	// or rename what this container owns. Wear and repair are the only ways to
+	// change durability, and they are refused for a record that has no definition
+	// and therefore no durability to change.
+	std::optional<ItemInstance> instance(ItemId id) const;
+	bool apply_wear(ItemId id, unsigned amount);
+	bool restore_durability(ItemId id, unsigned amount);
+
 private:
+	// The one canonical record for an id, whether carried or worn. Never handed out:
+	// wear and repair mutate through it, callers only ever get a copy.
+	ItemInstance *find_owned(ItemId id);
 	static constexpr Slot kTwoHandedPrimary = Slot::LeftHand;
 
-	bool coherent(const ItemRef &item) const;
+	bool coherent(const ItemRef &ref) const;
 	bool owned_anywhere(ItemId id) const;
 	std::optional<Slot> holder_of(ItemId id) const;
 	std::optional<Slot> hand_holder(Slot slot) const;  // follows a two-handed reservation
 
-	std::vector<ItemRef> stored_;
-	std::array<std::optional<ItemRef>, static_cast<std::size_t>(Slot::Count)> slots_{};
+	// One canonical record per owned item: either carried or worn, never both, and
+	// a two-handed reservation names the same record from both hands.
+	std::vector<ItemInstance> stored_;
+	std::array<std::optional<ItemInstance>, static_cast<std::size_t>(Slot::Count)> slots_{};
 };
 
 }  // namespace open

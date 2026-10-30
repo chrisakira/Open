@@ -1,6 +1,10 @@
 #include "open/equipment.hpp"
 
+#include <cstddef>
+#include <optional>
 #include <stdexcept>
+
+#include "open/item_instance.hpp"
 
 namespace open {
 namespace {
@@ -35,14 +39,15 @@ bool melee_tag(BasicSkill skill) {
 		   skill == BasicSkill::Polearms || skill == BasicSkill::Blocking;
 }
 
-bool held_by_hand(const ItemRef &item, HandUse use) {
-	return item.hand_use == use;
-}
-
 // A tag says what job the item is for, so a malformed tag would silently invent
 // a weapon, a shield or a specialisation. Refused as a whole record: an advanced
-// tag needs its own basic, the basic must be a melee one, and the hand use must
-// match the job (a shield is one-handed, a polearm is not).
+// tag needs its own basic, and the basic must be a melee one.
+//
+// Which hand use the job "should" have is not this check's business: family and
+// handedness are independent, so a one-handed polearm is a real item. What is
+// still refused is a tag on something no hand can hold, which would be a weapon
+// nobody can swing. The limb gates that need two hands live in equip() and read
+// the record's own hand use.
 bool tagged_ok(const ItemRef &item) {
 	if (!item.combat_option.has_value() && !item.combat_skill.has_value()) {
 		return true;  // untagged records stay valid
@@ -59,35 +64,49 @@ bool tagged_ok(const ItemRef &item) {
 			return false;
 		}
 	}
-	if (basic == BasicSkill::OneHandedWeapons || basic == BasicSkill::Blocking) {
-		return held_by_hand(item, HandUse::OneHanded);
+	return item.hand_use != HandUse::None;
+}
+
+// A record is a made item only when its definition, tier and durability band all
+// agree. A placement-only record has none of them and stays that way.
+bool carries_item_state(const ItemInstance &item) {
+	return item.definition != 0;
+}
+
+bool instance_ok(const ItemInstance &item) {
+	if (!carries_item_state(item)) {
+		return true;  // a bare placement record: the legacy path
 	}
-	return held_by_hand(item, HandUse::TwoHanded);
+	if (item.quality < 1 || item.quality > kQualityTierCount || item.max_durability == 0 ||
+		item.durability > item.max_durability) {
+		return false;
+	}
+	return item.material != 0;
 }
 
 }  // namespace
 
-bool Equipment::coherent(const ItemRef &item) const {
-	if (item.id == 0) {
+bool Equipment::coherent(const ItemRef &ref) const {
+	if (ref.id == 0) {
 		return false;
 	}
-	if (!valid(item.hand_use)) {
+	if (!valid(ref.hand_use)) {
 		return false;
 	}
-	if (!item.allowed_slots.any()) {
+	if (!ref.allowed_slots.any()) {
 		return false;
 	}
-	if (!tagged_ok(item)) {
+	if (!tagged_ok(ref)) {
 		return false;
 	}
 	const std::bitset<static_cast<std::size_t>(Slot::Count)> held = held_mask();
-	switch (item.hand_use) {
+	switch (ref.hand_use) {
 	case HandUse::None:
 		return true;  // armour, rings, bags: any slots the record names
 	case HandUse::OneHanded:
-		return (item.allowed_slots & ~held).none() && (item.allowed_slots & held).any();
+		return (ref.allowed_slots & ~held).none() && (ref.allowed_slots & held).any();
 	case HandUse::TwoHanded:
-		return (item.allowed_slots & ~held).none() && (item.allowed_slots & held) == held;
+		return (ref.allowed_slots & ~held).none() && (ref.allowed_slots & held) == held;
 	case HandUse::Count:
 		return false;
 	}
@@ -98,13 +117,13 @@ bool Equipment::owned_anywhere(ItemId id) const {
 	if (id == 0) {
 		return false;
 	}
-	for (const ItemRef &item : stored_) {
-		if (item.id == id) {
+	for (const ItemInstance &item : stored_) {
+		if (item.ref.id == id) {
 			return true;
 		}
 	}
-	for (const std::optional<ItemRef> &slot : slots_) {
-		if (slot.has_value() && slot->id == id) {
+	for (const std::optional<ItemInstance> &slot : slots_) {
+		if (slot.has_value() && slot->ref.id == id) {
 			return true;
 		}
 	}
@@ -116,7 +135,7 @@ std::optional<Slot> Equipment::holder_of(ItemId id) const {
 		return std::nullopt;
 	}
 	for (std::size_t i = 0; i < slots_.size(); ++i) {
-		if (slots_[i].has_value() && slots_[i]->id == id) {
+		if (slots_[i].has_value() && slots_[i]->ref.id == id) {
 			return static_cast<Slot>(static_cast<int>(i));
 		}
 	}
@@ -130,13 +149,31 @@ std::optional<Slot> Equipment::hand_holder(Slot slot) const {
 	if (slots_[slot_index(slot)].has_value()) {
 		return slot;
 	}
-	// A two-handed item lives in one slot and reserves the other.
+	// A two-handed item lives in one slot and reserves the other: one record, two
+	// views of it, which is why wear charges it once.
 	const Slot neighbour = other_hand(slot);
-	const std::optional<ItemRef> &entry = slots_[slot_index(neighbour)];
-	if (entry.has_value() && entry->hand_use == HandUse::TwoHanded) {
+	const std::optional<ItemInstance> &entry = slots_[slot_index(neighbour)];
+	if (entry.has_value() && entry->ref.hand_use == HandUse::TwoHanded) {
 		return neighbour;
 	}
 	return std::nullopt;
+}
+
+ItemInstance *Equipment::find_owned(ItemId id) {
+	if (id == 0) {
+		return nullptr;
+	}
+	for (ItemInstance &item : stored_) {
+		if (item.ref.id == id) {
+			return &item;
+		}
+	}
+	for (std::optional<ItemInstance> &slot : slots_) {
+		if (slot.has_value() && slot->ref.id == id) {
+			return &*slot;
+		}
+	}
+	return nullptr;
 }
 
 bool Equipment::add(const ItemRef &item, bool can_carry) {
@@ -147,6 +184,22 @@ bool Equipment::add(const ItemRef &item, bool can_carry) {
 		return false;
 	}
 	if (owned_anywhere(item.id)) {
+		return false;
+	}
+	ItemInstance record;
+	record.ref = item;
+	stored_.push_back(record);
+	return true;
+}
+
+bool Equipment::add_instance(const ItemInstance &item, bool can_carry) {
+	if (!can_carry) {
+		return false;
+	}
+	if (!coherent(item.ref) || !instance_ok(item)) {
+		return false;
+	}
+	if (owned_anywhere(item.ref.id)) {
 		return false;
 	}
 	stored_.push_back(item);
@@ -162,13 +215,13 @@ std::optional<ItemId> Equipment::equipped(Slot slot) const {
 		if (!holder.has_value()) {
 			return std::nullopt;
 		}
-		return slots_[slot_index(*holder)]->id;
+		return slots_[slot_index(*holder)]->ref.id;
 	}
-	const std::optional<ItemRef> &entry = slots_[slot_index(slot)];
+	const std::optional<ItemInstance> &entry = slots_[slot_index(slot)];
 	if (!entry.has_value()) {
 		return std::nullopt;
 	}
-	return entry->id;
+	return entry->ref.id;
 }
 
 bool Equipment::equip(ItemId id, Slot slot, bool one_hand, bool two_hands) {
@@ -177,7 +230,7 @@ bool Equipment::equip(ItemId id, Slot slot, bool one_hand, bool two_hands) {
 	}
 	std::size_t stored_at = stored_.size();
 	for (std::size_t i = 0; i < stored_.size(); ++i) {
-		if (stored_[i].id == id) {
+		if (stored_[i].ref.id == id) {
 			stored_at = i;
 			break;
 		}
@@ -186,17 +239,17 @@ bool Equipment::equip(ItemId id, Slot slot, bool one_hand, bool two_hands) {
 		return false;  // not carried, or already worn: never a second owner
 	}
 
-	const ItemRef item = stored_[stored_at];
-	if (!coherent(item) || !allows(item, slot)) {
+	const ItemInstance item = stored_[stored_at];
+	if (!coherent(item.ref) || !allows(item.ref, slot)) {
 		return false;
 	}
-	if (item.hand_use != HandUse::None && !is_held(slot)) {
+	if (item.ref.hand_use != HandUse::None && !is_held(slot)) {
 		return false;  // a held type cannot be worn as armour
 	}
 
 	Slot target = slot;
 	if (is_held(slot)) {
-		if (item.hand_use == HandUse::TwoHanded) {
+		if (item.ref.hand_use == HandUse::TwoHanded) {
 			if (!two_hands) {
 				return false;
 			}
@@ -220,6 +273,7 @@ bool Equipment::equip(ItemId id, Slot slot, bool one_hand, bool two_hands) {
 		return false;  // occupied: the caller unequips first
 	}
 
+	// The whole record moves, so quality and durability survive the trip.
 	slots_[slot_index(target)] = item;
 	stored_.erase(stored_.begin() + static_cast<std::ptrdiff_t>(stored_at));
 	return true;
@@ -237,7 +291,7 @@ bool Equipment::unequip(Slot slot) {
 		}
 		target = *holder;
 	}
-	std::optional<ItemRef> &entry = slots_[slot_index(target)];
+	std::optional<ItemInstance> &entry = slots_[slot_index(target)];
 	if (!entry.has_value()) {
 		return false;
 	}
@@ -249,28 +303,58 @@ bool Equipment::unequip(Slot slot) {
 std::vector<ItemId> Equipment::backpack_items() const {
 	std::vector<ItemId> ids;
 	ids.reserve(stored_.size());
-	for (const ItemRef &item : stored_) {
-		ids.push_back(item.id);
+	for (const ItemInstance &item : stored_) {
+		ids.push_back(item.ref.id);
 	}
 	return ids;
 }
 
 std::optional<ItemRef> Equipment::item(ItemId id) const {
+	const std::optional<ItemInstance> record = instance(id);
+	if (!record.has_value()) {
+		return std::nullopt;
+	}
+	return record->ref;
+}
+
+std::optional<ItemInstance> Equipment::instance(ItemId id) const {
 	if (id == 0) {
 		return std::nullopt;
 	}
-	// Worn first: an equipped record is the one a held-item query needs.
-	for (const std::optional<ItemRef> &entry : slots_) {
-		if (entry.has_value() && entry->id == id) {
-			return *entry;
+	// Worn first: an equipped record is the one a held-item query needs. A copy is
+	// returned on purpose, so a caller cannot write through it.
+	for (const std::optional<ItemInstance> &entry : slots_) {
+		if (entry.has_value() && entry->ref.id == id) {
+			return entry;
 		}
 	}
-	for (const ItemRef &entry : stored_) {
-		if (entry.id == id) {
+	for (const ItemInstance &entry : stored_) {
+		if (entry.ref.id == id) {
 			return entry;
 		}
 	}
 	return std::nullopt;
+}
+
+bool Equipment::apply_wear(ItemId id, unsigned amount) {
+	ItemInstance *record = find_owned(id);
+	if (record == nullptr || !carries_item_state(*record)) {
+		return false;
+	}
+	// Compare before subtracting: an oversized amount empties the item instead of
+	// wrapping it into a full one.
+	record->durability = record->durability > amount ? record->durability - amount : 0;
+	return true;
+}
+
+bool Equipment::restore_durability(ItemId id, unsigned amount) {
+	ItemInstance *record = find_owned(id);
+	if (record == nullptr || !carries_item_state(*record)) {
+		return false;
+	}
+	const unsigned missing = record->max_durability - record->durability;
+	record->durability += amount > missing ? missing : amount;
+	return true;
 }
 
 bool Equipment::held_usable(ItemId id, bool one_hand, bool two_hands) const {
@@ -278,8 +362,8 @@ bool Equipment::held_usable(ItemId id, bool one_hand, bool two_hands) const {
 	if (!holder.has_value() || !is_held(*holder)) {
 		return false;
 	}
-	const ItemRef &item = *slots_[slot_index(*holder)];
-	if (item.hand_use == HandUse::TwoHanded) {
+	const ItemInstance &item = *slots_[slot_index(*holder)];
+	if (item.ref.hand_use == HandUse::TwoHanded) {
 		return two_hands;
 	}
 	return one_hand;

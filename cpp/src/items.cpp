@@ -21,7 +21,7 @@ using SlotSet = std::bitset<static_cast<std::size_t>(Slot::Count)>;
 constexpr double kPercentMax = 100.0;
 constexpr double kSpeedMin = 0.1;
 constexpr double kSpeedMax = 2.0;
-constexpr std::size_t kQualityTiers = 7;
+// The tier count is the shared constant in items.hpp.
 
 bool in_range(double value, double low, double high) {
 	return std::isfinite(value) && value >= low && value <= high;
@@ -173,7 +173,7 @@ bool valid_item(const ItemDefinition &item) {
 }
 
 bool valid_material(const MaterialDefinition &material) {
-	if (material.id == 0 || material.max_durability_by_quality.size() != kQualityTiers) {
+	if (material.id == 0 || material.max_durability_by_quality.size() != kQualityTierCount) {
 		return false;
 	}
 	for (const unsigned maximum : material.max_durability_by_quality) {

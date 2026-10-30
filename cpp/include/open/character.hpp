@@ -4,11 +4,13 @@
 #include "open/character_rules.hpp"
 #include "open/combat_rules.hpp"
 #include "open/equipment.hpp"
+#include "open/item_instance.hpp"
 #include "open/move_order.hpp"
 #include "open/skills.hpp"
 #include "open/vitals.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <random>
 #include <string>
@@ -31,6 +33,15 @@ public:
 	// The only way to make a character: an invalid sheet cannot exist. IDs are
 	// unique by contract with the future world, not checked here.
 	static std::optional<Character> create(const CharacterConfig &config);
+
+	// The same sheet, able to name what its items are: the catalog is the shared,
+	// immutable description set, kept alive by every character that reads it. A
+	// null catalog is legal and means the sheet can hold placement-only records.
+	static std::optional<Character> create(const CharacterConfig &config,
+										   std::shared_ptr<const ItemCatalog> catalog);
+
+	// The definitions this sheet was made against, or nullptr.
+	std::shared_ptr<const ItemCatalog> catalog() const;
 
 	std::uint64_t id() const;
 	const std::string &name() const;
@@ -76,6 +87,12 @@ public:
 	bool regenerate(float seconds, bool in_combat);
 	bool damage(BodyPart part, float amount);
 	bool add_item(const ItemRef &item);
+	bool add_instance(const ItemInstance &item);
+	std::optional<ItemInstance> instance(ItemId id) const;
+	// Durability changes only through the sheet that owns the record, and only on
+	// a record that has any: a placement-only item refuses both.
+	bool apply_wear(ItemId id, unsigned amount);
+	bool restore_durability(ItemId id, unsigned amount);
 	bool equip(ItemId id, Slot slot);
 	bool unequip(Slot slot);
 
@@ -144,6 +161,7 @@ private:
 	Skills skills_;
 	Vitals vitals_ = Vitals(attributes_, skills_);
 	Equipment equipment_;
+	std::shared_ptr<const ItemCatalog> catalog_;
 	bool can_move_ = true;
 	MoveOrder order_;
 	std::optional<std::uint64_t> attack_target_;

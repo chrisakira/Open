@@ -21,6 +21,13 @@ using DefinitionId = std::uint64_t;
 using MaterialId = std::uint64_t;
 using TechniqueId = std::uint64_t;
 
+// The identity of one owned thing, which is not a definition id: two swords made
+// from one definition are two items, and either can wear out alone.
+using ItemId = std::uint64_t;
+
+// Craft quality runs from tier 1 to tier 7; a tier has no name, only a number.
+inline constexpr unsigned kQualityTierCount = 7;
+
 // The three offensive components, and the same shape for the three armour
 // resistances and the three penetrations. Units differ by field and are stated
 // there: damage points, percentage points, percentage points.
@@ -90,6 +97,23 @@ struct ShieldDefinition {
 struct ArmourDefinition {
 	DamageComponents resistance_percent;  // 0..100 per component
 	double weight = 0.0;
+};
+
+// Where a record may go and how it is held. Identity only: what an item is worth
+// in combat comes from its definition, and what it has left comes from its
+// instance. A record with no definition is a placement-only legacy item and
+// confers no stats.
+struct ItemRef {
+	ItemId id = 0;
+	std::bitset<static_cast<std::size_t>(Slot::Count)> allowed_slots;
+	HandUse hand_use = HandUse::None;
+	// Which combat job this item is for, if it is a weapon or a shield at all.
+	// OneHandedWeapons/TwoHandedWeapons/Polearms name a weapon, Blocking names a
+	// shield, and the optional advanced skill is that item's own specialisation.
+	// These are tags only: no damage, armour, reach or weight lives here, and an
+	// untagged held record is still a legal item.
+	std::optional<BasicSkill> combat_skill;
+	std::optional<AdvancedSkill> combat_option;
 };
 
 struct ItemDefinition {
