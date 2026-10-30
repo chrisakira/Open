@@ -7,6 +7,7 @@
 #include "open/item_instance.hpp"
 #include "open/move_order.hpp"
 #include "open/skills.hpp"
+#include "open/stagger.hpp"
 #include "open/vitals.hpp"
 
 #include <cstdint>
@@ -114,7 +115,7 @@ public:
 
 	// The raw switch stays separate: legs at zero or death override it, and
 	// turning it on cannot bring a character back.
-	bool can_move() const;
+bool can_move() const;
 	void set_can_move(bool can_move);
 	float walk_speed() const;
 
@@ -142,7 +143,16 @@ public:
 	// never resets one. Advancing by a finite nonnegative duration is accepted;
 	// anything else (negative, NaN, infinite) is refused without mutating, so a
 	// bad frame cannot make a character ready or cooldown-struck.
+	// One step for this sheet's clocks. With no stun running that is the whole
+	// elapsed time; once stunned, the clocks freeze and only the unstunned remainder of
+	// a step that crosses the end counts, so a long tick cannot buy back a swing.
 	bool advance_combat_clocks(float seconds);
+
+	// How close the next staggering blow is, and whether one has already landed. Reads
+	// only: nothing outside the simulation can stun a character or take a stun away.
+	double stagger_buildup() const;
+	double stun_remaining() const;
+	bool is_stunned() const;
 	float attack_cooldown_remaining() const;
 	float defend_cooldown_remaining() const;
 
@@ -177,6 +187,15 @@ private:
 	// Seconds still to wait, per sheet and per role: 0 is ready. A defender's
 	// clock belongs to the defender, so two characters fighting each other are
 	// never gated by one shared timer.
+	// The threshold the next blow is measured against: 10 x effective Toughness, asked
+	// for when a hit is resolved so an attribute change takes effect on the next
+	// exchange and never retroactively. Private because a threshold is not a lever:
+	// nothing outside the sheet can stun anything with it.
+	double stagger_threshold() const;
+
+	// Blunt is remembered here, not in Vitals: a stun is a pause with a schedule, and
+	// it neither heals nor injures. The hits that fill it arrive with the typed switch.
+	StaggerState stagger_;
 	float attack_cooldown_ = 0.0f;
 	float defend_cooldown_ = 0.0f;
 };

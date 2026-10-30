@@ -27,14 +27,43 @@ std::optional<Title> kill_title(BasicSkill basic) {
 
 }  // namespace
 
+double Character::stagger_buildup() const {
+	return stagger_.buildup;
+}
+
+double Character::stun_remaining() const {
+	return stagger_.stun_remaining;
+}
+
+bool Character::is_stunned() const {
+	return stagger_.stun_remaining > 0.0;
+}
+
+// Stagger threshold = 10 x effective Toughness. Asked for whenever a hit is resolved
+// rather than stored, so a level-up or a blessing takes effect on the next exchange
+// without ever re-checking a meter that has already been paid.
+double Character::stagger_threshold() const {
+	return kStaggerThresholdCoefficient * static_cast<double>(attribute(Attribute::Toughness));
+}
+
 bool Character::advance_combat_clocks(float seconds) {
 	if (!std::isfinite(seconds) || seconds < 0.0f) {
 		return false;
 	}
-	// A clock counts down toward ready and never past it, so a long frame cannot
-	// bank time for the next one.
-	attack_cooldown_ = std::max(0.0f, attack_cooldown_ - seconds);
-	defend_cooldown_ = std::max(0.0f, defend_cooldown_ - seconds);
+
+	// One policy for both clocks and the meter: time spent stunned is spent frozen, and
+	// only the unstunned remainder runs a clock or decays the meter. A clock counts
+	// down toward ready and never past it, so a long frame cannot bank time for the
+	// next one.
+	ClockState clocks;
+	clocks.attack = static_cast<double>(attack_cooldown_);
+	clocks.defense = static_cast<double>(defend_cooldown_);
+	clocks.technique = 0.0;  // the technique clock joins this in Task 13
+	if (!advance_frozen_time(clocks, stagger_, static_cast<double>(seconds), stagger_threshold())) {
+		return false;
+	}
+	attack_cooldown_ = static_cast<float>(clocks.attack);
+	defend_cooldown_ = static_cast<float>(clocks.defense);
 	return true;
 }
 
