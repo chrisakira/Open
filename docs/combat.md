@@ -5,7 +5,8 @@ You pick a target. The ordered character walks there and fights. Swings are auto
 Player and NPC use the same rules. The player is the character you currently issue orders to.
 
 - **Current** — true in `cpp/` today.
-- **Locked** — decided for this file. Built in `cpp/` unless a sentence is marked Open.
+- **Locked** — decided for this file. It is built only where the same text is also marked Current.
+- **Locked target** — decided, not built. Sections 1–9 describe the scalar melee slice that runs today; where the typed weapon model replaces one of those rules, the section says **Current until the typed switch** and names the owning document. `weapons.md` owns the typed target.
 - **Proposed** — written so we can lock it. Not a build order.
 - **Open** — do not implement until the human locks it.
 
@@ -61,7 +62,7 @@ Melee range comes from the weapon. Until the item catalog exists, use one generi
 
 Placeholder range: `1.5` horizontal. Height ignored, same as walking. Out of range → walk. In range → stop walking and swing.
 
-When a weapon has a reach value, that value replaces the placeholder for that swing. Ranged: section 10.
+When a weapon has a reach value, that value replaces the placeholder for that swing — **locked target, not built**: `weapons.md` owns per-weapon maximum reach and the minimum-reach penalty, both measured horizontally with Y ignored, and pursuit keeps the existing arrive radius. Until that switch lands, the 1.5 placeholder is the built rule in both `Character::attack_velocity_at` and the session's order reconciliation, and those two must change together. Ranged: section 10.
 
 ## 3. The swing — locked
 
@@ -78,6 +79,8 @@ Two characters can swing at each other. There is no shared turn. Each has their 
 A swing that does not land is still a swing: stamina is spent if it was paid, cooldown starts.
 
 Half speed / half damage is per swing while stamina is too low to pay 8. It is not a lasting debuff after stamina comes back.
+
+**Current until the typed switch.** The flat cost of 8 and the all-or-nothing defense test in step 3 are what run today. The locked target replaces the cost with the technique cost when one is specified, otherwise the weapon cost, scaled by `(2 − overall effectiveness)`, where an attempt that cannot pay the full cost spends nothing and is still performed exhausted; it replaces the test with percentage mitigation. `weapons.md` owns both. Steps 1, 4 and 5 — eligibility, applying the hit once, and the attack clock living on the character — do not change.
 
 ## 4. Attack speed — locked
 
@@ -107,11 +110,11 @@ then clamp to `[1/3, 5]`, then apply empty-stamina double and clamp again.
 | 100 | 1.60/s | 0.625 s |
 | 200 | 3.00/s | 0.333 s |
 
-3/s only at advanced 200. Weapon-specific speed inside this band: Open until the item catalog exists, and must still clamp to these caps.
+3/s only at advanced 200. Weapon-specific speed is **locked target, not built**: `weapons.md` multiplies this rate by the weapon's speed multiplier (0.1–2 inclusive, 1 for every starter) and by overall weapon effectiveness, then clamps to the same `[1/3, 5]` band; zero effectiveness takes the slowest permitted cooldown rather than dividing by zero, and exhaustion still doubles and reclamps. The table above is unchanged and is what runs today. Speeds for weapons beyond the starter slice remain Open.
 
 ## 5. Damage — locked current slice; typed damage target
 
-The current scalar formula below remains the implemented melee-slice rule. The agreed future weapon system uses cut, pierce and blunt components, individually resisted by armour and summed into one body-part hit; see `weapons.md`. Weapon and shield blocks will mitigate a percentage of damage instead of using the all-or-nothing block test below; a block that prevents any damage grants 1 Blocking XP. A ready dodge automatically mitigates all damage, or 50% when exhausted, and starts the independent defense cooldown using trained Dodging or its chosen matching specialization; exhaustion doubles that cooldown within global limits, and during cooldown the character cannot dodge. The new model is not implemented yet. For its defense choice, a character with a shield equipped uses it; without a shield, a character using a weapon chooses weapon block or dodge by comparing their relevant effective skill values; without a weapon they dodge. Ties between weapon block and dodge favor dodge. A zero-durability shield remains usable at reduced mitigation; if a disabled arm makes it unusable, use the weapon-versus-dodge logic with any usable weapon instead.
+The current scalar formula below remains the implemented melee-slice rule. The agreed future weapon system uses cut, pierce and blunt components, individually resisted by armour and summed into one body-part hit; see `weapons.md`. Weapon and shield blocks will mitigate a percentage of damage instead of using the all-or-nothing block test below; a block that prevents any damage grants 1 Blocking XP. A ready dodge automatically mitigates all damage, or 50% when exhausted, and starts the independent defense cooldown using trained Dodging or its chosen matching specialization; exhaustion doubles that cooldown within global limits, and during cooldown the character cannot dodge. The new model is not implemented yet; its detailed formulas and defense interaction are now agreed, and `weapons.md` (Damage types and armour, Weapon blocking, Character handling) owns them. For its defense choice, a character with a shield equipped uses it; without a shield, a character using a weapon chooses weapon block or dodge by comparing their relevant effective skill values; without a weapon they dodge. Ties between weapon block and dodge favor dodge. A zero-durability shield remains usable at reduced mitigation; if a disabled arm makes it unusable, use the weapon-versus-dodge logic with any usable weapon instead.
 
 Damage must not be `k × effective Strength`. Level multiplies attributes, not HP. Toughness in this formula is the **base**, not effective, for the same reason — and it is the **defender's** base Toughness. The attacker is never asked to soak its own blow.
 
@@ -143,13 +146,15 @@ The defender has a block/dodge cooldown, same idea as attack speed. They do not 
 
 If the clock is ready when a swing would land, they defend and the clock starts. Nullify vs full hit is the test in section 5, not a separate miss roll. If the clock is not ready, they take a full hit.
 
+**Current until the typed switch.** That all-or-nothing test is what runs today. The locked target replaces it with percentage mitigation and puts one shared defense clock on the character, so switching between block and dodge preserves the remaining cooldown instead of resetting it. Selection uses the shield when one is usable; otherwise it compares the relevant effective Blocking against Dodging with a usable weapon, ties to dodge, and dodges with no usable weapon. A zero-durability shield is still chosen and mitigates at a third of its value; a shield a disabled arm makes unusable falls back to the weapon-versus-dodge logic. Cooldowns keep reading the **trained** rank, never the effective values the comparison reads. `weapons.md` owns mitigation, defense costs and exhaustion scaling.
+
 Which action and which trained skill:
 - A usable shield: block. Blocking, or Small / Big / Wall Shields if that spec matches the shield.
 - No shield, two-handed weapon usable: block with the weapon. Blocking (frozen basic if they specced a shield they are not using).
 - No shield, one-handed weapon usable: block with the weapon. Blocking.
 - Unarmed, or no usable held weapon: dodge. Dodging, or Footwork / Acrobat Evasion if that spec is chosen.
 
-Same rate formula as attack speed, using that defend trained rank, clamped to `[1/3, 5]` s. Shield/weapon-specific block speed inside the band: Open until the catalog.
+Same rate formula as attack speed, using that defend trained rank, clamped to `[1/3, 5]` s. Shield- and weapon-specific block speed inside the band: beyond the starter slice, which uses the plain trained-rank clock for every starter defense.
 
 Limb gates from `characters.md` stand. Both arms at 0: cannot block with a shield or weapon; dodge only if the rules for unarmed dodge still allow it (Open if both arms and both legs are 0).
 
@@ -161,6 +166,8 @@ Each land that still does damage names one part: Head, Torso, Left arm, Right ar
 
 Pick uniformly at random among the six (1/6 each). Aimed attacks: Open.
 
+**Locked target, not built:** the part is drawn after defense and before armour, and only once the attack still has positive offense after defense — a fully prevented or zero-offense attempt selects no part and consumes no draw, while a part whose armour absorbs all the damage stays the attack's selected part. One armour piece is read per hit (Head → Head, Torso → Chest, either arm → Hands, either leg → Legs; Feet mitigates nothing until a foot location exists). `weapons.md` owns the routing.
+
 ## 8. Combat state — locked
 
 `in_combat` is true while this character has an attack order on a living target, or while a living character has an attack order on them. That flag is what `regenerate(..., in_combat)` already expects. Scene must stop passing `false` once combat exists.
@@ -168,6 +175,8 @@ Pick uniformly at random among the six (1/6 each). Aimed attacks: Open.
 Cancel: new move order, or the target dies. If the target dies, stop swinging; do not auto-pick a new target (squad assist is section 10).
 
 A dead character does not swing, spend, or regen (already locked on the sheet).
+
+**Locked target, not built:** the stagger-triggered stun is transient and does not cancel the character's order, which resumes when the stun expires. While stunned, the character cannot move, attack or defend, armour mitigation is 0, and the attack, defense and technique cooldowns plus the stagger meter freeze instead of counting down. `weapons.md` Stagger owns it.
 
 ## 9. XP from fighting — locked
 
@@ -179,9 +188,11 @@ A successful defend is a nullify (clock ready and the section 5 test won). That 
 
 Title progress stays as on the sheet: Duelist / Breaker on kills with that weapon class, Wall on successful blocks. Dragons do not exist yet.
 
+**Locked target, not built** (`weapons.md` owns it): attack XP follows positive final damage against a living target, lethal hits included, and a hit on an already-dead target earns nothing. Defense XP follows what the defense actually prevented before armour, so a partial block or partial dodge earns its 1 XP even when armour would have absorbed the remainder, and a defense that prevents nothing earns none. Damage that got through rewards the attacker on its own terms. Amounts stay 1, and combat remains skill XP only.
+
 ## 10. Later — open
 
-Not this file’s first build: bows and crossbows, spell swings, multiple attackers, squads, bleed, KO vs death, auto-retaliate, item catalog, armour soak.
+Beyond the starter slice: bows and crossbows, spell swings, multiple attackers, squads, bleed, KO vs death and auto-retaliate (still Open — no attack back without an order). The starter item catalog, weapon reach, typed damage and armour mitigation mechanics are locked in `weapons.md`, not deferred here; armour mitigation is exercised there with test fixtures, and playable armour content stays unbuilt.
 
 ## Ownership
 

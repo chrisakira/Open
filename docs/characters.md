@@ -5,7 +5,8 @@ A character is an ordered actor: you give orders, they carry them out.
 Player and NPC are the same type. The player is the character you currently issue orders to.
 
 - **Current** — true in `cpp/` today.
-- **Locked** — decided for this file. Built in `cpp/` unless a sentence is marked Open.
+- **Locked** — decided for this file. Built in `cpp/` unless a sentence is marked Open; the sheet below is built, and a locked rule that lives in another document is linked, not restated.
+- **Locked elsewhere** — already decided in `combat.md` or `weapons.md` and only pointed at from here.
 - **Open** — do not implement until the human locks it.
 
 We define the sheet in this order, and we do not skip ahead:
@@ -40,9 +41,9 @@ NPC are one type; Godot sends intent and draws the result.
 | equipment | twenty slots plus backpack references. A two-handed item is stored once and the other held slot reports the same id. |
 | `can_move` | still a separate switch; legs at `0` or death stop walking even when it is `true`. |
 | walk speed | `4.5 × leg multiplier`, computed in C++ (`Character::walk_speed`). No GDScript speed constant. |
-| regen | one clock: each character forwards `regenerate(delta, false)` to its sheet once per physics tick. |
+| regen | one clock: `CombatSession::step` regenerates each living sheet once per physics tick, with `in_combat` derived in C++. A sheet ticks its own `regenerate(delta, false)` only in a fixture with no coordinator. |
 
-The scene walks, takes damage, and regens. `spend`, `record_use`, `advance`, `record_title_progress`, `add_item` / `equip` / `unequip`, `effective_skill`, `target_multiplier`, and `held_usable` exist in C++ and tests only — `OpenCharacter` does not expose them yet.
+The scene walks, takes damage, and regens. `effective_skill`, `target_multiplier` and `held_usable` are C++ reads that combat uses. `OpenCharacter` exposes sheet reads (including `get_skill_snapshot`), `apply_damage`, `regenerate` and the order methods, and `OpenCombat` is the coordinator bridge. `spend`, `record_use`, `advance`, `record_title_progress` and `add_item` / `equip` / `unequip` stay C++ and tests only: nothing here trains a skill, heals, or creates an item from GDScript.
 
 Death gates actions, not every sheet edit: `record_use`, `advance`, `add_item`, `equip`, `spend`, `regenerate`, and `set_destination` refuse when dead; `record_title_progress`, `set_level`, `set_base`, `set_name`, and `unequip` still work. Reads still work.
 
@@ -56,9 +57,7 @@ configuration per object. Reads answer `0` / `false` / `-1` and bad ids report a
 error instead of throwing across Godot. `velocity_at(position)` takes no speed —
 the sheet owns it.
 
-Not built: earning levels or attribute bases, healing, combat resolution, crit and
-drop rolls, item stats/weights/bonuses, backpack capacity, the encumbrance formula,
-recruiting, squads, hunger/bleed, prosthetics, save/load. `OpenMoveOrder` stays
+Not built: earning levels or attribute bases, healing, crit and drop rolls, the item catalog and item stats as owned instances, backpack capacity, the encumbrance formula, recruiting, squads, hunger/bleed, prosthetics and save/load. Combat resolution exists as the scalar melee slice `combat.md` describes; the typed weapon rules, durability, techniques and workbench actions there are locked target content in `weapons.md`, not current behavior. `OpenMoveOrder` stays
 registered as a utility, but it is no longer the player's sheet.
 
 ## 1. Attributes — locked
@@ -531,7 +530,31 @@ Two-handed use needs two arms that are not at 0 HP. One arm at 0: one-handed onl
 
 Equipped armour on a limb at 0 HP stays on. It can be unequipped. It does not drop. Held items stay too; a disabled arm only blocks new pickup and held-item **use**.
 
-Item catalog, weights, slot bonuses, and encumbrance (carried weight vs Strength slowing walk): Open. `Character::walk_speed()` has a hook and no formula.
+The starter item catalog in `weapons.md` is locked and gives each item a weight with no automatic handling penalty; slot bonuses, the encumbrance formula (carried weight vs Strength slowing walk) and any catalog beyond the starter slice: Open. `Character::walk_speed()` has a hook and no formula.
+
+## Related target rules — locked elsewhere
+
+Concise pointers only: the owning document keeps the rule, and this file does not restate it. None of
+these change the rank curves, pools, blessings, frozen-parent resolution or limb debuffs above.
+
+- **Item instances.** Equipment records become owned instances carrying quality, durability and
+  permanent enchantments, with an identity distinct from the definition they instantiate.
+  Placement-only records stay placement-only and confer no combat stats. `weapons.md` owns the rules;
+  the twenty slots, two-handed reservation and the no-auto-swap rule in §7 are unchanged.
+- **Durability and wear.** A performed weapon attempt, and a block that prevents damage, each wear
+  their item by a separately tunable amount, using the item's durability as of the start of that
+  action, and items are never destroyed by wear. `weapons.md` owns it.
+- **Per-action stamina and defense exhaustion.** Attack and defense costs are per action rather than
+  one flat swing cost; an attempt that cannot pay is still performed, exhausted; unmet requirements
+  raise the cost. `weapons.md` Character handling owns the arithmetic, `combat.md` the clock.
+- **Transient stun.** A stagger-triggered stun is a temporary gate on moving, attacking and
+  defending. It does not unequip anything, does not replace a zero-HP limb debuff, and does not
+  cancel the character's order. `weapons.md` Stagger owns it.
+- **Title-granted techniques.** A title can make a technique available where the weapon also supports
+  it. Titles still modify skills exactly as §3 says, and no starter technique is granted by a title.
+  `weapons.md` owns selection.
+- **Hammerhand counts crafting only.** Each successfully crafted weapon is one item toward it;
+  repairs, enchantments and failed or cancelled work do not count. §3's row stays the authority.
 
 ## Also on the sheet (not this item)
 
