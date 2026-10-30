@@ -4,7 +4,9 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "open/character_rules.hpp"
@@ -17,6 +19,14 @@ namespace {
 // craftsmanship, and the last tier is a cliff on purpose.
 constexpr std::array<double, kQualityTierCount> kQualityMultipliers = {1.0,  2.0,  4.0,   8.0,
 																	   16.0, 32.0, 100.0};
+
+// A percentage point bound shared with the definition validator: resistances,
+// penetrations and mitigation all live in 0..100.
+constexpr double kPercentMax = 100.0;
+
+// docs/weapons.md, Toughness reduction: damage after armour divided by
+// 1 + 0.05 x base Toughness.
+constexpr double kToughnessCoefficient = 0.05;
 
 // docs/combat.md section 4: nothing in the game attacks faster than 3/s or slower
 // than once per 5 s, whatever the weapon or the shortfall. weapon_rules.cpp owns
@@ -394,6 +404,174 @@ std::optional<WeaponDefendProfile> weapon_defend_profile(const Character &charac
 	dodge.trained = character.resolve_skill(dodge.job.basic, dodge.job.option).rank;
 	dodge.mitigation = 100.0;  // a ready dodge turns all of it aside; exhaustion halves that
 	return dodge;
+}
+
+namespace {
+
+// Durability at zero is a third of the damage, and the locked number is 0.33: not
+// one third computed, because the difference is what a test would have to chase.
+inline constexpr double kZeroDurabilityFactor = 0.33;
+
+bool within(double value, double low, double high) {
+	return finite(value) && value >= low && value <= high;
+}
+
+bool triple_within(const DamageComponents &value, double low, double high) {
+	return within(value.cut, low, high) && within(value.pierce, low, high) &&
+		   within(value.blunt, low, high);
+}
+
+double total_of(const DamageComponents &value) {
+	return value.cut + value.pierce + value.blunt;
+}
+
+}  // namespace
+
+std::optional<DamageResolution> resolve_typed_damage(DamageComponents offensive,
+													 double mitigation_percent,
+													 DamageComponents armour_percent,
+													 DamageComponents penetration_points,
+													 double base_toughness) {
+	if (!triple_within(offensive, 0.0, std::numeric_limits<double>::max()) ||
+		!within(mitigation_percent, 0.0, kPercentMax) ||
+		!triple_within(armour_percent, 0.0, kPercentMax) ||
+		!triple_within(penetration_points, 0.0, kPercentMax) ||
+		!within(base_toughness, 0.0, std::numeric_limits<double>::max())) {
+		return std::nullopt;
+	}
+
+	const double mitigation = mitigation_percent / 100.0;
+	DamageResolution out;
+	out.offensive = offensive;
+
+	// Defense first. Prevention is the part the defense took, and the post-defense
+	// component is exactly what is left of it, so the two always add back up.
+	auto defend = [&](double incoming) {
+		const double taken = incoming * mitigation;
+		return std::pair<double, double>{incoming - taken, taken};
+	};
+	const std::pair<double, double> cut = defend(offensive.cut);
+	const std::pair<double, double> pierce = defend(offensive.pierce);
+	const std::pair<double, double> blunt = defend(offensive.blunt);
+	out.after_defense = {cut.first, pierce.first, blunt.first};
+	out.prevented = cut.second + pierce.second + blunt.second;
+
+	// Armour, one component at a time, with penetration subtracted from the matching
+	// resistance and floored at zero: more penetration than resistance is no
+	// resistance, not armour that heals.
+	auto soak = [&](double incoming, double resistance, double penetration) {
+		const double effective = std::max(0.0, resistance - penetration);
+		return incoming * (1.0 - effective / 100.0);
+	};
+	out.after_armour = {soak(out.after_defense.cut, armour_percent.cut, penetration_points.cut),
+						soak(out.after_defense.pierce, armour_percent.pierce, penetration_points.pierce),
+						soak(out.after_defense.blunt, armour_percent.blunt, penetration_points.blunt)};
+
+	// Base Toughness is a universal divisor, and it is the only thing that reaches a
+	// hit that armour entirely prevented.
+	const double divisor = 1.0 + kToughnessCoefficient * base_toughness;
+	if (!finite(divisor) || divisor <= 0.0) {
+		return std::nullopt;
+	}
+	out.final = {out.after_armour.cut / divisor, out.after_armour.pierce / divisor,
+				 out.after_armour.blunt / divisor};
+	out.total = total_of(out.final);
+	if (!finite(out.prevented) || !finite(out.total) || !triple_within(out.final, 0.0,
+																	  std::numeric_limits<double>::max())) {
+		return std::nullopt;
+	}
+	return out;
+}
+
+DamageComponents armour_for_part(const Character &character, BodyPart part) {
+	const DamageComponents none = {0.0, 0.0, 0.0};
+	if (!valid(part) || part == BodyPart::Count) {
+		return none;
+	}
+
+	Slot worn = Slot::Count;
+	switch (part) {
+	case BodyPart::Head:
+		worn = Slot::Head;
+		break;
+	case BodyPart::Torso:
+		worn = Slot::Chest;
+		break;
+	case BodyPart::LeftArm:
+	case BodyPart::RightArm:
+		worn = Slot::Hands;
+		break;
+	case BodyPart::LeftLeg:
+	case BodyPart::RightLeg:
+		worn = Slot::Legs;
+		break;
+	case BodyPart::Count:
+		return none;
+	}
+	if (worn == Slot::Count) {
+		return none;  // Belt, rings and feet have no hit location to answer for
+	}
+
+	const std::optional<ItemId> id = character.equipped(worn);
+	if (!id.has_value() || *id == 0) {
+		return none;
+	}
+	const std::shared_ptr<const ItemCatalog> catalog = character.catalog();
+	if (catalog == nullptr) {
+		return none;
+	}
+	const std::optional<ItemInstance> instance = character.instance(*id);
+	if (!instance.has_value() || instance->definition == 0) {
+		return none;
+	}
+	const ItemDefinition *definition = catalog->item(instance->definition);
+	if (definition == nullptr || !definition->armour.has_value()) {
+		return none;  // a record that is not armour does not soak because it was worn
+	}
+	return definition->armour->resistance_percent;
+}
+
+std::optional<DamageComponents> scaled_offense(const WeaponAttackProfile &profile,
+											   DamageComponents technique_factors, bool exhausted,
+											   double min_factor) {
+	const std::optional<double> quality = quality_damage_multiplier(profile.quality);
+	if (!quality.has_value()) {
+		return std::nullopt;
+	}
+	if (!triple_within(profile.stats.damage, 0.0, std::numeric_limits<double>::max()) ||
+		!triple_within(technique_factors, 0.0, std::numeric_limits<double>::max()) ||
+		!within(profile.effectiveness, 0.0, 1.0) || !within(min_factor, 0.0, 1.0)) {
+		return std::nullopt;
+	}
+	if (min_factor == 0.0) {
+		return std::nullopt;  // a factor is a fraction of the hit, never all of it removed
+	}
+
+	const double skill = static_cast<double>(profile.trained) / kMaxTrained;
+	const double exhaustion = exhausted ? 0.5 : 1.0;
+	// A weapon with nothing left swings badly. A swing with no weapon has no
+	// durability to run out, so the unarmed fallback is never charged for it.
+	const double durability =
+		(profile.item.has_value() && profile.durability == 0) ? kZeroDurabilityFactor : 1.0;
+
+	auto scale = [&](double base, double factor) -> std::optional<double> {
+		// Quality applies to the base components first; an enchantment's fixed blunt
+		// joins there (Task 8), and every penalty below applies to the combination.
+		double value = base * *quality;
+		value *= skill * profile.effectiveness * factor * exhaustion * min_factor * durability;
+		if (!finite(value)) {
+			return std::nullopt;
+		}
+		return value;
+	};
+
+	const std::optional<double> cut = scale(profile.stats.damage.cut, technique_factors.cut);
+	const std::optional<double> pierce = scale(profile.stats.damage.pierce, technique_factors.pierce);
+	const std::optional<double> blunt = scale(profile.stats.damage.blunt, technique_factors.blunt);
+	if (!cut.has_value() || !pierce.has_value() || !blunt.has_value()) {
+		return std::nullopt;
+	}
+	return DamageComponents{*cut, *pierce, *blunt};
 }
 
 }  // namespace open

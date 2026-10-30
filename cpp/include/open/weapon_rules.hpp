@@ -121,4 +121,57 @@ double minimum_range_factor(double separation, double min_reach);
 // leg stays half as fast. Bad geometry answers zero rather than a wild velocity.
 Vec3 pursuit_velocity(const Vec3 &self, const Vec3 &target, double max_reach, float speed);
 
+// One typed hit, reported at every step it went through. The steps are kept apart
+// because they are each read by something different: the defense reports what it
+// prevented (which is what pays a Blocking or Dodging XP and Wall progress, and is
+// measured before armour even when armour would have absorbed everything), the part
+// routing needs the post-defense components, and the sheet takes the final total.
+struct DamageResolution {
+	DamageComponents offensive;
+	DamageComponents after_defense;
+	DamageComponents after_armour;
+	DamageComponents final;   // after Toughness: what each component became
+	double total = 0.0;        // sum of final, the one amount handed to Character::damage
+	double prevented = 0.0;    // what the defense took off, before armour
+};
+
+// The typed pipeline, in the order the spec fixes: defense first, then armour with
+// penetration subtracted from the matching resistance and floored at zero, then the
+// defender's base Toughness as a universal divisor. Pure: no part is drawn, no HP is
+// moved, no XP is granted and no random number is consumed, so the caller can run it
+// against a copy of its state and only commit the results it accepts.
+//
+// `mitigation_percent` is the effective percentage for this exchange, already
+// discounted for a worn-out blocking item or an unpaid defense: 100 is a ready dodge
+// and 50 an exhausted one. Penetration touches armour resistance only - never the
+// defense, never Toughness. `base_toughness` is the defender's BASE value: this is
+// not where a level or a blessing belongs.
+std::optional<DamageResolution> resolve_typed_damage(DamageComponents offensive,
+													 double mitigation_percent,
+													 DamageComponents armour_percent,
+													 DamageComponents penetration_points,
+													 double base_toughness);
+
+// The one armour piece a hit reads, per the locked routing: Head to Head armour,
+// Torso to Chest, either arm to Hands, either leg to Legs. Slot::Feet is never
+// consulted - there is no foot hit location yet - and pieces never combine, so the
+// answer is at most one piece's resistances. Nothing worn, nothing described by the
+// sheet's catalog, or a part that is not a part all answer zero.
+DamageComponents armour_for_part(const Character &character, BodyPart part);
+
+// What a swing is actually worth before defense: the weapon's components times its
+// quality, then multiplied by the trained-rank fraction, the wielder's effectiveness,
+// the technique's own component factors, exhaustion, the minimum-range factor and the
+// zero-durability penalty. Every one of those is independent, so an exhausted swing
+// inside a spear's minimum with a worn-out blade is halved twice and then multiplied
+// by 0.33, not reduced to whichever penalty was worst.
+//
+// Quality multiplies the base components only; the fixed blunt added by an
+// enchantment joins after it (Task 8), and the technique factors apply to the
+// combined component. An item at durability 1 is charged nothing: durability is read
+// as it was when the attempt began, so this swing's own wear cannot discount it.
+std::optional<DamageComponents> scaled_offense(const WeaponAttackProfile &profile,
+											   DamageComponents technique_factors, bool exhausted,
+											   double min_factor);
+
 }  // namespace open

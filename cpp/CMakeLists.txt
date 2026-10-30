@@ -85,6 +85,11 @@ target_link_libraries(weapon_rules_tests PRIVATE open_sim)
 target_compile_options(weapon_rules_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME weapon_rules COMMAND weapon_rules_tests)
 
+add_executable(typed_damage_tests tests/typed_damage_test.cpp)
+target_link_libraries(typed_damage_tests PRIVATE open_sim)
+target_compile_options(typed_damage_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME typed_damage COMMAND typed_damage_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)
