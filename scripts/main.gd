@@ -7,6 +7,16 @@ const FLOOR_SIZE := 40.0
 const MALE_MODEL := preload("res://scenes/characters/male.tscn")
 const FEMALE_MODEL := preload("res://scenes/characters/female.tscn")
 
+# Collision layers: 1 is world geometry, 2 is a character body, 4 is a weapon pick area.
+const FLOOR_MASK := 1
+const CHARACTER_MASK := 2
+const WEAPON_MASK := 4
+
+# Under Godot's default 0, so this tick publishes every actor's position and runs
+# the one combat/regeneration clock before any actor's physics callback asks for
+# a velocity.
+const WORLD_PRIORITY := -10
+
 # The spike picks the player's blessing by hand. Character creation will supply it
 # later; no selection UI exists yet.
 @export var player_blessing: int = 0
@@ -15,22 +25,60 @@ var _player: Player
 var _camera: Camera3D
 var _marker: MeshInstance3D
 var _marker_tween: Tween
+var _popup: CharacterPopup
+var _attack_popup: AttackPopup
+var _weapon_popup: WeaponPopup
+var _combat: OpenCombat
+
+# Presentation only: the bodies whose positions the coordinator is told about.
+# Faction, health, ranks and orders stay in C++; nothing is mirrored here.
+var _actors: Array[CharacterBody3D] = []
 
 
 func _ready() -> void:
+	process_physics_priority = WORLD_PRIORITY
 	_build_world()
 	_build_player()
 	_build_standing_dummies()
+	_build_combat()
 	_build_camera()
 	_build_marker()
 	_build_hud()
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_I or event.physical_keycode == KEY_I:
+			_toggle_popup()
+			return
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
-			_try_move_to_click(mouse.position)
+			if _popup_covers(mouse.position):
+				return
+			# A world click dismisses the action popup, then the same click goes on
+			# to picking, so clicking beside it can still order a move.
+			if _attack_popup != null:
+				_attack_popup.close()
+			if _weapon_popup != null:
+				_weapon_popup.close()
+			_try_character_or_floor_click(mouse.position)
+
+
+# The popups' own STOP mouse filter consumes clicks inside them in the running
+# engine; this same check keeps picking correct even when the event reaches
+# unhandled input, and makes the isolation testable headless.
+func _popup_covers(point: Vector2) -> bool:
+	if _popup != null and _popup.visible and _popup.get_global_rect().has_point(point):
+		return true
+	return (_attack_popup != null and _attack_popup.covers(point)) \
+		or (_weapon_popup != null and _weapon_popup.covers(point))
+
+
+func _toggle_popup() -> void:
+	if _popup == null:
+		return
+	_popup.visible = not _popup.visible
 
 
 func _process(delta: float) -> void:
@@ -41,11 +89,64 @@ func _process(delta: float) -> void:
 	_camera.look_at(_player.global_position + Vector3(0.0, CAMERA_LOOK_HEIGHT, 0.0), Vector3.UP)
 
 
+# One physics frame, one clock. Positions go in first so C++ judges reach and
+# pursuit against where the actors actually stand, then the session advances its
+# own attack/defend clocks and regenerates each sheet once. Actors never tick
+# either of those themselves.
+func _physics_process(delta: float) -> void:
+	if _combat == null:
+		return
+	for actor in _actors:
+		if not is_instance_valid(actor):
+			continue
+		var sheet: OpenCharacter = actor.get("sheet")
+		if sheet != null:
+			_combat.set_position(sheet.get_character_id(), actor.global_position)
+	_combat.step(delta)
+
+
+func _on_attack_requested(target_id: int) -> void:
+	if _combat == null or _player == null or _player.sheet == null:
+		return
+	# Godot sends the pending id and nothing else. C++ revalidates it against the
+	# roster - dead, gone or self is refused, leaving the old order alone - and
+	# decides reach, clocks and damage.
+	if _combat.issue_attack(_player.sheet.get_character_id(), target_id):
+		_marker.visible = false
+
+
+func _try_character_or_floor_click(screen_pos: Vector2) -> void:
+	# One ray, both masks: a character in front of the floor wins the pick, and a
+	# body never falls through to the ground behind it.
+	var from := _camera.project_ray_origin(screen_pos)
+	var to := from + _camera.project_ray_normal(screen_pos) * 1000.0
+	var query := PhysicsRayQueryParameters3D.create(from, to)
+	query.collision_mask = FLOOR_MASK | CHARACTER_MASK | WEAPON_MASK
+	query.collide_with_areas = true
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var body: Node = hit.get("collider", null)
+	if body is Area3D and body.collision_layer & WEAPON_MASK:
+		_weapon_popup.open_for_model(body.get_parent().name, screen_pos)
+		return
+	if body is Player:
+		return
+	if body is StandingDummy:
+		var dummy := body as StandingDummy
+		# Living or dead is C++'s answer, and so is the faction gate there is not
+		# one: any living character offers its action.
+		if dummy.sheet != null and dummy.sheet.is_alive():
+			_attack_popup.open_for_target(dummy.sheet.get_character_id(), screen_pos)
+		return
+	_try_move_to_click(screen_pos)
+
+
 func _try_move_to_click(screen_pos: Vector2) -> void:
 	var from := _camera.project_ray_origin(screen_pos)
 	var to := from + _camera.project_ray_normal(screen_pos) * 1000.0
 	var query := PhysicsRayQueryParameters3D.create(from, to)
-	query.collision_mask = 1
+	query.collision_mask = FLOOR_MASK
 	query.collide_with_areas = false
 	var hit := get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
@@ -85,7 +186,7 @@ func _build_world() -> void:
 
 	var floor_body := StaticBody3D.new()
 	floor_body.name = "Floor"
-	floor_body.collision_layer = 1
+	floor_body.collision_layer = FLOOR_MASK
 	floor_body.collision_mask = 0
 	add_child(floor_body)
 
@@ -114,7 +215,7 @@ func _build_world() -> void:
 func _add_block(pos: Vector3, size: Vector3, color: Color) -> void:
 	var body := StaticBody3D.new()
 	body.position = pos
-	body.collision_layer = 1
+	body.collision_layer = FLOOR_MASK
 	body.collision_mask = 0
 	add_child(body)
 
@@ -143,6 +244,7 @@ func _build_player() -> void:
 	_player.blessing = player_blessing
 	_player.position = Vector3(0.0, 0.1, 0.0)
 	add_child(_player)
+	_actors.append(_player)
 
 
 func _build_standing_dummies() -> void:
@@ -152,6 +254,7 @@ func _build_standing_dummies() -> void:
 	friend.position = Vector3(-6.0, 0.1, -2.0)
 	friend.setup(0, 1, 2, 2002)
 	add_child(friend)
+	_actors.append(friend)
 
 	var enemy := StandingDummy.new()
 	enemy.name = "Enemy"
@@ -159,6 +262,26 @@ func _build_standing_dummies() -> void:
 	enemy.position = Vector3(6.0, 0.1, -2.0)
 	enemy.setup(1, 1, 3, 3003)
 	add_child(enemy)
+	_actors.append(enemy)
+
+
+# The one combat session for this scene. Every sheet is registered once, with the
+# position it starts at, and each actor gets the same reference so it can ask for
+# its ordered velocity. The coordinator owns orders, clocks and regeneration.
+func _build_combat() -> void:
+	_combat = OpenCombat.new()
+	for actor in _actors:
+		var sheet: OpenCharacter = actor.get("sheet")
+		if sheet == null:
+			continue
+		# Hand the coordinator over only if the sheet really joined it. An actor the
+		# session never accepted would otherwise read zero velocity from
+		# combat.velocity_at and freeze, instead of falling back the way a fixture
+		# without a coordinator is documented to.
+		if not _combat.add_character(sheet, actor.global_position):
+			push_error("Character %d could not join the combat session" % sheet.get_character_id())
+			continue
+		actor.set("combat", _combat)
 
 
 func _build_camera() -> void:
@@ -194,11 +317,28 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var label := Label.new()
-	label.text = "Left click the floor to move"
+	label.text = "Left click the floor to move. Left click a character to attack. I opens the character sheet."
 	label.position = Vector2(24, 20)
 	label.add_theme_font_size_override("font_size", 22)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(label)
+
+	_popup = CharacterPopup.new()
+	_popup.name = "CharacterPopup"
+	_popup.visible = false
+	layer.add_child(_popup)
+	_popup.bind_sheet(_player.sheet)
+
+	_attack_popup = AttackPopup.new()
+	_attack_popup.name = "AttackPopup"
+	_attack_popup.visible = false
+	layer.add_child(_attack_popup)
+	_attack_popup.attack_requested.connect(_on_attack_requested)
+
+	_weapon_popup = WeaponPopup.new()
+	_weapon_popup.name = "WeaponPopup"
+	_weapon_popup.visible = false
+	layer.add_child(_weapon_popup)
 
 
 func _grid_shader() -> Shader:

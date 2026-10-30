@@ -4,7 +4,7 @@ project(open_cpp CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(open_sim STATIC src/move_order.cpp src/character_rules.cpp src/attributes.cpp src/skills.cpp src/vitals.cpp src/equipment.cpp src/character.cpp)
+add_library(open_sim STATIC src/move_order.cpp src/combat_rules.cpp src/combat_session.cpp src/character_rules.cpp src/attributes.cpp src/skills.cpp src/vitals.cpp src/equipment.cpp src/character.cpp src/character_combat.cpp)
 target_include_directories(open_sim PUBLIC include)
 target_compile_options(open_sim PRIVATE -Wall -Wextra -Werror)
 set_target_properties(open_sim PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -45,9 +45,47 @@ target_link_libraries(equipment_tests PRIVATE open_sim)
 target_compile_options(equipment_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME equipment COMMAND equipment_tests)
 
+add_executable(character_skill_snapshot_tests tests/character_skill_snapshot_test.cpp)
+target_link_libraries(character_skill_snapshot_tests PRIVATE open_sim)
+target_compile_options(character_skill_snapshot_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME character_skill_snapshot COMMAND character_skill_snapshot_tests)
+
+add_executable(attack_order_tests tests/attack_order_test.cpp)
+target_link_libraries(attack_order_tests PRIVATE open_sim)
+target_compile_options(attack_order_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME attack_order COMMAND attack_order_tests)
+
+add_executable(combat_rules_tests tests/combat_rules_test.cpp)
+target_link_libraries(combat_rules_tests PRIVATE open_sim)
+target_compile_options(combat_rules_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME combat_rules COMMAND combat_rules_tests)
+
+add_executable(melee_swing_tests tests/melee_swing_test.cpp)
+target_link_libraries(melee_swing_tests PRIVATE open_sim)
+target_compile_options(melee_swing_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME melee_swing COMMAND melee_swing_tests)
+
+add_executable(combat_session_tests tests/combat_session_test.cpp)
+target_link_libraries(combat_session_tests PRIVATE open_sim)
+target_compile_options(combat_session_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME combat_session COMMAND combat_session_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)
+
+	# AGENTS.md advertises this: point GODOT_CPP_DIR at a local godot-cpp checkout
+	# to build against it instead of fetching one. Empty keeps the default, a
+	# FetchContent clone at the pinned tag.
+	set(GODOT_CPP_DIR "" CACHE PATH
+		"Local godot-cpp source directory; empty means fetch godot-4.5-stable")
+	if(GODOT_CPP_DIR)
+		if(NOT EXISTS "${GODOT_CPP_DIR}/CMakeLists.txt")
+			message(FATAL_ERROR "GODOT_CPP_DIR=${GODOT_CPP_DIR} has no CMakeLists.txt")
+		endif()
+		set(FETCHCONTENT_SOURCE_DIR_GODOT_CPP "${GODOT_CPP_DIR}")
+	endif()
+
 	FetchContent_Declare(
 		godot_cpp
 		GIT_REPOSITORY https://github.com/godotengine/godot-cpp.git
@@ -58,6 +96,7 @@ if(OPEN_BUILD_GDEXTENSION)
 	add_library(open SHARED
 		${CMAKE_CURRENT_SOURCE_DIR}/../extension/move_order_bridge.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../extension/character_bridge.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/../extension/combat_bridge.cpp
 		${CMAKE_CURRENT_SOURCE_DIR}/../extension/register_types.cpp
 	)
 	target_include_directories(open PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../extension)

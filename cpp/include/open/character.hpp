@@ -2,6 +2,7 @@
 
 #include "open/attributes.hpp"
 #include "open/character_rules.hpp"
+#include "open/combat_rules.hpp"
 #include "open/equipment.hpp"
 #include "open/move_order.hpp"
 #include "open/skills.hpp"
@@ -9,6 +10,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -49,6 +51,12 @@ public:
 	unsigned title_count(Title title) const;
 	std::optional<ItemId> equipped(Slot slot) const;
 	std::vector<ItemId> backpack_items() const;
+	std::optional<ItemRef> item(ItemId id) const;
+
+	// The trained rank a job actually uses: the chosen specialisation when the
+	// caller names that job, otherwise the (frozen) basic. Forwards Skills::resolve,
+	// so combat never re-implements the track choice.
+	Training resolve_skill(BasicSkill skill, std::optional<AdvancedSkill> option) const;
 
 	// resolved rank x average(linked effective attributes) x parent title bonus.
 	// Level is already inside the effective attributes, so it is never applied
@@ -59,6 +67,8 @@ public:
 	void set_name(std::string name);
 	bool set_level(int level);
 	bool set_base(Attribute attribute, float base);
+	// Unlocks one specialization of a basic that is frozen at 100. The chosen
+	// track starts at rank 1 with no residual XP, so the job is usable at once.
 	bool advance(AdvancedSkill skill);
 	bool record_use(BasicSkill skill, std::optional<AdvancedSkill> option, bool successful);
 	bool record_title_progress(Title title, bool successful);
@@ -87,6 +97,43 @@ public:
 	std::optional<Vec3> destination() const;
 	Vec3 velocity_at(float px, float py, float pz) const;
 
+	// The attack order is only an intent: the target ID, never a pointer or a
+	// position. Zero, self and a dead actor are refused without touching the
+	// order the actor already has; resolving the ID against a roster is a later
+	// task's job.
+	bool set_attack_target(std::uint64_t target_id);
+	std::optional<std::uint64_t> attack_target() const;
+
+	// Pursuit for an attack order: zero when there is no attack, when the target
+	// is already in melee reach, or when walking is disabled. Out of reach it
+	// walks toward the near side of the target, so the 0.4 arrival band of
+	// ordinary point movement lands at melee range. Ordinary velocity_at stays
+	// the move-order query.
+	Vec3 attack_velocity_at(const Vec3 &self, const Vec3 &target) const;
+
+	// Each sheet owns its own attack and defence clocks, in seconds still to
+	// wait: both start ready at 0, only time moves them, and an order change
+	// never resets one. Advancing by a finite nonnegative duration is accepted;
+	// anything else (negative, NaN, infinite) is refused without mutating, so a
+	// bad frame cannot make a character ready or cooldown-struck.
+	bool advance_combat_clocks(float seconds);
+	float attack_cooldown_remaining() const;
+	float defend_cooldown_remaining() const;
+
+	// One melee attempt against `defender`, at the positions the caller observed.
+	// The actor must hold an attack order on exactly this defender's id: nothing
+	// here resolves a roster. An empty result means no attempt was made - wrong
+	// or missing order, either sheet dead, out of reach, no usable attack, or
+	// this attack clock still running - and a non-attempt spends, trains and
+	// damages nothing, including the defender's clock. An attempt pays 8 stamina
+	// when it can and is exhausted for that one swing when it cannot, spends a
+	// ready defence whether or not it wins the nullify test, applies positive
+	// damage to one sampled part through damage(), then starts the attack clock.
+	// Skill XP, Wall progress and a single Duelist/Breaker kill record are the
+	// attempt's only other effects; no regeneration and no new target.
+	std::optional<SwingResult> try_melee_swing(Character &defender, const Vec3 &self_position,
+											   const Vec3 &target_position, std::mt19937_64 &rng);
+
 private:
 	Character() = default;
 
@@ -99,6 +146,12 @@ private:
 	Equipment equipment_;
 	bool can_move_ = true;
 	MoveOrder order_;
+	std::optional<std::uint64_t> attack_target_;
+	// Seconds still to wait, per sheet and per role: 0 is ready. A defender's
+	// clock belongs to the defender, so two characters fighting each other are
+	// never gated by one shared timer.
+	float attack_cooldown_ = 0.0f;
+	float defend_cooldown_ = 0.0f;
 };
 
 }  // namespace open

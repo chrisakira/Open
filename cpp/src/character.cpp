@@ -1,5 +1,8 @@
 #include "open/character.hpp"
 
+#include "open/combat_rules.hpp"
+
+#include <cmath>
 #include <utility>
 
 namespace open {
@@ -93,6 +96,14 @@ std::vector<ItemId> Character::backpack_items() const {
 	return equipment_.backpack_items();
 }
 
+std::optional<ItemRef> Character::item(ItemId id) const {
+	return equipment_.item(id);
+}
+
+Training Character::resolve_skill(BasicSkill skill, std::optional<AdvancedSkill> option) const {
+	return skills_.resolve(skill, option);
+}
+
 float Character::effective_skill(BasicSkill skill, std::optional<AdvancedSkill> option) const {
 	const Training track = skills_.resolve(skill, option);
 	const SkillRule &rule = skill_rule(skill);
@@ -180,7 +191,15 @@ bool Character::regenerate(float seconds, bool in_combat) {
 }
 
 bool Character::damage(BodyPart part, float amount) {
-	return vitals_.damage(part, amount);
+	const bool was_alive = alive();
+	if (!vitals_.damage(part, amount)) {
+		return false;
+	}
+	// Death ends the fight: a corpse keeps no attack intent.
+	if (was_alive && !alive()) {
+		attack_target_.reset();
+	}
+	return true;
 }
 
 bool Character::add_item(const ItemRef &item) {
@@ -246,11 +265,17 @@ bool Character::set_destination(float x, float y, float z) {
 	if (!alive()) {
 		return false;
 	}
-	return order_.set_destination(x, y, z);
+	// Validate first: a refused click must not destroy the attack the actor has.
+	if (!order_.set_destination(x, y, z)) {
+		return false;
+	}
+	attack_target_.reset();
+	return true;
 }
 
 void Character::clear_order() {
 	order_.clear();
+	attack_target_.reset();
 }
 
 std::optional<Vec3> Character::destination() const {
@@ -259,6 +284,45 @@ std::optional<Vec3> Character::destination() const {
 
 Vec3 Character::velocity_at(float px, float py, float pz) const {
 	return order_.velocity_at(px, py, pz, walk_speed());
+}
+
+bool Character::set_attack_target(std::uint64_t target_id) {
+	if (!alive()) {
+		return false;
+	}
+	if (target_id == 0 || target_id == id_) {
+		return false;
+	}
+	// An accepted attack owns the actor's intent, so the walk goes with it.
+	attack_target_ = target_id;
+	order_.clear();
+	return true;
+}
+
+std::optional<std::uint64_t> Character::attack_target() const {
+	return attack_target_;
+}
+
+Vec3 Character::attack_velocity_at(const Vec3 &self, const Vec3 &target) const {
+	if (!attack_target_.has_value() || melee_in_range(self, target) || !can_walk()) {
+		return {};
+	}
+	const float dx = target.x - self.x;
+	const float dz = target.z - self.z;
+	const float length = std::sqrt(dx * dx + dz * dz);
+	if (!std::isfinite(length) || length <= kMeleeRange) {
+		return {};
+	}
+	// Aim at the near side of the target: walking stops kArriveRadius short of
+	// what it walks toward, so aiming 1.1 away stops the actor at melee range
+	// instead of 0.4 beyond it. The actor's own height keeps the query horizontal.
+	const float approach = kMeleeRange - MoveOrder::kArriveRadius;
+	MoveOrder pursuit;
+	if (!pursuit.set_destination(target.x - dx * (approach / length), self.y,
+								 target.z - dz * (approach / length))) {
+		return {};
+	}
+	return pursuit.velocity_at(self.x, self.y, self.z, walk_speed());
 }
 
 }  // namespace open

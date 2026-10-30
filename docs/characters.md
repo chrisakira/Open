@@ -35,7 +35,7 @@ NPC are one type; Godot sends intent and draws the result.
 | pools | HP `100 × Constitution base`; stamina `100 × Endurance rank × Constitution base`; mana `100 × Mana Control rank × average(Constitution base, Profanity base)`. All start full. |
 | body parts | head `25%`, torso `50%`, each limb `40%` of the main HP maximum. |
 | damage | implemented as locked: one hit subtracts once from main HP and once from the named part, each clamped at `0`. Overkill on the part is not charged to main HP again. |
-| skills | 35 basics start at rank `1`; one successful use adds one residual XP; caps `100` basic / `200` advanced; one specialization per basic, chosen at basic `100`, other jobs keep the frozen `100`. |
+| skills | 35 basics start at rank `1`; one successful use adds one residual XP; caps `100` basic / `200` advanced; one specialization per basic, chosen at basic `100` and unlocked at rank `1`, other jobs keep the frozen `100`. |
 | titles | fourteen counters, saturating at threshold, never dropped; `×1.1` on the named skill, Dragonslayer `×1.25` on the target result only. |
 | equipment | twenty slots plus backpack references. A two-handed item is stored once and the other held slot reports the same id. |
 | `can_move` | still a separate switch; legs at `0` or death stop walking even when it is `true`. |
@@ -235,16 +235,16 @@ Trained counter is `1`..`100`. Every basic skill starts at 1. Cap is 100. Reachi
 
 XP: diminishing returns. A successful use always grants some progress, but each next point costs more than the last. Hitting 100 on a basic skill is pretty hard.
 
-When an advanced skill unlocks it starts at 0 and the difficulty curve **resets** — early advanced points are as easy as early basic points. Going from there to 200 is really difficult, harder than 100 was.
+When an advanced skill unlocks it starts at **1** with no residual XP, and the difficulty curve **resets** — early advanced points are as easy as early basic points. Going from there to 200 is really difficult, harder than 100 was.
 
 Each successful use grants 1 XP toward the next trained point. Failed or cancelled actions grant 0.
 
 XP to raise trained counter from `n` to `n+1` (placeholders, balance later):
 
 - Basic skill (`n` is 1..99): `8 * n`
-- Advanced skill (`n` is 0..199): `8 * max(n, 1)` while `n < 100`; `40 * n` while `n >= 100`
+- Advanced skill (`n` is 1..199): `8 * n` while `n < 100`; `40 * n` while `n >= 100`
 
-Examples: basic 1→2 costs 8; 50→51 costs 400; 99→100 costs 792 (~39,600 XP to cap). Advanced 0→1 costs 8 (curve reset). Advanced 100→101 costs 4000; 199→200 costs 7960.
+Examples: basic 1→2 costs 8; 50→51 costs 400; 99→100 costs 792 (~39,600 XP to cap). Advanced 1→2 costs 8 (curve reset); 100→101 costs 4000; 199→200 costs 7960. An unlocked advanced track is `1`/`0`, so 1→200 costs ~637,600 XP. The cost function still answers `n = 0` (8), but that is arithmetic only: no unlocked track ever sits at 0.
 
 ## 3. Titles — locked (starters)
 
@@ -267,7 +267,7 @@ Dragonslayer is the pattern: kill 100 of a kind → extra damage against that ki
 | Ghost | 100 actions while undetected | Stealth |
 | Huntsman | Harvest 100 animals | Hunting |
 | Sawbones | 50 successful treatments | Medicine |
-| Hammerhand | Smith 100 items | Smithing |
+| Hammerhand | Smith 100 items; each successfully crafted weapon counts as one. Repairs, enchantments, and failed or cancelled work do not count. | Smithing |
 | Mason | Finish 10 structures | Construction |
 | Green Thumb | Harvest 100 farmed crops | Farming |
 | Hexer | Cast 100 spells | Spellcasting |
@@ -287,11 +287,11 @@ On advance:
 - The basic skill stops growing. Its trained counter is frozen at 100.
 - The advanced skill **overrides** the basic for that job. You use Katana, not One-Handed, when swinging a katana.
 - Other weapons still under that basic (axes if you took Katana) use the frozen basic (100) forever.
-- The advanced skill has its own trained counter, `0`..`200`. It starts at 0 and grows by use up to 200. The frozen basic stays at 100 for anything not covered by the advanced skill.
+- The advanced skill has its own trained counter, `1`..`200`. It starts at 1 with zero residual XP and grows by use up to 200. The frozen basic stays at 100 for anything not covered by the advanced skill.
 
 Attribute links inherit from the parent basic unless a row says otherwise. Level still does not multiply skills. Titles that named the parent apply to the advanced skill.
 
-Advance is available only at basic 100. There is no earlier spec.
+Advance is available only at basic 100. There is no earlier spec. The option is usable the moment it is chosen: it unlocks at rank 1, so the job it overrides never resolves to an untrained zero.
 
 ### Options — locked
 
@@ -542,7 +542,7 @@ Item catalog, weights, slot bonuses, and encumbrance (carried weight vs Strength
 
 ## Open (not attributes)
 
-Death: main HP, head, or torso at `0`. Not numbered here (other systems): recruiting, combat math, item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
+Death: main HP, head, or torso at `0`. Combat math lives in `docs/combat.md`. Not numbered here: recruiting, item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
 
 ## Ownership
 

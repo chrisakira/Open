@@ -107,7 +107,11 @@ bool Skills::advance(AdvancedSkill skill) {
 		return false;
 	}
 	chosen_[basic_slot(parent)] = skill;
-	advanced_[advanced_slot(skill)] = Training{0u, 0u};
+	// A newly selected advanced skill starts at rank 1 with nothing banked, so
+	// the job it overrides is immediately usable. The rank range of a chosen
+	// track is 1..200; 0 is only ever the unused placeholder behind an option
+	// that was never chosen.
+	advanced_[advanced_slot(skill)] = Training{1u, 0u};
 	return true;
 }
 

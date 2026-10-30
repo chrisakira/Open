@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Execute **native inline**, as requested, not with implementation subagents. Steps use checkbox (`- [ ]`) syntax for tracking. Wait for plan approval before implementation.
 
+> **Superseding rule (2026-10-29, human-authorized correction):** A newly selected advanced skill starts at rank **1** with zero residual XP, and a chosen advanced track runs **1..200**. Where this plan says a selected specialization "starts `0`" or "advanced rank `0` must remain `0`", read `1`. Unchosen options are still hidden (`advanced()` is `nullopt`), the frozen-parent fallback is unchanged, and `advanced_xp_to_next(0) == 8` remains valid arithmetic. This note does not change the task checklists below.
+
 **Goal:** Implement the locked character rules in `docs/characters.md` as simple, efficient C++ and use the same character type for the player and standing NPCs.
 
 **Architecture:** Keep `Character` as a small aggregate of attributes, skills/titles, vitals, equipment, and the existing move order. Use ordinary structs, enum-indexed arrays, immutable rule tables, and direct calls. Godot sends intent and presents the result; no event framework, ECS, inheritance hierarchy, generic modifier system, or persistence framework.

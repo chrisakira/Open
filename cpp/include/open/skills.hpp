@@ -23,18 +23,19 @@ unsigned basic_xp_to_next(unsigned rank);
 
 // XP needed to raise an advanced rank from n to n+1. The curve resets below
 // rank 100 and steepens above it. Throws for a rank outside 0..200; 0 at the
-// cap.
+// cap. Rank 0 is answered as arithmetic only: a chosen track starts at 1.
 unsigned advanced_xp_to_next(unsigned rank);
 
 // Every basic skill has its own counter. A basic may be advanced once, into one
-// of its options; the chosen option then has its own track and the frozen basic
-// covers every other job under it.
+// of its options; the chosen option then has its own track, rank 1..200, and the
+// frozen basic covers every other job under it.
 class Skills {
 public:
 	Skills();
 
 	// Checked getters: throw std::invalid_argument for a bad id.
 	Training basic(BasicSkill skill) const;
+	// nullopt while the option has not been chosen; once chosen, rank 1..200.
 	std::optional<Training> advanced(AdvancedSkill skill) const;
 	std::optional<AdvancedSkill> chosen(BasicSkill skill) const;
 
@@ -43,6 +44,8 @@ public:
 	Training resolve(BasicSkill skill, std::optional<AdvancedSkill> option) const;
 
 	// Requires the parent basic at 100 and no existing choice for that parent.
+	// On success the chosen track starts at rank 1 with zero residual XP, so the
+	// job it overrides is usable at once; it then grows to 200.
 	bool advance(AdvancedSkill skill);
 
 	// One successful use adds one residual XP to the track the job resolves to.

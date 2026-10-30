@@ -6,6 +6,8 @@
 *.lo
 *.o
 *.obj
+# Wavefront models are source assets, not compiler object files.
+!assets/weapons/quaternius_medieval/*.obj
 
 # Precompiled Headers
 *.gch

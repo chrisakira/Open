@@ -9,6 +9,9 @@ const TURN_SPEED := 10.0
 @export var blessing: int = 0
 
 var sheet: OpenCharacter
+# Set by the world's combat coordinator. While it is present, that coordinator
+# owns this frame's clocks, combat state and regeneration.
+var combat: OpenCombat
 var _model: Node
 
 
@@ -36,11 +39,16 @@ func _physics_process(delta: float) -> void:
 	if sheet == null:
 		return
 
-	# One regen clock: the physics tick forwards time to the sheet, which owns the
-	# rates. Nothing else ticks regeneration.
-	sheet.regenerate(delta, false)
+	var ordered: Vector3
+	if combat != null:
+		# The world already advanced clocks and regeneration for this frame; the
+		# actor only asks which velocity C++ ordered.
+		ordered = combat.velocity_at(sheet.get_character_id())
+	else:
+		# A fixture with no coordinator: one regen clock, the sheet's own.
+		sheet.regenerate(delta, false)
+		ordered = sheet.velocity_at(global_position)
 
-	var ordered: Vector3 = sheet.velocity_at(global_position)
 	velocity.x = ordered.x
 	velocity.z = ordered.z
 	var moving := Vector2(velocity.x, velocity.z).length() > 0.05

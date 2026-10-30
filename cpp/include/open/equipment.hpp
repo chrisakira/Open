@@ -29,6 +29,13 @@ struct ItemRef {
 	ItemId id = 0;
 	std::bitset<static_cast<std::size_t>(Slot::Count)> allowed_slots;
 	HandUse hand_use = HandUse::None;
+	// Which combat job this item is for, if it is a weapon or a shield at all.
+	// OneHandedWeapons/TwoHandedWeapons/Polearms name a weapon, Blocking names a
+	// shield, and the optional advanced skill is that item's own specialisation.
+	// These are tags only: no damage, armour, reach or weight lives here, and an
+	// untagged held record is still a legal item.
+	std::optional<BasicSkill> combat_skill;
+	std::optional<AdvancedSkill> combat_option;
 };
 
 // What a character carries plus what it wears. A two-handed item is stored once,
@@ -47,6 +54,12 @@ public:
 
 	std::vector<ItemId> backpack_items() const;
 	bool held_usable(ItemId id, bool one_hand, bool two_hands) const;
+
+	// Read-only lookup of the record this container owns, whether it is stored or
+	// worn. A two-handed item keeps one record, so both held views find the same
+	// one. Unknown and zero ids are empty; callers never get a reference into the
+	// container.
+	std::optional<ItemRef> item(ItemId id) const;
 
 private:
 	static constexpr Slot kTwoHandedPrimary = Slot::LeftHand;

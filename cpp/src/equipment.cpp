@@ -28,6 +28,43 @@ bool allows(const ItemRef &item, Slot slot) {
 	return slot_index(slot) < item.allowed_slots.size() && item.allowed_slots.test(slot_index(slot));
 }
 
+// The melee basics an item may be tagged with. Archery is deliberately absent:
+// no ranged weapons exist yet, and a tag must not invent one.
+bool melee_tag(BasicSkill skill) {
+	return skill == BasicSkill::OneHandedWeapons || skill == BasicSkill::TwoHandedWeapons ||
+		   skill == BasicSkill::Polearms || skill == BasicSkill::Blocking;
+}
+
+bool held_by_hand(const ItemRef &item, HandUse use) {
+	return item.hand_use == use;
+}
+
+// A tag says what job the item is for, so a malformed tag would silently invent
+// a weapon, a shield or a specialisation. Refused as a whole record: an advanced
+// tag needs its own basic, the basic must be a melee one, and the hand use must
+// match the job (a shield is one-handed, a polearm is not).
+bool tagged_ok(const ItemRef &item) {
+	if (!item.combat_option.has_value() && !item.combat_skill.has_value()) {
+		return true;  // untagged records stay valid
+	}
+	if (!item.combat_skill.has_value()) {
+		return false;
+	}
+	const BasicSkill basic = *item.combat_skill;
+	if (!valid(basic) || !melee_tag(basic)) {
+		return false;
+	}
+	if (item.combat_option.has_value()) {
+		if (!valid(*item.combat_option) || advanced_rule(*item.combat_option).parent != basic) {
+			return false;
+		}
+	}
+	if (basic == BasicSkill::OneHandedWeapons || basic == BasicSkill::Blocking) {
+		return held_by_hand(item, HandUse::OneHanded);
+	}
+	return held_by_hand(item, HandUse::TwoHanded);
+}
+
 }  // namespace
 
 bool valid(HandUse use) {
@@ -43,6 +80,9 @@ bool Equipment::coherent(const ItemRef &item) const {
 		return false;
 	}
 	if (!item.allowed_slots.any()) {
+		return false;
+	}
+	if (!tagged_ok(item)) {
 		return false;
 	}
 	const std::bitset<static_cast<std::size_t>(Slot::Count)> held = held_mask();
@@ -218,6 +258,24 @@ std::vector<ItemId> Equipment::backpack_items() const {
 		ids.push_back(item.id);
 	}
 	return ids;
+}
+
+std::optional<ItemRef> Equipment::item(ItemId id) const {
+	if (id == 0) {
+		return std::nullopt;
+	}
+	// Worn first: an equipped record is the one a held-item query needs.
+	for (const std::optional<ItemRef> &entry : slots_) {
+		if (entry.has_value() && entry->id == id) {
+			return *entry;
+		}
+	}
+	for (const ItemRef &entry : stored_) {
+		if (entry.id == id) {
+			return entry;
+		}
+	}
+	return std::nullopt;
 }
 
 bool Equipment::held_usable(ItemId id, bool one_hand, bool two_hands) const {

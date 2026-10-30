@@ -50,6 +50,29 @@ open::ItemRef bag(int id) {
 	return make_item(static_cast<open::ItemId>(id), {open::Slot::Backpack});
 }
 
+// Combat tags name the job an item is for; they are not item stats.
+open::ItemRef tagged(open::ItemId id, std::initializer_list<open::Slot> slots, open::HandUse use,
+					 open::BasicSkill skill, std::optional<open::AdvancedSkill> option = std::nullopt) {
+	open::ItemRef ref = make_item(id, slots, use);
+	ref.combat_skill = skill;
+	ref.combat_option = option;
+	return ref;
+}
+
+open::ItemRef tagged_shield(open::ItemId id, std::optional<open::AdvancedSkill> option = std::nullopt) {
+	return tagged(id, {open::Slot::LeftHand, open::Slot::RightHand}, open::HandUse::OneHanded,
+				  open::BasicSkill::Blocking, option);
+}
+
+open::ItemRef tagged_polearm(open::ItemId id) {
+	return tagged(id, {open::Slot::LeftHand, open::Slot::RightHand}, open::HandUse::TwoHanded,
+				  open::BasicSkill::Polearms, open::AdvancedSkill::Spear);
+}
+
+// Deliberate bad ids, checked the same way every other checked getter is.
+constexpr open::BasicSkill kBadBasic = static_cast<open::BasicSkill>(99);
+constexpr open::AdvancedSkill kBadAdvanced = static_cast<open::AdvancedSkill>(999);
+
 open::Equipment loaded() {
 	open::Equipment equipment;
 	expect_true("chest piece added", equipment.add(chest(101), true));
@@ -286,6 +309,165 @@ int main() {
 		expect_true("unequip on an empty slot is refused", !equipment.unequip(open::Slot::Chest));
 		expect_true("unequip on the reserved off hand is refused", !equipment.unequip(open::Slot::RightHand));
 		expect_true("nothing changed", equipment.backpack_items().size() == 5);
+	}
+
+	{
+		// Break this catches: a lookup that invents a combat tag for an untagged
+		// record, or a record that cannot be found once it is worn.
+		open::Equipment equipment;
+		expect_true("an untagged sword is still accepted", equipment.add(sword(202), true));
+		const std::optional<open::ItemRef> stored = equipment.item(202);
+		expect_true("a stored item is found by id", stored.has_value());
+		expect_true("an untagged record carries no combat tag",
+					stored.has_value() && !stored->combat_skill.has_value() &&
+						!stored->combat_option.has_value());
+		expect_true("an untagged record still equips",
+					equipment.equip(202, open::Slot::LeftHand, true, true));
+		const std::optional<open::ItemRef> worn = equipment.item(202);
+		expect_true("an equipped item is found by id", worn.has_value());
+		expect_true("with the same identity", worn.has_value() && worn->id == 202);
+		expect_true("and still no combat tag", worn.has_value() && !worn->combat_skill.has_value());
+	}
+	{
+		// Break this catches: a combat tag being lost when the item moves, or a
+		// two-handed item becoming two records with two different tags.
+		open::Equipment equipment;
+		const open::ItemRef blade = tagged(303, {open::Slot::LeftHand, open::Slot::RightHand},
+										   open::HandUse::TwoHanded, open::BasicSkill::TwoHandedWeapons,
+										   open::AdvancedSkill::Greatsword);
+		expect_true("a tagged two-handed weapon is accepted", equipment.add(blade, true));
+		const std::optional<open::ItemRef> carried = equipment.item(303);
+		expect_true("the carried record keeps its weapon job",
+					carried.has_value() && carried->combat_skill ==
+											   std::optional<open::BasicSkill>(open::BasicSkill::TwoHandedWeapons));
+		expect_true("and its subtype",
+					carried.has_value() && carried->combat_option ==
+											   std::optional<open::AdvancedSkill>(open::AdvancedSkill::Greatsword));
+		expect_true("the tagged weapon is equipped",
+					equipment.equip(303, open::Slot::LeftHand, true, true));
+		const std::optional<open::ItemRef> held = equipment.item(303);
+		expect_true("the held record is still found", held.has_value());
+		expect_true("with the same job", held.has_value() && held->combat_skill == carried->combat_skill);
+		expect_true("and the same subtype", held.has_value() && held->combat_option == carried->combat_option);
+		expect_true("one item reserves both hands",
+					(equipment.equipped(open::Slot::LeftHand) == std::optional<open::ItemId>(303) &&
+					 equipment.equipped(open::Slot::RightHand) == std::optional<open::ItemId>(303)));
+		expect_true("yet it is still stored once", equipment.backpack_items().empty());
+		expect_true("either hand can put it back", equipment.unequip(open::Slot::RightHand));
+		const std::optional<open::ItemRef> returned = equipment.item(303);
+		expect_true("the returned record keeps its tags",
+					returned.has_value() && returned->combat_option == carried->combat_option);
+
+		expect_true("a tagged shield is accepted",
+					equipment.add(tagged_shield(404, open::AdvancedSkill::SmallShields), true));
+		const std::optional<open::ItemRef> board = equipment.item(404);
+		expect_true("Blocking marks a shield",
+					board.has_value() && board->combat_skill ==
+											 std::optional<open::BasicSkill>(open::BasicSkill::Blocking));
+		expect_true("with its shield specialisation",
+					board.has_value() && board->combat_option ==
+											 std::optional<open::AdvancedSkill>(open::AdvancedSkill::SmallShields));
+		expect_true("a tagged polearm is accepted", equipment.add(tagged_polearm(406), true));
+		const std::optional<open::ItemRef> spear = equipment.item(406);
+		expect_true("a polearm names the polearm job",
+					spear.has_value() && spear->combat_skill ==
+											 std::optional<open::BasicSkill>(open::BasicSkill::Polearms));
+		expect_true("an unknown id is not found", !equipment.item(999).has_value());
+		expect_true("a zero id is not found", !equipment.item(0).has_value());
+	}
+	{
+		// Break this catches: a malformed tag being stored anyway and inventing a
+		// weapon, a shield or an item stat nobody specified.
+		open::Equipment equipment = loaded();
+		const open::HandUse kOne = open::HandUse::OneHanded;
+		const open::HandUse kTwo = open::HandUse::TwoHanded;
+		expect_true("an unknown basic skill id is refused",
+					!equipment.add(tagged(903, {open::Slot::LeftHand, open::Slot::RightHand}, kOne, kBadBasic),
+								   true));
+		expect_true("an unknown advanced skill id is refused",
+					!equipment.add(tagged(904, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										   open::BasicSkill::OneHandedWeapons, kBadAdvanced),
+								   true));
+		// The four cases below name a two-handed record, so the only rule that can
+		// refuse them is the set of basics an item may be tagged with.
+		expect_true("a non-weapon melee basic cannot tag an item",
+					!equipment.add(tagged(905, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::UnarmedCombat),
+								   true));
+		expect_true("a non-melee basic cannot tag an item",
+					!equipment.add(tagged(906, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::Athletics),
+								   true));
+		expect_true("a ranged weapon basic cannot tag an item",
+					!equipment.add(tagged(917, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::Archery),
+								   true));
+		expect_true("a defence basic other than Blocking cannot tag an item",
+					!equipment.add(tagged(918, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::Dodging),
+								   true));
+		expect_true("an unrelated basic cannot tag an item",
+					!equipment.add(tagged(907, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::Stealth),
+								   true));
+		expect_true("a subtype from another parent is refused",
+					!equipment.add(tagged(908, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										   open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Greatsword),
+								   true));
+		expect_true("a weapon subtype under Blocking is refused",
+					!equipment.add(tagged(909, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										   open::BasicSkill::Blocking, open::AdvancedSkill::Katana),
+								   true));
+		open::ItemRef orphan_option = sword(910);
+		orphan_option.combat_option = open::AdvancedSkill::Katana;
+		expect_true("a subtype without its basic is refused", !equipment.add(orphan_option, true));
+		expect_true("a one-handed job cannot be a two-handed item",
+					!equipment.add(tagged(911, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::OneHandedWeapons),
+								   true));
+		expect_true("a two-handed job cannot be a one-handed item",
+					!equipment.add(tagged(912, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										   open::BasicSkill::TwoHandedWeapons),
+								   true));
+		expect_true("a polearm cannot be one-handed",
+					!equipment.add(tagged(913, {open::Slot::LeftHand, open::Slot::RightHand}, kOne,
+										   open::BasicSkill::Polearms),
+								   true));
+		expect_true("a shield cannot be a two-handed item",
+					!equipment.add(tagged(914, {open::Slot::LeftHand, open::Slot::RightHand}, kTwo,
+										   open::BasicSkill::Blocking),
+								   true));
+		expect_true("a tag cannot sit on a worn item",
+					!equipment.add(tagged(915, {open::Slot::Chest}, open::HandUse::None,
+										   open::BasicSkill::OneHandedWeapons),
+								   true));
+		expect_true("the malformed records never entered the backpack",
+					equipment.backpack_items().size() == 5);
+		expect_true("and no slot changed", !equipment.equipped(open::Slot::LeftHand).has_value());
+		expect_true("a well-formed tag is still accepted afterwards",
+					equipment.add(tagged_shield(916, open::AdvancedSkill::WallShields), true));
+		expect_true("the backpack holds exactly one more", equipment.backpack_items().size() == 6);
+	}
+	{
+		// Break this catches: a disabled hand or a dead actor still having its held
+		// gear counted as a usable weapon or block.
+		open::Equipment equipment = loaded();
+		expect_true("a tagged shield is accepted", equipment.add(tagged_shield(606), true));
+		expect_true("the sword is held", equipment.equip(202, open::Slot::LeftHand, true, true));
+		expect_true("the shield is held", equipment.equip(606, open::Slot::RightHand, true, true));
+		expect_true("both are usable with a hand free",
+					(equipment.held_usable(202, true, true) && equipment.held_usable(606, true, true)));
+		expect_true("no usable hand makes the sword unusable", !equipment.held_usable(202, false, false));
+		expect_true("no usable hand makes the shield unusable", !equipment.held_usable(606, false, false));
+		expect_true("the gear was not stripped by the injury",
+					(equipment.equipped(open::Slot::LeftHand) == std::optional<open::ItemId>(202) &&
+					 equipment.equipped(open::Slot::RightHand) == std::optional<open::ItemId>(606)));
+		expect_true("a two-handed weapon needs both hands",
+					(equipment.unequip(open::Slot::LeftHand) && equipment.unequip(open::Slot::RightHand) &&
+					 equipment.equip(303, open::Slot::LeftHand, true, true) &&
+					 !equipment.held_usable(303, true, false)));
+		expect_true("and it is usable with two", equipment.held_usable(303, true, true));
+		expect_true("a shield is still found by id while held", equipment.item(303).has_value());
 	}
 
 	return test_summary();

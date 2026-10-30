@@ -16,8 +16,9 @@ constexpr unsigned kAdvancedCap = 200u;
 
 // 8n for n = 1..99.
 constexpr unsigned kBasicCapSuccesses = 39600u;
-// 8*max(n,1) for n = 0..99 plus 40n for n = 100..199.
-constexpr unsigned kAdvancedCapSuccesses = 637608u;
+// 8n for n = 1..99 plus 40n for n = 100..199: the uses an advanced track needs
+// from its rank-one unlock to the cap.
+constexpr unsigned kAdvancedCapSuccesses = 637600u;
 
 void train_basic(open::Skills &skills, open::BasicSkill basic, unsigned times) {
 	for (unsigned i = 0; i < times; ++i) {
@@ -79,6 +80,8 @@ int main() {
 		expect_true("basic 99->100 costs 792", open::basic_xp_to_next(99u) == 792u);
 		expect_true("basic cap has nothing left to buy", open::basic_xp_to_next(kBasicCap) == 0u);
 
+		// Rank 0 is still a legal arithmetic input even though no unlocked track
+		// ever sits there: it is the floor of the curve, not a sheet state.
 		expect_true("advanced 0->1 costs eight", open::advanced_xp_to_next(0u) == 8u);
 		expect_true("advanced 1->2 costs eight", open::advanced_xp_to_next(1u) == 8u);
 		expect_true("advanced 50->51 costs 400", open::advanced_xp_to_next(50u) == 400u);
@@ -136,7 +139,7 @@ int main() {
 						std::optional<open::AdvancedSkill>(open::AdvancedSkill::Katana));
 	}
 	{
-		// Break this catches: a specialization starting at 1 (or at the parent's
+		// Break this catches: a specialization starting at 0 (or at the parent's
 		// 100), and a sibling job that follows the specialization instead of the
 		// frozen basic.
 		open::Skills skills;
@@ -144,13 +147,13 @@ int main() {
 		expect_true("katana chosen", skills.advance(open::AdvancedSkill::Katana));
 		const std::optional<open::Training> katana = skills.advanced(open::AdvancedSkill::Katana);
 		expect_true("the chosen option now has a track", katana.has_value());
-		expect_true("the specialization starts at rank zero", katana->rank == 0u);
+		expect_true("the specialization starts at rank one", katana->rank == 1u);
 		expect_true("the specialization starts with no residual xp", katana->xp == 0u);
 		expect_true("a sibling option has no track of its own",
 					!skills.advanced(open::AdvancedSkill::Axe).has_value());
 
 		expect_true("resolve follows the specialization",
-					skills.resolve(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana).rank == 0u);
+					skills.resolve(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana).rank == 1u);
 		expect_true("resolve falls back for a sibling job",
 					skills.resolve(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Axe).rank == kBasicCap);
 		expect_true("resolve falls back with no option",
@@ -165,11 +168,41 @@ int main() {
 
 		train_advanced(skills, open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana, 8u);
 		expect_true("the specialization grows",
-					skills.advanced(open::AdvancedSkill::Katana)->rank == 1u);
+					skills.advanced(open::AdvancedSkill::Katana)->rank == 2u);
 		expect_true("a sibling job still uses the frozen basic",
 					skills.resolve(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Axe).rank == kBasicCap);
 		expect_true("an untrained sibling stays at zero",
 					!skills.advanced(open::AdvancedSkill::Sword).has_value());
+	}
+	{
+		// Break this catches: an advanced skill that unlocks at rank zero, or
+		// unlocks at rank one while still owing its first point as residual XP.
+		// Every option is checked, not only the ones the other fixtures use.
+		for (int i = 0; i < static_cast<int>(open::AdvancedSkill::Count); ++i) {
+			const open::AdvancedSkill option = static_cast<open::AdvancedSkill>(i);
+			const open::BasicSkill parent = open::advanced_rule(option).parent;
+			open::Skills skills;
+			train_basic(skills, parent, kBasicCapSuccesses);
+			expect_true("a capped parent can advance into every option", skills.advance(option));
+			const std::optional<open::Training> fresh = skills.advanced(option);
+			expect_true("an unlocked advanced skill starts at rank one",
+						fresh.has_value() && fresh->rank == 1u);
+			expect_true("an unlocked advanced skill starts with no residual xp",
+						fresh.has_value() && fresh->xp == 0u);
+			const open::Training resolved = skills.resolve(parent, option);
+			expect_true("the specialised job resolves to rank one with nothing banked",
+						resolved.rank == 1u && resolved.xp == 0u);
+			expect_true("a job this option does not cover still uses the frozen parent",
+						skills.resolve(parent, std::nullopt).rank == kBasicCap);
+			train_advanced(skills, parent, option, 7u);
+			const std::optional<open::Training> seven = skills.advanced(option);
+			expect_true("seven uses do not buy the first advanced point",
+						seven.has_value() && seven->rank == 1u && seven->xp == 7u);
+			expect_true("the eighth use is accepted", skills.record_use(parent, option, true));
+			const std::optional<open::Training> eight = skills.advanced(option);
+			expect_true("eight uses buy rank two and consume the residual",
+						eight.has_value() && eight->rank == 2u && eight->xp == 0u);
+		}
 	}
 	{
 		// Break this catches: a second specialization for one basic.
@@ -184,7 +217,7 @@ int main() {
 		expect_true("a sibling option is a valid fallback use",
 					skills.record_use(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Sword, true));
 		expect_true("the chosen track is unchanged by a fallback use",
-					skills.advanced(open::AdvancedSkill::Katana)->rank == 0u);
+					skills.advanced(open::AdvancedSkill::Katana)->rank == 1u);
 		expect_true("the fallback use cannot grow the frozen basic",
 					skills.basic(open::BasicSkill::OneHandedWeapons).rank == kBasicCap);
 		expect_true("the fallback use leaves no residual xp on the frozen basic",
@@ -223,7 +256,7 @@ int main() {
 		open::Skills skills;
 		train_basic(skills, open::BasicSkill::OneHandedWeapons, kBasicCapSuccesses);
 		expect_true("katana chosen", skills.advance(open::AdvancedSkill::Katana));
-		train_advanced(skills, open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana, 39607u);
+		train_advanced(skills, open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana, 39599u);
 		expect_true("just short of rank 100 the cheap curve is still running",
 					skills.advanced(open::AdvancedSkill::Katana)->rank == 99u);
 		expect_true("just short of rank 100 the residual is one below the cost",
@@ -240,7 +273,7 @@ int main() {
 		train_advanced(skills, open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana, 1u);
 		expect_true("rank 101 costs 4000", skills.advanced(open::AdvancedSkill::Katana)->rank == 101u);
 		train_advanced(skills, open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana,
-					   kAdvancedCapSuccesses - 39608u - 4000u);
+					   kAdvancedCapSuccesses - 39600u - 4000u);
 		expect_true("the locked advanced total reaches the cap",
 					skills.advanced(open::AdvancedSkill::Katana)->rank == kAdvancedCap);
 		expect_true("the advanced cap leaves no residual xp",
@@ -279,7 +312,7 @@ int main() {
 		expect_true("a failed advanced use keeps progress",
 					skills.advanced(open::AdvancedSkill::Weaponsmith)->xp == 7u);
 		expect_true("a failed advanced use grants nothing",
-					skills.advanced(open::AdvancedSkill::Weaponsmith)->rank == 0u);
+					skills.advanced(open::AdvancedSkill::Weaponsmith)->rank == 1u);
 	}
 	{
 		// Break this catches: an option from another parent being treated as a

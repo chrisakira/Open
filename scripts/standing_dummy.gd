@@ -6,6 +6,9 @@ const GRAVITY := 24.0
 @export var model_scene: PackedScene
 
 var sheet: OpenCharacter
+# Set by the world's combat coordinator. While it is present, that coordinator
+# owns this frame's clocks, combat state and regeneration.
+var combat: OpenCombat
 var _label: Label3D
 
 
@@ -28,9 +31,17 @@ func _physics_process(delta: float) -> void:
 
 	if sheet == null:
 		return
-	sheet.regenerate(delta, false)
 
-	var ordered: Vector3 = sheet.velocity_at(global_position)
+	var ordered: Vector3
+	if combat != null:
+		# Standing still is C++'s answer, not a scene rule: this dummy has no
+		# order of its own, and it never ticks clocks or regeneration.
+		ordered = combat.velocity_at(sheet.get_character_id())
+	else:
+		# A fixture with no coordinator: one regen clock, the sheet's own.
+		sheet.regenerate(delta, false)
+		ordered = sheet.velocity_at(global_position)
+
 	velocity.x = ordered.x
 	velocity.z = ordered.z
 	move_and_slide()

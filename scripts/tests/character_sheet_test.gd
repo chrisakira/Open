@@ -196,8 +196,33 @@ func _run() -> void:
 	_check(_close(sheet.get_attribute_base(1 << 32), 0.0), "and the same for a base lookup")
 	_check(_close(sheet.get_health(), 90.0), "the wide ids changed nothing on the real sheet")
 
-	# The scene clock will call regenerate(delta, false) once per physics tick; the
-	# sheet must accept that and clamp, without ever healing hp.
+	# The popup snapshot: 35 named basic rows with effective values, an empty
+	# answer for an unconfigured sheet, and no invented advanced options.
+	_check(bare.get_skill_snapshot().is_empty(), "an unconfigured sheet snapshots no skills")
+	var snap := OpenCharacter.new()
+	_check(snap.configure(4, "Snap", 0, 1, 0), "a snapshot sheet configures")
+	var snapshot: Array = snap.get_skill_snapshot()
+	_check(snapshot.size() == 35, "the snapshot carries all 35 basic skills")
+	var one_handed_found := false
+	var dodging_found := false
+	for row in snapshot:
+		_check(row.has("name") and row.has("value") and row.has("advanced_name") and row.has("advanced_value"),
+			"each snapshot row carries the four fields")
+		_check(String(row.name) != "", "each snapshot row is named")
+		_check(String(row.advanced_name) == "" and _close(float(row.advanced_value), 0.0),
+			"no advanced option shows before one is chosen")
+		if String(row.name) == "One-Handed Weapons":
+			one_handed_found = true
+			_check(_close(float(row.value), 1.125), "One-Handed Weapons reports the effective value")
+		elif String(row.name) == "Dodging":
+			dodging_found = true
+			_check(_close(float(row.value), 1.0), "Dodging reports the effective value")
+	_check(one_handed_found and dodging_found, "the named rules are findable in the snapshot")
+
+	# A sheet is regenerated once per physics tick - by CombatSession with C++'s
+	# in_combat in the main scene, and by the actor itself with false only in a
+	# fixture that has no coordinator. Either way the sheet must accept the call and
+	# clamp, without ever healing hp.
 	var clocked := _configured_sheet()
 	_check(clocked.apply_damage(1, 10.0), "a hit lands to make room in a body part")
 	_check(clocked.apply_damage(0, 10.0), "and another in the head")

@@ -41,14 +41,14 @@
 - The snapshot helper returns 35 entries, in `BasicSkill` order. Each contains the rule name, `Character::effective_skill(basic)`, and an optional chosen advanced rule name plus `Character::effective_skill(basic, chosen)`.
 - `OpenCharacter.get_skill_snapshot()` returns an array of dictionaries with `name`, `value`, `advanced_name`, and `advanced_value`; `advanced_name` is empty when unchosen. An unconfigured sheet returns an empty array. No skill IDs supplied by Godot are needed.
 
-- [ ] **Write failing C++ tests:** on a Strength-blessed level-1 character, assert 35 rows, One-Handed Weapons `1.125`, Dodging `1.0`, no unchosen advanced name; train One-Handed to 100 using `record_use`, select Katana and assert its name and zero effective value, then train it once to rank 1 and assert its effective value `1.125`. Verify the basic row remains its own effective value. Include level-7 and non-strength blessing cases.
-- [ ] **Run the new test** and confirm it fails because the snapshot helper does not exist.
-- [ ] **Implement the helper** using `skill_rule`, `Character::chosen`, `advanced_rule`, and `Character::effective_skill`, without Godot headers or duplicated skill rules.
-- [ ] **Run the C++ test** and `ctest --test-dir cpp/build --output-on-failure`; confirm all pass.
-- [ ] **Write failing bridge checks** for empty unconfigured snapshot and 35 configured rows with `1.125` and `1.0` values; verify the new method is absent before implementing it.
-- [ ] **Implement and bind `get_skill_snapshot()`**, converting helper records into Godot dictionaries without adding mutation APIs.
-- [ ] **Rebuild extension and import:** `cmake -S cpp -B cpp/build -DOPEN_BUILD_GDEXTENSION=ON`, `cmake --build cpp/build -j"$(nproc)"`, `ctest --test-dir cpp/build --output-on-failure`, and `godot --path . --headless --import --quit`.
-- [ ] **Run bridge test:** `godot --path . --headless --script res://scripts/tests/character_sheet_test.gd`; confirm its checks pass. Existing invalid-ID cases intentionally log errors.
+- [x] **Write failing C++ tests:** on a Strength-blessed level-1 character, assert 35 rows, One-Handed Weapons `1.125`, Dodging `1.0`, no unchosen advanced name; train One-Handed to 100 using `record_use`, select Katana and assert its name and zero effective value, then train it once to rank 1 and assert its effective value `1.125`. Verify the basic row remains its own effective value. Include level-7 and non-strength blessing cases.
+- [x] **Run the new test** and confirm it fails because the snapshot helper does not exist.
+- [x] **Implement the helper** using `skill_rule`, `Character::chosen`, `advanced_rule`, and `Character::effective_skill`, without Godot headers or duplicated skill rules.
+- [x] **Run the C++ test** and `ctest --test-dir cpp/build --output-on-failure`; confirm all pass.
+- [x] **Write failing bridge checks** for empty unconfigured snapshot and 35 configured rows with `1.125` and `1.0` values; verify the new method is absent before implementing it.
+- [x] **Implement and bind `get_skill_snapshot()`**, converting helper records into Godot dictionaries without adding mutation APIs.
+- [x] **Rebuild extension and import:** `cmake -S cpp -B cpp/build -DOPEN_BUILD_GDEXTENSION=ON`, `cmake --build cpp/build -j"$(nproc)"`, `ctest --test-dir cpp/build --output-on-failure`, and `godot --path . --headless --import --quit`.
+- [x] **Run bridge test:** `godot --path . --headless --script res://scripts/tests/character_sheet_test.gd`; confirm its checks pass. Existing invalid-ID cases intentionally log errors.
 
 ### Task 2: Render and toggle the popup
 
@@ -63,9 +63,9 @@
 - Rows use names and values from the bridge, with a chosen specialization shown beneath its basic skill. Show no other advanced names or resource pools.
 - I toggles on a non-echo key press; × closes. Clicks inside the panel do not reach floor-click handling; the game remains unpaused.
 
-- [ ] **Write a failing headless popup test:** assert initially hidden; I opens, I closes, repeated key echo does not toggle, and × closes. Check all 10 attribute and 35 basic skill names; check effective `Strength 1.25` and `One-Handed Weapons 1.125`, no HP/stamina/mana pool rows, and no unavailable advanced rows. Feed a controlled chosen-specialization snapshot to the view and assert its name and zero value appear; change a displayed value while open and assert it refreshes. Verify an unconfigured sheet does not display invented data. Test a popup click does not issue a floor movement order, a click outside it still can, and an existing movement order continues while open. Verify a normal floor click still works when closed.
-- [ ] **Run the popup test** and confirm it fails because the popup does not exist.
-- [ ] **Implement the popup** using the approved two-column mockup, a scroll container for grouped skills, simple readable numbers, responsive margins, and standard Godot UI mouse filtering. Preserve the existing world and player code paths.
-- [ ] **Run Godot tests:** `godot --path . --headless --script res://scripts/tests/character_popup_test.gd`, `res://scripts/tests/character_sheet_test.gd`, `res://scripts/tests/character_visuals_test.gd`, and `res://scripts/tests/character_animation_test.gd`; confirm each passes.
+- [x] **Write a failing headless popup test:** assert initially hidden; I opens, I closes, repeated key echo does not toggle, and × closes. Check all 10 attribute and 35 basic skill names; check effective `Strength 1.25` and `One-Handed Weapons 1.125`, no HP/stamina/mana pool rows, and no unavailable advanced rows. Feed a controlled chosen-specialization snapshot to the view and assert its name and zero value appear; change a displayed value while open and assert it refreshes. Verify an unconfigured sheet does not display invented data. Test a popup click does not issue a floor movement order, a click outside it still can, and an existing movement order continues while open. Verify a normal floor click still works when closed.
+- [x] **Run the popup test** and confirm it fails because the popup does not exist.
+- [x] **Implement the popup** using the approved two-column mockup, a scroll container for grouped skills, simple readable numbers, responsive margins, and standard Godot UI mouse filtering. Preserve the existing world and player code paths.
+- [x] **Run Godot tests:** `godot --path . --headless --script res://scripts/tests/character_popup_test.gd`, `res://scripts/tests/character_sheet_test.gd`, `res://scripts/tests/character_visuals_test.gd`, and `res://scripts/tests/character_animation_test.gd`; confirm each passes.
 - [ ] **Visually inspect** the popup at the project window size and a smaller viewport; verify legibility, scrolling, close behavior, and no shown resource pools. Record any interaction that could not be checked.
-- [ ] **Review the diff** and `git status` for accidental changes to user files or generated assets; update the README shortcut.
+- [x] **Review the diff** and `git status` for accidental changes to user files or generated assets; update the README shortcut.

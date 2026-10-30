@@ -1,6 +1,11 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/medieval_weapons.gd" id="2_weapons"]
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
+
+[node name="MedievalWeapons" type="Node3D" parent="."]
+position = Vector3(-15, 0, -15)
+script = ExtResource("2_weapons")

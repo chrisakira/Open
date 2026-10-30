@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://bgn5eamtt5gam"
+path="res://.godot/imported/Axe_Double.obj-a9d09f4824693a3e1fbcb589c8dafe9f.mesh"
+
+[deps]
+
+files=["res://.godot/imported/Axe_Double.obj-a9d09f4824693a3e1fbcb589c8dafe9f.mesh"]
+
+source_file="res://assets/weapons/quaternius_medieval/Axe_Double.obj"
+dest_files=["res://.godot/imported/Axe_Double.obj-a9d09f4824693a3e1fbcb589c8dafe9f.mesh", "res://.godot/imported/Axe_Double.obj-a9d09f4824693a3e1fbcb589c8dafe9f.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

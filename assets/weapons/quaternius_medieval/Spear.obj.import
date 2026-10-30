@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://hg8fftwauaqs"
+path="res://.godot/imported/Spear.obj-e2d5cee1b24394cedcbd583ad19698ef.mesh"
+
+[deps]
+
+files=["res://.godot/imported/Spear.obj-e2d5cee1b24394cedcbd583ad19698ef.mesh"]
+
+source_file="res://assets/weapons/quaternius_medieval/Spear.obj"
+dest_files=["res://.godot/imported/Spear.obj-e2d5cee1b24394cedcbd583ad19698ef.mesh", "res://.godot/imported/Spear.obj-e2d5cee1b24394cedcbd583ad19698ef.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

@@ -2,6 +2,7 @@
 #include <godot_cpp/godot.hpp>
 
 #include "character_bridge.hpp"
+#include "combat_bridge.hpp"
 #include "move_order_bridge.hpp"
 
 using namespace godot;
@@ -12,6 +13,7 @@ static void initialize_open_module(ModuleInitializationLevel p_level) {
 	}
 	GDREGISTER_CLASS(OpenMoveOrder);
 	GDREGISTER_CLASS(OpenCharacter);
+	GDREGISTER_CLASS(OpenCombat);
 }
 
 static void uninitialize_open_module(ModuleInitializationLevel p_level) {

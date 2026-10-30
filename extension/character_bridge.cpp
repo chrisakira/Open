@@ -1,6 +1,9 @@
 #include "character_bridge.hpp"
 
+#include "character_skill_snapshot.hpp"
+
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cstdint>
@@ -72,10 +75,13 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_can_move"), &OpenCharacter::get_can_move);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_can_move", "can_move"),
 							   &OpenCharacter::set_can_move);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_skill_snapshot"), &OpenCharacter::get_skill_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_destination", "destination"),
 							   &OpenCharacter::set_destination);
 	godot::ClassDB::bind_method(godot::D_METHOD("clear_order"), &OpenCharacter::clear_order);
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "position"), &OpenCharacter::velocity_at);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_attack_target_id"),
+							   &OpenCharacter::get_attack_target_id);
 	godot::ClassDB::bind_method(godot::D_METHOD("apply_damage", "part_id", "amount"),
 							   &OpenCharacter::apply_damage);
 	godot::ClassDB::bind_method(godot::D_METHOD("regenerate", "seconds", "in_combat"),
@@ -309,6 +315,23 @@ void OpenCharacter::set_can_move(bool can_move) {
 	c->set_can_move(can_move);
 }
 
+godot::Array OpenCharacter::get_skill_snapshot() const {
+	godot::Array rows;
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return rows;
+	}
+	for (const open::SkillSnapshotRow &row : open::skill_snapshot(*c)) {
+		godot::Dictionary entry;
+		entry["name"] = godot::String(row.name.c_str());
+		entry["value"] = row.value;
+		entry["advanced_name"] = godot::String(row.advanced_name.c_str());
+		entry["advanced_value"] = row.advanced_value;
+		rows.push_back(entry);
+	}
+	return rows;
+}
+
 bool OpenCharacter::set_destination(const godot::Vector3 &destination) {
 	open::Character *c = sheet();
 	if (c == nullptr) {
@@ -332,6 +355,15 @@ godot::Vector3 OpenCharacter::velocity_at(const godot::Vector3 &position) const 
 	}
 	const open::Vec3 v = c->velocity_at(position.x, position.y, position.z);
 	return godot::Vector3(v.x, v.y, v.z);
+}
+
+int64_t OpenCharacter::get_attack_target_id() const {
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return 0;
+	}
+	const std::optional<std::uint64_t> target = c->attack_target();
+	return target.has_value() ? static_cast<int64_t>(*target) : 0;
 }
 
 bool OpenCharacter::apply_damage(int64_t part_id, float amount) {

@@ -151,8 +151,8 @@ int main() {
 		expect_close("the capped parent is the frozen fallback",
 					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Axe), 11250.0f);
 		expect_true("katana is chosen", c.advance(open::AdvancedSkill::Katana));
-		expect_close("the fresh specialisation is worth nothing yet",
-					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 0.0f);
+		expect_close("the fresh specialisation starts at its rank-one value",
+					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 112.5f);
 		expect_true("the choice is reported",
 					c.chosen(open::BasicSkill::OneHandedWeapons) ==
 						std::optional<open::AdvancedSkill>(open::AdvancedSkill::Katana));
@@ -162,8 +162,8 @@ int main() {
 			expect_true("a katana use is recorded",
 						c.record_use(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana, true));
 		}
-		expect_close("eight katana uses reach the attribute average",
-					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 112.5f);
+		expect_close("eight katana uses buy its second rank point",
+					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 225.0f);
 		expect_close("the sibling job still uses the frozen basic",
 					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Axe), 11250.0f);
 		for (int i = 0; i < 100; ++i) {
@@ -171,7 +171,7 @@ int main() {
 		}
 		expect_true("duelist is held", c.has_title(open::Title::Duelist));
 		expect_close("the title multiplies the specialised job once",
-					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 123.75f);
+					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Katana), 247.5f);
 		expect_close("and the fallback job once",
 					 c.effective_skill(open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Axe), 12375.0f);
 		expect_close("the bare query uses the parent title too",
