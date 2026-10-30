@@ -780,6 +780,70 @@ void defense_priority_is_shield_then_weapon_or_dodge() {
 	}
 }
 
+// ---------- the unarmed fallback's own job ----------
+
+// Bare hands are Unarmed Combat, and they follow the sheet's chosen unarmed track: this
+// is the one job a swing can take that no item declares, so the profile has to read it
+// off the sheet.
+void the_unarmed_fallback_follows_the_unarmed_track() {
+	const std::shared_ptr<const open::ItemCatalog> made = loadout_catalog();
+	if (made == nullptr) {
+		return;
+	}
+
+	open::Character bare = wielder(*made);
+	const std::optional<open::WeaponAttackProfile> fresh = open::weapon_attack_profile(bare);
+	expect_true("an unarmed character still has a swing", fresh.has_value());
+	if (fresh) {
+		expect_true("bare hands are Unarmed Combat",
+					fresh->job.basic == open::BasicSkill::UnarmedCombat);
+		expect_true("with no specialisation chosen", !fresh->job.option.has_value());
+		expect_true("at the fresh basic rank", fresh->trained == 1u);
+	}
+
+	// Training the basic keeps moving the same number.
+	open::Character trained_sheet = bare;
+	while (trained_sheet.resolve_skill(open::BasicSkill::UnarmedCombat, std::nullopt).rank < 100u) {
+		trained_sheet.record_use(open::BasicSkill::UnarmedCombat, std::nullopt, true);
+	}
+	const std::optional<open::WeaponAttackProfile> trained = open::weapon_attack_profile(trained_sheet);
+	expect_true("the basic rank keeps rising while unadvanced",
+				trained.has_value() && trained->trained == 100u);
+
+	// A chosen Boxing track is used from rank 1, and then its own rank.
+	expect_true("boxing is chosen", trained_sheet.advance(open::AdvancedSkill::Boxing));
+	const std::optional<open::WeaponAttackProfile> chosen = open::weapon_attack_profile(trained_sheet);
+	expect_true("the profile still names the basic",
+				chosen.has_value() && chosen->job.basic == open::BasicSkill::UnarmedCombat);
+	expect_true("and carries the chosen track",
+				chosen.has_value() && chosen->job.option.has_value() &&
+					*chosen->job.option == open::AdvancedSkill::Boxing);
+	expect_true("a freshly chosen specialisation is rank 1", chosen.has_value() && chosen->trained == 1u);
+	while (trained_sheet.resolve_skill(open::BasicSkill::UnarmedCombat, open::AdvancedSkill::Boxing).rank < 5u) {
+		trained_sheet.record_use(open::BasicSkill::UnarmedCombat, open::AdvancedSkill::Boxing, true);
+	}
+	const std::optional<open::WeaponAttackProfile> boxing = open::weapon_attack_profile(trained_sheet);
+	expect_true("bare hands now use the boxing rank", boxing.has_value() && boxing->trained == 5u);
+	expect_true("the rank used is the one the sheet resolves",
+				boxing.has_value() &&
+					boxing->trained ==
+						trained_sheet
+							.resolve_skill(open::BasicSkill::UnarmedCombat, open::AdvancedSkill::Boxing)
+							.rank);
+
+	// A specialisation under another skill cannot leak into bare hands.
+	open::Character dodger = wielder(*made);
+	while (dodger.resolve_skill(open::BasicSkill::Dodging, std::nullopt).rank < 100u) {
+		dodger.record_use(open::BasicSkill::Dodging, std::nullopt, true);
+	}
+	expect_true("footwork is chosen", dodger.advance(open::AdvancedSkill::Footwork));
+	const std::optional<open::WeaponAttackProfile> unrelated = open::weapon_attack_profile(dodger);
+	expect_true("an unrelated chosen track is not carried into the attack",
+				unrelated.has_value() && !unrelated->job.option.has_value());
+	expect_true("and the attack still uses the Unarmed Combat basic",
+				unrelated.has_value() && unrelated->trained == 1u);
+}
+
 }  // namespace
 
 int main() {
@@ -792,5 +856,6 @@ int main() {
 	the_right_hand_is_the_attack_and_a_shield_never_is();
 	the_profile_reads_the_definition_and_the_instance();
 	defense_priority_is_shield_then_weapon_or_dodge();
+	the_unarmed_fallback_follows_the_unarmed_track();
 	return test_summary();
 }

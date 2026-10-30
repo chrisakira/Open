@@ -20,10 +20,6 @@ namespace {
 constexpr std::array<double, kQualityTierCount> kQualityMultipliers = {1.0,  2.0,  4.0,   8.0,
 																	   16.0, 32.0, 100.0};
 
-// A percentage point bound shared with the definition validator: resistances,
-// penetrations and mitigation all live in 0..100.
-constexpr double kPercentMax = 100.0;
-
 // docs/weapons.md, Toughness reduction: damage after armour divided by
 // 1 + 0.05 x base Toughness.
 constexpr double kToughnessCoefficient = 0.05;
@@ -448,10 +444,6 @@ std::optional<WeaponDefendProfile> weapon_defend_profile(const Character &charac
 }
 
 namespace {
-
-// Durability at zero is a third of the damage, and the locked number is 0.33: not
-// one third computed, because the difference is what a test would have to chase.
-inline constexpr double kZeroDurabilityFactor = 0.33;
 
 bool within(double value, double low, double high) {
 	return finite(value) && value >= low && value <= high;

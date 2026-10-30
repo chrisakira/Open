@@ -2,6 +2,7 @@
 
 #include "open/character.hpp"
 #include "open/combat_rules.hpp"
+#include "open/weapon_rules.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -57,8 +58,8 @@ bool has_no_legs(const Character &sheet) {
 
 // Can this actor still act on the attack order it holds, given this snapshot?
 // Death, an absent or dead target, nothing left to swing with, and an actor with
-// no legs that is not already in reach all end it. Range is measured from the
-// position the caller observed, never from one kept here.
+// no legs that is not already in reach all end it. Reach is the weapon's own, and is
+// measured from the position the caller observed, never from one kept here.
 bool order_is_live(const Combatant &actor, std::span<const Combatant> actors) {
 	Character *sheet = actor.character;
 	const std::optional<std::uint64_t> target_id = sheet->attack_target();
@@ -69,10 +70,12 @@ bool order_is_live(const Combatant &actor, std::span<const Combatant> actors) {
 	if (target == nullptr || target->character == sheet || !target->character->alive()) {
 		return false;
 	}
-	if (!attack_profile(*sheet).has_value()) {
+	const std::optional<WeaponAttackProfile> attack = weapon_attack_profile(*sheet);
+	if (!attack.has_value()) {
 		return false;
 	}
-	if (!melee_in_range(actor.position, target->position) && has_no_legs(*sheet)) {
+	if (!horizontal_in_reach(actor.position, target->position, attack->stats.max_reach) &&
+		has_no_legs(*sheet)) {
 		return false;
 	}
 	return true;

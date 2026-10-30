@@ -10,6 +10,23 @@
 
 namespace open {
 
+// A percentage, in points: the domain mitigation, resistances and penetrations all
+// live in, and the bound the definition validator shares.
+inline constexpr double kPercentMax = 100.0;
+
+// Durability at zero is a third of the damage. The locked number is 0.33 rather than
+// one third computed, because the difference is what a test would have to chase. It
+// discounts a weapon's own offense and, on the other side, a blocking item that has
+// nothing left to block with.
+inline constexpr double kZeroDurabilityFactor = 0.33;
+
+// What one exchange costs the things it touches. These are separate on purpose: a
+// swing, a block that turned something aside, and a defence in general are three
+// different actions, and docs/weapons.md keeps each of them tunable alone.
+inline constexpr unsigned kWeaponAttackWear = 1;
+inline constexpr unsigned kWeaponBlockWear = 1;
+inline constexpr double kDefenseStaminaCost = 8.0;
+
 // The arithmetic of wielding: what quality is worth, how far below a weapon's
 // requirements a character is, what a swing costs and how soon the next one can
 // come. These are pure functions over the sheet and the definition. They change

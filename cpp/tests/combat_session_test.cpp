@@ -40,9 +40,14 @@ constexpr std::size_t kDodging = 5;
 constexpr open::Title kTitles[] = {open::Title::Duelist, open::Title::Breaker, open::Title::Wall};
 constexpr std::size_t kTitleCount = sizeof(kTitles) / sizeof(kTitles[0]);
 
-// Fresh sheets swing at trained rank 1: 8 x 1/200 damage, one swing per
-// 1/0.214 s, and nothing here sets a rank, a pool or a clock by hand.
+// Fresh sheets swing at trained rank 1: 8 x 1/200, one swing per 1/0.214 s, and
+// nothing here sets a rank, a pool or a clock by hand. The typed path divides the blow
+// by the defender's base Toughness (1.05) and, when they can pay for a defence, halves
+// it; both are named here rather than written at each use.
 constexpr float kRank1Damage = 0.04f;
+constexpr float kToughnessDivisor = 1.05f;
+constexpr float kWholeBlow = kRank1Damage / kToughnessDivisor;
+constexpr float kAnsweredBlow = kRank1Damage * 0.5f / kToughnessDivisor;
 constexpr float kRank1Cooldown = 1.0f / 0.214f;
 
 // A level-1 sheet's pools all start at 100, and out of combat they refill at 10
@@ -101,6 +106,16 @@ void break_both_legs(open::Character &c) {
 	expect_close("and it cannot walk", c.walk_speed(), 0.0f);
 }
 
+// Leaves a sheet with nothing to pay a defence with. The blow then still meets an
+// answer, at half, or - once that answer's clock is running - none at all; either way
+// the test knows which, and does not have to model the fight to say what it is worth.
+void exhaust_defence(open::Character &who) {
+	const float available = who.pool(open::PoolKind::Stamina).current;
+	if (available > 0.0f) {
+		expect_true("the defence is drained", who.spend_stamina(available));
+	}
+}
+
 // Takes the same resources off every sheet in a block, so a tick's regrowth is
 // visible instead of hidden by a full pool.
 void drain(open::Character &c) {
@@ -116,7 +131,7 @@ void drain_main_below_one_hit(open::Character &victim, float hit) {
 	const open::BodyPart spare[] = {open::BodyPart::LeftArm, open::BodyPart::RightArm, open::BodyPart::LeftLeg,
 									open::BodyPart::RightLeg, open::BodyPart::Head};
 	for (const open::BodyPart part : spare) {
-		const float need = victim.pool(open::PoolKind::Hp).current - 0.03f;
+		const float need = victim.pool(open::PoolKind::Hp).current - 0.015f;
 		if (need <= 0.0f) {
 			break;
 		}
@@ -429,12 +444,13 @@ int main() {
 		open::CombatSession near_session(15);
 		expect_true("the in-reach attack is issued", near_session.issue_attack(close, 1, 2));
 		expect_vec("a legless fighter cannot walk", near_session.velocity_at(1, close), 0.0f, 0.0f, 0.0f);
+		exhaust_defence(opponent);
 		const Observed before_opponent = observe(opponent);
 		expect_true("the tick runs", near_session.step(0.1f, close));
 		expect_true("in reach, the order survives the lost legs",
 					is_target(groundling.attack_target(), 2));
 		expect_close("a legless fighter with an arm still swings", hp_lost(before_opponent, opponent),
-					 kRank1Damage, 0.001f);
+					 kAnsweredBlow, 0.001f);
 		expect_true("and lands on exactly one part", parts_hurt(before_opponent, opponent) == 1);
 
 		// can_move(false) on the attacker is not a lost leg: the order stays.
@@ -532,12 +548,13 @@ int main() {
 			roster({{&attacker, at(0.0f, 0.0f, 0.0f)}, {&target, at(1.0f, 0.0f, 0.0f)}});
 		open::CombatSession session(23);
 		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+		exhaust_defence(target);
 
 		const Observed before_target = observe(target);
 		const Observed before_attacker = observe(attacker);
 		expect_true("a short step runs", session.step(0.1f, world));
 
-		expect_close("the blow lands", hp_lost(before_target, target), kRank1Damage, 0.001f);
+		expect_close("the blow lands", hp_lost(before_target, target), kAnsweredBlow, 0.001f);
 		expect_true("exactly one part is hurt", parts_hurt(before_target, target) == 1);
 		expect_close("the attacker is unharmed", hp_lost(before_attacker, attacker), 0.0f);
 		expect_true("the defender still has no attack order", !target.attack_target().has_value());
@@ -546,11 +563,16 @@ int main() {
 					 0.0f);
 		expect_close("the attacker's clock runs", attacker.attack_cooldown_remaining(), kRank1Cooldown,
 					 0.001f);
+		// The answer it could not pay for is exhausted, so its clock is the doubled
+		// rank-1 figure clamped to the band.
 		expect_close("the defender's spent defence clock runs too", target.defend_cooldown_remaining(),
-					 kRank1Cooldown, 0.001f);
-		expect_true("the defender trains nothing",
-					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp &&
-						target.basic(open::BasicSkill::Blocking).xp == before_target.tracks[kBlocking].xp);
+					 5.0f, 0.001f);
+		// Passive still means passive: no retaliation, and no Blocking either, because a
+		// dodge is what a sheet with nothing held defends with. What it does earn - one
+		// Dodging XP for the half it turned aside - is a defence rule, not a coordinator
+		// one, and is pinned by the swing tests.
+		expect_true("the defender learns no Blocking and earns no Wall",
+					target.basic(open::BasicSkill::Blocking).xp == before_target.tracks[kBlocking].xp);
 		expect_true("no Wall progress from a defence that lost",
 					target.title_count(open::Title::Wall) == 0u);
 		expect_true("the attacker trains once for the hit",
@@ -568,7 +590,8 @@ int main() {
 			roster({{&killer, at(0.0f, 0.0f, 0.0f)}, {&victim, at(1.0f, 0.0f, 0.0f)}});
 		open::CombatSession session(24);
 		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
-		drain_main_below_one_hit(victim, kRank1Damage);
+		exhaust_defence(victim);
+		drain_main_below_one_hit(victim, kAnsweredBlow);
 
 		expect_true("a short step runs", session.step(0.1f, world));
 		expect_close("the swing finishes the victim", victim.pool(open::PoolKind::Hp).current, 0.0f, 0.001f);
@@ -693,39 +716,57 @@ int main() {
 		expect_true("the reciprocal order is issued", session.issue_attack(world, 2, 1));
 		expect_true("both are in combat", session.in_combat(1, world) && session.in_combat(2, world));
 
+		// Both bars start at exactly one swing's price: the swing is paid, and so whole
+		// and unhurried, while a defence at 8 is not affordable and halves whatever it
+		// turns aside. That pins every blow in this block to one size without needing
+		// the fight to be modelled.
+		// Both bars start empty. That makes the first exchange symmetric, which is the
+		// point of the block: whoever the roster asks first cannot hold an advantage in
+		// the numbers, because neither can pay for a swing or for a defence. Each blow is
+		// a quarter of a whole typed hit - half for the unpaid attacker, half again for
+		// the unpaid answer - and every clock in the fight starts on the exhausted rank-1
+		// figure.
+		exhaust_defence(first);
+		exhaust_defence(second);
 		const Observed before_first = observe(first);
 		const Observed before_second = observe(second);
+		const float spent_blow = kRank1Damage * 0.25f / kToughnessDivisor;
+		const float whole_blow = kRank1Damage / kToughnessDivisor;
 		expect_true("one short tick runs", session.step(0.05f, world));
-		expect_close("the first fighter lands one hit", hp_lost(before_second, second), kRank1Damage, 0.001f);
-		expect_close("the second fighter lands one hit in the same tick", hp_lost(before_first, first),
-					 kRank1Damage, 0.001f);
-		expect_close("the first fighter's attack clock is its own", first.attack_cooldown_remaining(),
-					 kRank1Cooldown, 0.001f);
-		expect_close("the second fighter's attack clock is its own", second.attack_cooldown_remaining(),
-					 kRank1Cooldown, 0.001f);
-		expect_close("both defence clocks started", first.defend_cooldown_remaining(), kRank1Cooldown,
+		expect_close("the first fighter lands one hit", hp_lost(before_second, second), spent_blow,
 					 0.001f);
-		expect_close("including the other's", second.defend_cooldown_remaining(), kRank1Cooldown, 0.001f);
-		// 8 stamina per swing, plus one in-combat second's worth at the 0.5 factor.
-		expect_close("each pays its own stamina and regrows once",
-					 first.pool(open::PoolKind::Stamina).current, kPoolMax - 8.0f + 0.25f, 0.01f);
+		expect_close("the second fighter lands one hit in the same tick", hp_lost(before_first, first),
+					 spent_blow, 0.001f);
+		expect_close("the first fighter's attack clock is its own", first.attack_cooldown_remaining(),
+					 5.0f, 0.001f);
+		expect_close("the second fighter's attack clock is its own", second.attack_cooldown_remaining(),
+					 5.0f, 0.001f);
+		expect_close("both defence clocks started", first.defend_cooldown_remaining(), 5.0f, 0.001f);
+		expect_close("including the other's", second.defend_cooldown_remaining(), 5.0f, 0.001f);
+		// An unpaid swing and an unpaid defence charge nothing, so the bar holds the
+		// frame's own in-combat regrowth and nothing else.
+		expect_close("each regrows once per frame", first.pool(open::PoolKind::Stamina).current, 0.25f,
+					 0.01f);
 		expect_close("for the other fighter as well",
-					 second.pool(open::PoolKind::Stamina).current, kPoolMax - 8.0f + 0.25f, 0.01f);
+					 second.pool(open::PoolKind::Stamina).current, 0.25f, 0.01f);
 
-		// 100 more ticks of 0.05 s: the cooldown gates the swings, not the frame
-		// rate, so each fighter lands exactly twice in a little over 5 seconds.
+		// 100 more ticks of 0.05 s: the cooldown gates the swings, not the frame rate.
+		// The bars refill and empty on their own schedule now, so the blows are not all
+		// one size and the count is bounded rather than summed - but 5 s is a couple of
+		// swings, nowhere near the hundred this loop would have produced per frame.
 		for (int tick = 0; tick < 100; ++tick) {
 			expect_true("a small tick is accepted", session.step(0.05f, world));
 		}
-		expect_close("the first fighter was hit twice, not once per frame",
-					 hp_lost(before_first, first), kRank1Damage * 2.0f, 0.001f);
-		expect_close("the second fighter was hit twice as well",
-					 hp_lost(before_second, second), kRank1Damage * 2.0f, 0.001f);
-		expect_true("each fighter trained its attack twice",
-					first.basic(open::BasicSkill::UnarmedCombat).xp ==
-						before_first.tracks[kUnarmed].xp + 2u &&
-						second.basic(open::BasicSkill::UnarmedCombat).xp ==
-							before_second.tracks[kUnarmed].xp + 2u);
+		const float first_lost = hp_lost(before_first, first);
+		const float second_lost = hp_lost(before_second, second);
+		expect_true("the first fighter was hit a few times across 5 s, not once per frame",
+					first_lost >= spent_blow - 1e-4f && first_lost <= 4.0f * whole_blow);
+		expect_true("the second fighter was hit a comparable number of times",
+					second_lost >= spent_blow - 1e-4f && second_lost <= 4.0f * whole_blow);
+		expect_true("each fighter trained its attack for the blows it landed",
+					first.basic(open::BasicSkill::UnarmedCombat).xp > before_first.tracks[kUnarmed].xp &&
+						second.basic(open::BasicSkill::UnarmedCombat).xp >
+							before_second.tracks[kUnarmed].xp);
 		expect_true("neither level moved", first.level() == 1 && second.level() == 1);
 		expect_true("both orders are still standing",
 					is_target(first.attack_target(), 2) && is_target(second.attack_target(), 1));

@@ -105,6 +105,11 @@ target_link_libraries(stagger_tests PRIVATE open_sim)
 target_compile_options(stagger_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME stagger COMMAND stagger_tests)
 
+add_executable(weapon_combat_tests tests/weapon_combat_test.cpp)
+target_link_libraries(weapon_combat_tests PRIVATE open_sim)
+target_compile_options(weapon_combat_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME weapon_combat COMMAND weapon_combat_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)

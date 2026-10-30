@@ -1,6 +1,7 @@
 #include "open/character.hpp"
 
 #include "open/combat_rules.hpp"
+#include "open/weapon_rules.hpp"
 
 #include <cmath>
 #include <utility>
@@ -358,25 +359,22 @@ std::optional<std::uint64_t> Character::attack_target() const {
 }
 
 Vec3 Character::attack_velocity_at(const Vec3 &self, const Vec3 &target) const {
-	if (!attack_target_.has_value() || melee_in_range(self, target) || !can_walk()) {
+	if (!attack_target_.has_value() || !can_walk() || is_stunned()) {
+		// A stun holds the character where they are and does not take the order away:
+		// the walk resumes on its own when the stun does.
 		return {};
 	}
-	const float dx = target.x - self.x;
-	const float dz = target.z - self.z;
-	const float length = std::sqrt(dx * dx + dz * dz);
-	if (!std::isfinite(length) || length <= kMeleeRange) {
+	// The distance this sheet is trying to close is its weapon's own reach, read now:
+	// a spear walks to 2.0 and a dagger to 1.0, and the sheet with both is walking with
+	// whichever one it would swing.
+	const std::optional<WeaponAttackProfile> attack = weapon_attack_profile(*this);
+	if (!attack.has_value()) {
 		return {};
 	}
-	// Aim at the near side of the target: walking stops kArriveRadius short of
-	// what it walks toward, so aiming 1.1 away stops the actor at melee range
-	// instead of 0.4 beyond it. The actor's own height keeps the query horizontal.
-	const float approach = kMeleeRange - MoveOrder::kArriveRadius;
-	MoveOrder pursuit;
-	if (!pursuit.set_destination(target.x - dx * (approach / length), self.y,
-								 target.z - dz * (approach / length))) {
-		return {};
-	}
-	return pursuit.velocity_at(self.x, self.y, self.z, walk_speed());
+	// One rule for both questions: the walk aims at the point this weapon's swing will
+	// accept, so it cannot stop somewhere the attack then refuses, or walk past a target
+	// the attack already has.
+	return pursuit_velocity(self, target, attack->stats.max_reach, walk_speed());
 }
 
 }  // namespace open

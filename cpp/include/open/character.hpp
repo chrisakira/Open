@@ -193,6 +193,10 @@ private:
 	// nothing outside the sheet can stun anything with it.
 	double stagger_threshold() const;
 
+	// Clears the meter and the stun together. Used when a sheet dies, so a corpse holds
+	// neither, and never as a cure: nothing outside the simulation can take a stun away.
+	void clear_stagger();
+
 	// Blunt is remembered here, not in Vitals: a stun is a pause with a schedule, and
 	// it neither heals nor injures. The hits that fill it arrive with the typed switch.
 	StaggerState stagger_;

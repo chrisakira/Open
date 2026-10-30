@@ -1,14 +1,19 @@
 #include "open/character.hpp"
 #include "open/combat_rules.hpp"
+#include "open/item_instance.hpp"
+#include "open/items.hpp"
 #include "open/move_order.hpp"
+#include "open/weapon_rules.hpp"
 
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
+#include <vector>
 
 #include "test_support.hpp"
 
@@ -42,18 +47,55 @@ constexpr std::size_t kTitleCount = sizeof(kTitles) / sizeof(kTitles[0]);
 constexpr std::size_t kDuelist = 0;
 constexpr std::size_t kBreaker = 1;
 
-// A fresh sheet swings at trained rank 1: weapon 8 x 1/200, one swing every
-// 1/0.214 s. Nothing here sets a rank, a pool or a clock by hand.
+// A fresh sheet swings at trained rank 1: 8 damage x 1/200, one swing every
+// 1/0.214 s. Nothing here sets a rank, a pool or a clock by hand. The typed path
+// arrives at the same numbers by its own route - the locked unarmed fallback is 8
+// blunt at speed 1, and every item below is a hand-carved 8-damage fixture whose
+// components the scalar path never distinguished - which is the point: the switch
+// replaces the placeholder without moving the balance it was tuned against.
 constexpr float kRank1Damage = 0.04f;
 constexpr float kRank1Cooldown = 1.0f / 0.214f;
 
-// Rank 100 is 1/1.6 = 0.625 s and, with armour 0, weapon 8 x 100/200 = 4 damage.
+// Rank 100 is 1/1.6 = 0.625 s and, with armour 0, 8 x 100/200 = 4 damage.
 constexpr float kRank100Damage = 4.0f;
 constexpr float kRank100Cooldown = 0.625f;
 
+// A defence with nothing to pay its 8 with is still performed, at half. Two of the
+// cases below measure a blow through such a defence; everywhere else the target is
+// left with a full bar so that the first answer is a ready dodge (worth everything,
+// and so spends its own clock), and the blow under test is the one that arrives while
+// that clock is still running - unanswered, and at its own whole number.
+constexpr float kUnpaidDefenceDivisor = 1.05f;  // base Toughness 1
+inline float half_of(float hit) {
+	return hit * 0.5f / kUnpaidDefenceDivisor;
+}
+
+// A blow that arrives, in the two ways a rank-1 blow can arrive: answered by a
+// defence that could not pay (half), or by a defence that is still cooling from that
+// answer (whole). Both divide by the defender's base Toughness.
+inline float first_blow(float hit) {
+	return hit * 0.5f / kUnpaidDefenceDivisor;
+}
+
+inline float answered_hit(float hit, bool defender_paid) {
+	return defender_paid ? hit * 0.5f / kUnpaidDefenceDivisor : hit / kUnpaidDefenceDivisor;
+}
+
+// The same blow when the attacker also could not pay for it, which is a second
+// halving: one for the swing, one for the defence.
+inline float exhausted_attacker_hit(float hit, bool defender_paid) {
+	return hit * 0.5f / kUnpaidDefenceDivisor * (defender_paid ? 0.5f : 1.0f);
+}
+
+// What one defence costs its owner, and what one swing costs the thing it is swung
+// with: three separate numbers, three separate rules.
+constexpr float kDefenceCost = 8.0f;
+constexpr unsigned kWear = 1u;
+
+
 // A part or main HP left with less than one more hit on it, so the next swing
-// is what ends it.
-constexpr float kAlmostDead = 0.03f;
+// is what ends it. Sized to the half a blow delivers through a spent defence.
+constexpr float kAlmostDead = 0.015f;
 
 open::Vec3 at(float x, float y, float z) {
 	return open::Vec3{x, y, z};
@@ -75,26 +117,140 @@ open::Character make_character(std::uint64_t id) {
 	return *made;
 }
 
-open::ItemRef held(open::ItemId id, open::HandUse use, std::optional<open::BasicSkill> skill) {
-	open::ItemRef item;
-	item.id = id;
-	item.hand_use = use;
-	item.allowed_slots.set(static_cast<std::size_t>(static_cast<int>(open::Slot::LeftHand)));
-	item.allowed_slots.set(static_cast<std::size_t>(static_cast<int>(open::Slot::RightHand)));
-	item.combat_skill = skill;
-	return item;
+// The items these fights are swung with. Each one is exactly 8 of one component, so
+// a swing's number is the sheet's rank and nothing else, and the only claims the
+// items make are which job trains and what a block is worth.
+constexpr open::DefinitionId kSwordDef = 501;
+constexpr open::DefinitionId kGreatswordDef = 502;
+constexpr open::DefinitionId kSpearDef = 503;
+constexpr open::DefinitionId kTowerDef = 504;    // blocks everything
+constexpr open::DefinitionId kBucklerDef = 505;  // blocks nothing at all
+constexpr open::MaterialId kMaterial = 11;
+
+const std::shared_ptr<const open::ItemCatalog> &catalogue() {
+	static const std::shared_ptr<const open::ItemCatalog> made = [] {
+		auto hand_weapon = [](open::DefinitionId id, const char *model, open::HandUse use,
+							  open::DamageComponents damage, open::BasicSkill basic,
+							  std::optional<open::AdvancedSkill> option) {
+			open::ItemDefinition item;
+			item.id = id;
+			item.model_key = model;
+			item.allowed_slots.set(static_cast<std::size_t>(open::Slot::LeftHand));
+			item.allowed_slots.set(static_cast<std::size_t>(open::Slot::RightHand));
+			item.hand_use = use;
+			open::WeaponDefinition weapon;
+			weapon.job = {basic, option};
+			weapon.stats.damage = damage;
+			weapon.stats.min_reach = 0.0;
+			weapon.stats.max_reach = 1.5;
+			weapon.stats.speed = 1.0;
+			weapon.stats.stamina_cost = 8.0;
+			// Nothing here blocks: a weapon that could is a different claim, and the
+			// sheets below need to answer with a dodge they can or cannot pay for.
+			weapon.stats.block_percent = 0.0;
+			weapon.stats.weight = 2.0;
+			weapon.stats.required_trained_rank = 1;
+			item.weapon = weapon;
+			return item;
+		};
+		std::vector<open::ItemDefinition> items;
+		// All 8 of one component, and that component is cut. Blunt is the one component
+		// the stagger meter reads, and these fights would otherwise end in a stun,
+		// whose "no defence at all" is a different rule from the one being measured;
+		// `weapon_combat` owns stagger. What matters here is 8 x rank / 200.
+		const open::DamageComponents eight{8.0, 0.0, 0.0};
+		items.push_back(hand_weapon(kSwordDef, "Sword", open::HandUse::OneHanded, eight,
+									open::BasicSkill::OneHandedWeapons, std::nullopt));
+		items.push_back(hand_weapon(kGreatswordDef, "Greatsword", open::HandUse::TwoHanded, eight,
+									open::BasicSkill::TwoHandedWeapons, std::nullopt));
+		items.push_back(hand_weapon(kSpearDef, "Spear", open::HandUse::TwoHanded, eight,
+									open::BasicSkill::Polearms, std::nullopt));
+
+		auto board = [](open::DefinitionId id, const char *model, double mitigation) {
+			open::ItemDefinition item;
+			item.id = id;
+			item.model_key = model;
+			item.allowed_slots.set(static_cast<std::size_t>(open::Slot::LeftHand));
+			item.allowed_slots.set(static_cast<std::size_t>(open::Slot::RightHand));
+			item.hand_use = open::HandUse::OneHanded;
+			open::ShieldDefinition shield;
+			shield.job = {open::BasicSkill::Blocking, std::nullopt};
+			shield.block_percent = mitigation;
+			shield.weight = 3.0;
+			item.shield = shield;
+			return item;
+		};
+		items.push_back(board(kTowerDef, "Tower_Shield", 100.0));
+		items.push_back(board(kBucklerDef, "Buckler", 0.0));
+
+		open::MaterialDefinition material;
+		material.id = kMaterial;
+		material.max_durability_by_quality = {100, 100, 100, 100, 100, 100, 100};
+		auto built = open::ItemCatalog::create(items, {material});
+		if (!built.has_value()) {
+			g_failed++;
+		}
+		return std::make_shared<open::ItemCatalog>(std::move(built).value());
+	}();
+	return made;
 }
 
-open::ItemRef one_handed(open::ItemId id, std::optional<open::BasicSkill> skill) {
-	return held(id, open::HandUse::OneHanded, skill);
+open::Character sheet(std::uint64_t id) {
+	const std::optional<open::Character> made = open::Character::create(config(id), catalogue());
+	expect_true("the test character is created with a catalog", made.has_value());
+	return *made;
 }
 
-open::ItemRef two_handed(open::ItemId id, std::optional<open::BasicSkill> skill) {
-	return held(id, open::HandUse::TwoHanded, skill);
+// Carries one described item and puts it in a hand. Every step reports: a fixture
+// that silently failed to hold its weapon would test the wrong thing.
+void wield(open::Character &who, open::DefinitionId what, open::ItemId id, open::Slot where) {
+	const std::optional<open::ItemInstance> instance =
+		open::make_item_instance(*who.catalog(), what, kMaterial, id, 1);
+	expect_true("the fixture can describe the item", instance.has_value());
+	if (!instance.has_value()) {
+		return;
+	}
+	expect_true("the item is carried", who.add_instance(*instance));
+	expect_true("the item is held", who.equip(id, where));
 }
 
-open::ItemRef shield(open::ItemId id) {
-	return held(id, open::HandUse::OneHanded, open::BasicSkill::Blocking);
+// Takes a pool down to an exact figure, in one spend the sheet can afford. Fixtures
+// that need "8 left" should say so, rather than adding up sprints from a starting 100
+// that time and other swings have already moved.
+void drain_to(open::Character &who, float want) {
+	const float spare = who.pool(open::PoolKind::Stamina).current - want;
+	// Sprinting costs 10 stamina a second, so the seconds asked for is a tenth of the
+	// stamina the fixture wants gone.
+	if (spare > 0.0f) {
+		expect_true("the bar is drained to the figure the fixture asks for",
+					who.spend(open::ResourceUse::Sprint, spare / open::kSprintStaminaPerSecond));
+	}
+	expect_close("the bar is where the fixture needs it",
+				 who.pool(open::PoolKind::Stamina).current, want, 0.001f);
+}
+
+// Spends a target's whole bar, so its next answer is an unpaid one at half rather
+// than a ready one that turns the blow aside. Draining is the only way to do this
+// without spending the target's part draw, which the seeded cases below depend on.
+void exhaust_defence(open::Character &who) {
+	const float available = who.pool(open::PoolKind::Stamina).current;
+	if (available > 0.0f) {
+		expect_true("the defence is drained", who.spend_stamina(available));
+	}
+	expect_close("the defence has nothing left to pay with",
+				 who.pool(open::PoolKind::Stamina).current, 0.0f, 1e-6);
+}
+
+// Waits out the attacker's own clock, and nothing else: a target that has just
+// answered has a defence cooldown running, and this is the only way to swing at it
+// unanswered. Advancing the target as well would hand its defence back, which is the
+// opposite of what "the blow arrives" means here.
+void ready_attacker(open::Character &who) {
+	expect_true("the attacker feels its own clock", who.advance_combat_clocks(kRank1Cooldown));
+	expect_close("its swing is ready again", who.attack_cooldown_remaining(), 0.0f, 0.001f);
+	// Its bar regrows while it waits, which the fixtures below account for by setting
+	// stamina from what is actually in the pool rather than from a hardcoded sprint.
+	expect_true("the bar regrows in the meantime", who.regenerate(1.0f, false));
 }
 
 // Training uses the existing progression APIs only.
@@ -205,30 +361,6 @@ void expect_unchanged(const char *name, const Observed &before, const open::Char
 	}
 }
 
-// The pools this sheet owns: a defence may pay its clock and never these.
-void expect_no_new_wounds(const char *name, const Observed &before, const open::Character &c) {
-	const Observed after = observe(c);
-	if (!close(after.hp, before.hp)) {
-		std::cerr << "FAIL " << name << ": main HP " << before.hp << " -> " << after.hp << "\n";
-		g_failed++;
-	}
-	if (!close(after.stamina, before.stamina)) {
-		std::cerr << "FAIL " << name << ": stamina " << before.stamina << " -> " << after.stamina << "\n";
-		g_failed++;
-	}
-	if (!close(after.mana, before.mana)) {
-		std::cerr << "FAIL " << name << ": mana " << before.mana << " -> " << after.mana << "\n";
-		g_failed++;
-	}
-	for (std::size_t i = 0; i < kPartCount; ++i) {
-		if (!close(after.parts[i], before.parts[i])) {
-			std::cerr << "FAIL " << name << ": body part " << static_cast<int>(kParts[i]) << " "
-					  << before.parts[i] << " -> " << after.parts[i] << "\n";
-			g_failed++;
-		}
-	}
-}
-
 bool is_part(const std::optional<open::BodyPart> &got, open::BodyPart want) {
 	return got.has_value() && *got == want;
 }
@@ -267,28 +399,6 @@ void leave_part_below_one_hit(open::Character &victim, open::BodyPart part, floa
 	expect_true("the part is below the next hit", victim.body_part(part).current < hit);
 }
 
-// Brings main HP to just under the next hit while keeping every part alive, so
-// only the swing under test can finish the job.
-void drain_main_hp_below_one_hit(open::Character &victim, float hit) {
-	const open::BodyPart spare[] = {open::BodyPart::Head, open::BodyPart::Torso, open::BodyPart::LeftArm,
-									open::BodyPart::RightArm};
-	for (const open::BodyPart part : spare) {
-		const float need = victim.pool(open::PoolKind::Hp).current - kAlmostDead;
-		if (need <= 0.0f) {
-			break;
-		}
-		const float room = victim.body_part(part).current - (hit + 0.02f);
-		if (room <= 0.0f) {
-			continue;
-		}
-		expect_true("main HP is worn down", victim.damage(part, room < need ? room : need));
-	}
-	expect_true("the victim is still alive", victim.alive());
-	expect_true("main HP is left just below one more hit",
-				victim.pool(open::PoolKind::Hp).current > 0.0f &&
-					victim.pool(open::PoolKind::Hp).current < hit);
-}
-
 // The one thing every landed hit must do: charge main HP once, never twice, and
 // never charge the difference left over from a clamped body part.
 void expect_one_hp_charge(const open::Character &victim, const Observed &before, float hit, const char *what) {
@@ -316,14 +426,25 @@ int main() {
 		const open::Vec3 other = at(1.5f, 25.0f, 0.0f);
 		expect_true("the attack order names the defender", attacker.set_attack_target(2));
 
+		std::mt19937_64 rng(7);
+		// The target answers the first blow with a ready dodge, which is worth
+		// everything, and the swing this block measures is the next one: unanswered,
+		// because the defence is still cooling.
+		const std::optional<open::SwingResult> turned_aside =
+			attacker.try_melee_swing(target, self, other, rng);
+		expect_true("a fresh sheet's own dodge turns the first blow aside",
+					turned_aside.has_value() && turned_aside->nullified);
+		ready_attacker(attacker);
+
 		const Observed before_target = observe(target);
 		const Observed before_attacker = observe(attacker);
-
-		std::mt19937_64 rng(7);
 		const std::optional<open::SwingResult> swing = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("a ready in-range swing is an attempt", swing.has_value());
 		expect_true("the swing lands", swing.has_value() && !swing->nullified);
-		expect_close("a rank-1 unarmed swing does 0.04", swing.has_value() ? swing->damage : 0.0f, kRank1Damage);
+		// 8 blunt x 1/200 over 1.05 of Toughness: the same 0.04 the placeholder produced,
+		// reached by the typed path's own arithmetic.
+		expect_close("a rank-1 unarmed swing does 0.04 less Toughness",
+					 swing.has_value() ? swing->damage : 0.0f, kRank1Damage / kUnpaidDefenceDivisor, 0.001f);
 		expect_true("a landed hit names a part", swing.has_value() && swing->part.has_value());
 
 		int hurt = 0;
@@ -331,22 +452,30 @@ int main() {
 			const float lost = before_target.parts[i] - target.body_part(kParts[i]).current;
 			if (!close(lost, 0.0f)) {
 				hurt++;
-				expect_close("that part takes exactly the swing", lost, kRank1Damage, 0.001f);
+				expect_close("that part takes exactly the swing", lost,
+							 kRank1Damage / kUnpaidDefenceDivisor, 0.001f);
 				expect_true("the part that moved is the part the swing named",
 							is_part(swing->part, kParts[i]));
 			}
 		}
 		expect_true("exactly one body part is hurt", hurt == 1);
-		expect_one_hp_charge(target, before_target, kRank1Damage, "main HP is charged once for the hit");
+		expect_one_hp_charge(target, before_target, kRank1Damage / kUnpaidDefenceDivisor,
+							 "main HP is charged once for the hit");
 
-		expect_close("the swing pays 8 stamina", attacker.pool(open::PoolKind::Stamina).current, 92.0f);
-		expect_close("the target spends nothing to be hit", target.pool(open::PoolKind::Stamina).current,
-					 before_target.stamina);
+		// Only the swing that landed cost anything: the cooling answer is not performed
+		// and so is not charged.
+		expect_close("the landing swing paid its 8 and nothing else did",
+					 attacker.pool(open::PoolKind::Stamina).current, 92.0f);
+		expect_close("an unanswered defence pays nothing",
+					 target.pool(open::PoolKind::Stamina).current, before_target.stamina);
 		const open::Training punch = attacker.basic(open::BasicSkill::UnarmedCombat);
+		// One XP for the turned-aside swing is not this block's claim (a nullified blow
+		// trains the attacker nothing, and is pinned so elsewhere); the landed one is the
+		// second point.
 		expect_true("the landed swing adds one residual XP and no rank",
 					punch.rank == before_attacker.tracks[kUnarmed].rank &&
 						punch.xp == before_attacker.tracks[kUnarmed].xp + 1u);
-		expect_true("the failed defence trains nothing",
+		expect_true("the defence that won earlier trains, and the cooling one does not",
 					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp);
 		expect_true("neither level moves", attacker.level() == 1 && target.level() == 1);
 		expect_true("no kill or block title is earned by a scratch",
@@ -355,8 +484,10 @@ int main() {
 						target.title_count(open::Title::Wall) == 0u);
 		expect_close("the attack clock starts at the rank-1 cooldown", attacker.attack_cooldown_remaining(),
 					 kRank1Cooldown);
-		expect_close("the ready defence is spent even though it lost", target.defend_cooldown_remaining(),
-					 kRank1Cooldown);
+		// The target felt no time of its own, so the clock from the turned-aside blow is
+		// what let this one through: the wait belonged entirely to the attacker.
+		expect_close("the turned-aside blow's defence clock is still running",
+					 target.defend_cooldown_remaining(), kRank1Cooldown, 0.001f);
 		expect_close("the passive defender never gains an attack clock", target.attack_cooldown_remaining(), 0.0f);
 		expect_true("the passive defender gains no attack order", !target.attack_target().has_value());
 		expect_close("the attacker's own defence clock is untouched", attacker.defend_cooldown_remaining(), 0.0f);
@@ -419,49 +550,62 @@ int main() {
 		open::Character target = make_character(2);
 		std::mt19937_64 rng(21);
 		expect_true("the attack order is accepted", attacker.set_attack_target(2));
-
-		expect_true("stamina is drained to exactly 8", attacker.spend(open::ResourceUse::Sprint, 9.2f));
+		// One blow is spent turning the target's ready defence aside, and from here the
+		// target's own clock never moves again, so every swing below is measured against
+		// a cooling defence: the attacker's own bar is the only thing changing.
+		const std::optional<open::SwingResult> turned_aside =
+			attacker.try_melee_swing(target, at(0.0f, 0.0f, 0.0f), other, rng);
+		expect_true("the target's first answer turns the blow aside",
+					turned_aside.has_value() && turned_aside->nullified);
+		ready_attacker(attacker);
+		// The bar is set from what is really in it rather than from a hardcoded sprint:
+		// the fixture says "8 left" whatever the wait and the turn-aside cost.
+		drain_to(attacker, 8.0f);
 		expect_close("the fixture starts this swing at 8 stamina",
 					 attacker.pool(open::PoolKind::Stamina).current, 8.0f);
 		Observed before_hit = observe(target);
 		std::optional<open::SwingResult> swing = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("a swing at exactly 8 stamina is still an attempt", swing.has_value());
 		expect_true("a payable swing is not exhausted", swing.has_value() && !swing->nullified);
-		expect_close("the payable swing does full damage", swing.has_value() ? swing->damage : 0.0f, kRank1Damage);
-		expect_one_hp_charge(target, before_hit, kRank1Damage, "the payable swing charges main HP once");
+		expect_close("the payable swing does full damage", swing.has_value() ? swing->damage : 0.0f,
+					 answered_hit(kRank1Damage, false), 0.001f);
+		expect_one_hp_charge(target, before_hit, answered_hit(kRank1Damage, false),
+							 "the payable swing charges main HP once");
 		expect_close("and pays all its 8 stamina", attacker.pool(open::PoolKind::Stamina).current, 0.0f);
 		expect_close("a payable swing is not slowed", attacker.attack_cooldown_remaining(), kRank1Cooldown);
 
 		expect_true("stamina regenerates out of the swing", attacker.regenerate(1.0f, false));
-		expect_true("stamina is drained to 7", attacker.spend(open::ResourceUse::Sprint, 0.3f));
-		expect_close("the fixture starts the next swing at 7", attacker.pool(open::PoolKind::Stamina).current,
-					 7.0f);
+		drain_to(attacker, 7.0f);
 		expect_true("the attack clock is waited out", attacker.advance_combat_clocks(kRank1Cooldown));
 		before_hit = observe(target);
 		swing = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("an unpaid swing still happens", swing.has_value());
+		// The attacker's own exhaustion already halves the offensive term; the target's
+		// defence is cooling, so nothing halves it a second time.
 		expect_close("an unpaid swing does half the offensive term", swing.has_value() ? swing->damage : 0.0f,
-					 0.02f);
-		expect_one_hp_charge(target, before_hit, 0.02f, "the unpaid swing charges main HP once");
+					 exhausted_attacker_hit(kRank1Damage, false), 0.001f);
+		expect_one_hp_charge(target, before_hit, exhausted_attacker_hit(kRank1Damage, false),
+							 "the unpaid swing charges main HP once");
 		expect_close("an unpaid swing spends nothing", attacker.pool(open::PoolKind::Stamina).current, 7.0f);
 		expect_close("a rank-1 unpaid swing is clamped to the slowest clock",
 					 attacker.attack_cooldown_remaining(), 5.0f);
 
-		expect_true("stamina is drained to nothing", attacker.spend(open::ResourceUse::Sprint, 0.7f));
-		expect_close("the fixture is empty", attacker.pool(open::PoolKind::Stamina).current, 0.0f);
+		drain_to(attacker, 0.0f);
 		expect_true("the slow clock is waited out", attacker.advance_combat_clocks(5.0f));
 		before_hit = observe(target);
 		swing = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("an empty swing still happens", swing.has_value());
 		expect_close("an empty swing does half the offensive term", swing.has_value() ? swing->damage : 0.0f,
-					 0.02f);
-		expect_one_hp_charge(target, before_hit, 0.02f, "the empty swing charges main HP once");
+					 exhausted_attacker_hit(kRank1Damage, false), 0.001f);
+		expect_one_hp_charge(target, before_hit, exhausted_attacker_hit(kRank1Damage, false),
+							 "the empty swing charges main HP once");
 		expect_close("an empty swing spends nothing it does not have",
 					 attacker.pool(open::PoolKind::Stamina).current, 0.0f);
 		expect_close("an empty swing is still on the slowest clock", attacker.attack_cooldown_remaining(), 5.0f);
 
-		// Recovered by the sheet's own regeneration, the next swing is normal: the
-		// half damage and half speed belonged to that one swing.
+		// Recovered by the sheet's own regeneration, the next swing is normal again: the
+		// half damage and half speed belonged to that one swing. One second out of
+		// combat restores 10 stamina on a fresh sheet, which is just over the price.
 		expect_true("stamina regenerates", attacker.regenerate(1.0f, false));
 		expect_close("one second restores 10 stamina", attacker.pool(open::PoolKind::Stamina).current, 10.0f);
 		expect_true("the slow clock is waited out again", attacker.advance_combat_clocks(5.0f));
@@ -469,31 +613,33 @@ int main() {
 		swing = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("the recovered swing is an attempt", swing.has_value());
 		expect_close("the recovered swing does full damage again", swing.has_value() ? swing->damage : 0.0f,
-					 kRank1Damage);
-		expect_one_hp_charge(target, before_hit, kRank1Damage, "the recovered swing charges main HP once");
-		expect_close("the recovered swing pays again", attacker.pool(open::PoolKind::Stamina).current, 2.0f);
+					 answered_hit(kRank1Damage, false), 0.001f);
+		expect_one_hp_charge(target, before_hit, answered_hit(kRank1Damage, false),
+							 "the recovered swing charges main HP once");
+		expect_close("the recovered swing pays again", attacker.pool(open::PoolKind::Stamina).current, 2.0f,
+					 0.001f);
 		expect_close("the recovered swing is back on the normal clock", attacker.attack_cooldown_remaining(),
 					 kRank1Cooldown);
 	}
 
 	{
-		// exhausted_defence_pays_nothing: the plan forbids inventing a defence
-		// stamina cost or a defence exhaustion penalty, so two guards are tried. A
-		// guard who can afford a cost (20 stamina) must still end the attempt at 20,
-		// and a tired guard (7) must still block on the plain rank formula rather
-		// than the doubled-then-clamped one - a tired rank-1 block would clamp to 5
-		// s against 1/0.214 here, so the two cannot be confused. Break these
-		// catches: a block or dodge that charges stamina, gates on it, or slows down
-		// because the defender is tired.
+		// defence_is_paid_for_and_never_slows_for_tiredness: a defence has its own
+		// cost (the plan's 8), and paying it is what keeps the mitigation whole. A
+		// guard who cannot pay still blocks - and still on the plain rank formula,
+		// never the doubled-then-clamped one a tired swing would use: a tired rank-1
+		// defence clock would read 5 s against 1/0.214 here, so the two cannot be
+		// confused. Break these catches: a defence that gates on stamina instead of
+		// halving, one that slows because its owner is tired, and one that is free.
+		// The shield is a 100% tower, so the only thing separating the two guards is
+		// whether they could pay for the answer.
 		const open::Vec3 self = at(0.0f, 0.0f, 0.0f);
 		const open::Vec3 other = at(1.5f, 0.0f, 0.0f);
 		std::mt19937_64 rng(211);
 
 		for (const float drained : {8.0f, 9.3f}) {
 			open::Character attacker = make_character(1);
-			open::Character guard = make_character(2);
-			expect_true("a shield is carried", guard.add_item(shield(905)));
-			expect_true("the shield is held", guard.equip(905, open::Slot::LeftHand));
+			open::Character guard = sheet(2);
+			wield(guard, kTowerDef, 905, open::Slot::LeftHand);
 			expect_true("the guard sprints itself down", guard.spend(open::ResourceUse::Sprint, drained));
 			const float start = 100.0f - drained * 10.0f;
 			expect_close("the guard starts at the intended stamina",
@@ -503,12 +649,34 @@ int main() {
 			const std::optional<open::SwingResult> swing =
 				attacker.try_melee_swing(guard, self, other, rng);
 			expect_true("the guard still attempts", swing.has_value());
-			expect_true("and still nullifies", swing.has_value() && swing->nullified);
-			expect_close("defending spends no stamina", guard.pool(open::PoolKind::Stamina).current, start);
-			expect_close("a defence clock is never doubled for tiredness",
-						 guard.defend_cooldown_remaining(), kRank1Cooldown);
+			if (!swing.has_value()) {
+				continue;
+			}
+			// 20 of 8 leaves exactly the cost: paid, whole, and the blow is turned
+			// aside. 7.8 of 8 cannot: the same block is performed at half, so half of
+			// the rank-1 blow arrives.
+			const bool paid = start >= kDefenceCost;
+			expect_true("a paid defence turns a 100% block into everything",
+						swing->nullified == paid);
+			expect_close("an unpaid defence lets half of it through", swing->damage,
+						 paid ? 0.0f : half_of(kRank1Damage), 0.001f);
+			expect_close("a defence costs its own 8, paid or not",
+						 guard.pool(open::PoolKind::Stamina).current,
+						 paid ? start - kDefenceCost : start);
+			// The clock is the defender's own: an answer it could not pay for is
+			// exhausted, and doubled within the band, exactly as an unpaid swing is. It
+			// is the attacker's exhaustion that never touches this clock.
+			expect_close("a paid defence clock is the plain rank formula",
+						 guard.defend_cooldown_remaining(), paid ? kRank1Cooldown : 5.0f);
 			expect_true("the guard owes no attack order", !guard.attack_target().has_value());
-			expect_true("and the guard is untouched", guard.pool(open::PoolKind::Hp).current == 100.0f);
+			// A blocking item wears for what it prevented. A paid 100% block prevents
+			// the whole blow; an unpaid one prevents half, which is still something.
+			expect_true("the shield wears for preventing damage",
+						guard.instance(905)->durability == 100u - kWear);
+			if (paid) {
+				expect_true("and a guard that turned it aside is untouched",
+							guard.pool(open::PoolKind::Hp).current == 100.0f);
+			}
 		}
 	}
 
@@ -533,24 +701,27 @@ int main() {
 
 		open::Character target = make_character(2);
 		expect_true("the attack order is accepted", attacker.set_attack_target(2));
+		exhaust_defence(target);
 		const Observed before_target = observe(target);
 		std::mt19937_64 rng(22);
 		const std::optional<open::SwingResult> swing = attacker.try_melee_swing(target, at(0.0f, 0.0f, 0.0f),
 																			   at(1.5f, 0.0f, 0.0f), rng);
 		expect_true("the freshly unlocked specialisation is still an attempt", swing.has_value());
-		expect_true("a rank-1 dodge does not turn a rank-1 swing aside",
-					swing.has_value() && !swing->nullified);
 		expect_true("the unlocked specialisation does positive damage",
 					swing.has_value() && swing->damage > 0.0f);
-		expect_close("at the rank-1 unarmed number", swing.has_value() ? swing->damage : -1.0f, kRank1Damage);
+		expect_close("at the rank-1 unarmed number, through an unpaid defence",
+					 swing.has_value() ? swing->damage : -1.0f, half_of(kRank1Damage), 0.001f);
 		expect_true("and it names a part", swing.has_value() && swing->part.has_value());
-		expect_one_hp_charge(target, before_target, kRank1Damage, "the unlocked swing charges main HP once");
+		expect_one_hp_charge(target, before_target, half_of(kRank1Damage),
+							 "the unlocked swing charges main HP once");
 		expect_close("the swing pays its stamina",
 					 attacker.pool(open::PoolKind::Stamina).current, 92.0f);
 		expect_close("a rank-1 specialisation swings on the rank-1 clock",
 					 attacker.attack_cooldown_remaining(), kRank1Cooldown);
-		expect_close("the rank-1 defence spends its own clock", target.defend_cooldown_remaining(),
-					 kRank1Cooldown);
+		// The answer it could not pay for is exhausted, so its clock is the doubled
+		// rank-1 figure clamped to the band: the defence is tired, not absent.
+		expect_close("the rank-1 defence spends its own (exhausted) clock",
+					 target.defend_cooldown_remaining(), 5.0f);
 
 		const std::optional<open::Training> boxing = attacker.advanced(open::AdvancedSkill::Boxing);
 		expect_true("exactly one Boxing XP is awarded and no rank",
@@ -558,8 +729,11 @@ int main() {
 		expect_true("the frozen basic stays at 100 with no residual XP",
 					attacker.basic(open::BasicSkill::UnarmedCombat).rank == 100u &&
 						attacker.basic(open::BasicSkill::UnarmedCombat).xp == 0u);
-		expect_true("a losing defence trains nothing",
-					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp);
+		// What trains a defence is prevention, not victory: this unpaid dodge still
+		// turned half the blow aside, so it trains, and the nullify case pins the rule
+		// from the other end (a defence that prevents nothing earns nothing).
+		expect_true("the defence that prevented half trains once",
+					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp + 1u);
 		expect_true("neither level moves", attacker.level() == 1 && target.level() == 1);
 		expect_true("no kill or block title is earned here",
 					attacker.title_count(open::Title::Duelist) == 0u &&
@@ -588,12 +762,15 @@ int main() {
 		std::mt19937_64 rng(23);
 		const std::optional<open::SwingResult> first = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("the first swing is an attempt", first.has_value());
-		expect_true("the first swing lands", first.has_value() && !first->nullified);
-		expect_close("a rank-100 unarmed swing does 4", first.has_value() ? first->damage : 0.0f, kRank100Damage);
-		expect_one_hp_charge(target, before_target, kRank100Damage, "the rank-100 swing charges main HP once");
-		expect_close("a losing defence still spends its clock", target.defend_cooldown_remaining(), kRank1Cooldown);
-		expect_true("a losing defence trains nothing",
-					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp);
+		// A ready, paid-for dodge is worth everything, so the first blow is turned aside
+		// whole - and it still spends the defence that won.
+		expect_true("a ready defence turns the first swing aside", first.has_value() && first->nullified);
+		expect_close("a nullified blow does no damage", first->damage, 0.0f, 1e-6);
+		expect_one_hp_charge(target, before_target, 0.0f, "a nullified swing charges main HP once");
+		expect_close("a winning defence still spends its clock", target.defend_cooldown_remaining(),
+					 kRank1Cooldown);
+		expect_close("and its own cost", before_target.stamina - target.pool(open::PoolKind::Stamina).current,
+					 kDefenceCost, 0.001f);
 
 		expect_true("the attacker's clock is waited out", attacker.advance_combat_clocks(kRank100Cooldown));
 		expect_true("the defender feels the same time", target.advance_combat_clocks(kRank100Cooldown));
@@ -603,13 +780,15 @@ int main() {
 		const std::optional<open::SwingResult> second = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("a cooling defence cannot stop the next swing", second.has_value() && !second->nullified);
 		expect_close("the cooling defence lets the hit land in full", second.has_value() ? second->damage : 0.0f,
-					 kRank100Damage);
-		expect_close("both hits are charged once each", before_target.hp - target.pool(open::PoolKind::Hp).current,
-					 kRank100Damage * 2.0f, 0.001f);
+					 kRank100Damage / kUnpaidDefenceDivisor, 0.001f);
+		expect_close("only the landed hit is charged to main HP",
+					 before_target.hp - target.pool(open::PoolKind::Hp).current,
+					 kRank100Damage / kUnpaidDefenceDivisor, 0.001f);
 		expect_close("a cooling defence is not restarted by the attempt", target.defend_cooldown_remaining(),
 					 kRank1Cooldown - kRank100Cooldown, 0.001f);
 		expect_true("a cooling defence still earns nothing",
-					target.basic(open::BasicSkill::Dodging).xp == before_target.tracks[kDodging].xp);
+					target.basic(open::BasicSkill::Dodging).xp ==
+						before_target.tracks[kDodging].xp + 1u);  // the one it won with
 		expect_close("the second swing restarts the attack clock", attacker.attack_cooldown_remaining(),
 					 kRank100Cooldown);
 		expect_close("both swings paid 8 stamina", attacker.pool(open::PoolKind::Stamina).current, 84.0f);
@@ -620,11 +799,11 @@ int main() {
 
 	{
 		// nullify_awards_only_defender: a usable shield turns a rank-1 punch aside
-		// with no part, no attacker XP, one Blocking XP and one Wall record.
+		// with no part, no attacker XP, one Blocking XP, one Wall record and one point
+		// of wear on the shield that prevented it.
 		open::Character attacker = make_character(1);
-		open::Character guard = make_character(2);
-		expect_true("a shield is carried", guard.add_item(shield(901)));
-		expect_true("the shield is held", guard.equip(901, open::Slot::LeftHand));
+		open::Character guard = sheet(2);
+		wield(guard, kTowerDef, 901, open::Slot::LeftHand);
 		expect_true("the attack order is accepted", attacker.set_attack_target(2));
 
 		const Observed before_guard = observe(guard);
@@ -636,7 +815,24 @@ int main() {
 		expect_true("the shield nullifies it", swing.has_value() && swing->nullified);
 		expect_close("a nullified swing does no damage", swing.has_value() ? swing->damage : -1.0f, 0.0f);
 		expect_true("a nullified swing names no part", swing.has_value() && !swing->part.has_value());
-		expect_no_new_wounds("a nullify costs the defender no pools", before_guard, guard);
+		// The shield's owner pays the defence and nothing else: no wound, no pool
+		// drained but stamina, and no item destroyed.
+		expect_close("a nullifying defence costs its owner the defence price",
+					 before_guard.stamina - guard.pool(open::PoolKind::Stamina).current, kDefenceCost, 0.001f);
+		const Observed after_nullify = observe(guard);
+		expect_true("a nullify wounds no body part",
+					[&] {
+						for (std::size_t i = 0; i < kPartCount; ++i) {
+							if (!close(before_guard.parts[i], after_nullify.parts[i])) {
+								return false;
+							}
+						}
+						return true;
+					}());
+		expect_true("and costs no main HP", close(before_guard.hp, after_nullify.hp));
+		expect_true("and no mana", close(before_guard.mana, after_nullify.mana));
+		expect_true("the shield wears once for the prevention",
+					guard.instance(901)->durability == 100u - kWear);
 		expect_close("the shield's owner blocks on its own rank", guard.defend_cooldown_remaining(),
 					 kRank1Cooldown);
 		expect_true("the blocker gains no attack order", !guard.attack_target().has_value());
@@ -654,7 +850,8 @@ int main() {
 					attacker.title_count(open::Title::Duelist) == 0u &&
 						attacker.title_count(open::Title::Breaker) == 0u);
 
-		// A trained unarmed dodge nullifies the same way, and is never a Wall block.
+		// A trained unarmed dodge nullifies the same way, and is never a Wall block or
+		// an item wearing out.
 		open::Character kicker = make_character(3);
 		train(kicker, open::BasicSkill::Dodging, 20u);
 		open::Character puncher = make_character(4);
@@ -665,13 +862,16 @@ int main() {
 		expect_true("the swing at a trained dodger is an attempt", dodged.has_value());
 		expect_true("a trained dodge nullifies a rank-1 punch", dodged.has_value() && dodged->nullified);
 		expect_close("the dodged swing does no damage", dodged.has_value() ? dodged->damage : -1.0f, 0.0f);
-		expect_no_new_wounds("a dodge costs the dodger no pools", before_kicker, kicker);
+
 		expect_true("a dodger gains no attack order", !kicker.attack_target().has_value());
 		const open::Training dodge = kicker.basic(open::BasicSkill::Dodging);
 		expect_true("a nullifying dodge trains Dodging once",
 					dodge.rank == before_kicker.tracks[kDodging].rank &&
 						dodge.xp == before_kicker.tracks[kDodging].xp + 1u);
 		expect_true("a dodge is not a Wall block", kicker.title_count(open::Title::Wall) == 0u);
+		expect_close("a dodge costs its owner the same defence price, with nothing held",
+					 before_kicker.stamina - kicker.pool(open::PoolKind::Stamina).current, kDefenceCost,
+					 0.001f);
 		// Rank 20 is rate 0.2 + 2.8 x 0.1 = 0.48/s.
 		expect_close("the dodge cools on its own rank", kicker.defend_cooldown_remaining(), 1.0f / 0.48f, 0.001f);
 		expect_true("the puncher trains nothing when dodged",
@@ -698,11 +898,21 @@ int main() {
 
 		const std::optional<open::SwingResult> from_b = b.try_melee_swing(a, other, self, rng);
 		expect_true("b swings on its own clock without waiting", from_b.has_value());
-		expect_true("b's swing lands on a ready a", from_b.has_value() && !from_b->nullified);
-		expect_close("b's swing does the same damage", from_b.has_value() ? from_b->damage : 0.0f, kRank1Damage);
+		// Both sheets' defences are ready, and a ready defence is worth everything, so
+		// neither blow arrives; what this block is about is the clocks, and those start
+		// whichever way the blow went.
+		expect_true("b's swing is turned aside by a ready a", from_b.has_value() && from_b->nullified);
+		expect_close("b's swing does no damage through a ready defence",
+					 from_b.has_value() ? from_b->damage : 0.0f, 0.0f, 1e-6);
 		expect_close("b starts its own attack clock", b.attack_cooldown_remaining(), kRank1Cooldown);
 		expect_close("a's attack clock is not restarted by b", a.attack_cooldown_remaining(), kRank1Cooldown);
 		expect_close("a's defence clock is spent by b's swing", a.defend_cooldown_remaining(), kRank1Cooldown);
+		// Each sheet paid twice: b answered a's blow and then swung, and a answered b's
+		// blow after swinging. No amount is shared or forgiven between them.
+		expect_close("both of b's answers paid their own price",
+					 b.pool(open::PoolKind::Stamina).current, 100.0f - 2.0f * kDefenceCost, 0.001f);
+		expect_close("and so did a's", a.pool(open::PoolKind::Stamina).current,
+					 100.0f - 2.0f * kDefenceCost, 0.001f);
 
 		expect_true("time is advanced for a alone", a.advance_combat_clocks(1.0f));
 		const float attack_left = kRank1Cooldown - 1.0f;
@@ -789,75 +999,150 @@ int main() {
 
 		for (std::size_t i = 0; i < kPartCount; ++i) {
 			const open::BodyPart part = kParts[i];
-			open::Character attacker = make_character(1);
-			expect_true("a sword is carried",
-						attacker.add_item(one_handed(950, open::BasicSkill::OneHandedWeapons)));
-			expect_true("the sword is held", attacker.equip(950, open::Slot::LeftHand));
+			open::Character attacker = sheet(1);
+			wield(attacker, kSwordDef, 950, open::Slot::LeftHand);
 			expect_true("the attack order is accepted", attacker.set_attack_target(2));
-
-			open::Character victim = make_character(2);
-			const bool limb = part == open::BodyPart::LeftArm || part == open::BodyPart::RightArm ||
-							  part == open::BodyPart::LeftLeg || part == open::BodyPart::RightLeg;
-			if (limb) {
-				// A limb cannot kill on its own: main HP is what runs out here.
-				drain_main_hp_below_one_hit(victim, kRank1Damage);
-			} else {
-				leave_part_below_one_hit(victim, part, kRank1Damage);
-			}
-			const Observed before_victim = observe(victim);
-			const Observed before_attacker = observe(attacker);
-
 			const std::uint64_t seed = seed_for_first_part(part);
 			std::mt19937_64 rng(seed);
-			const std::optional<open::SwingResult> swing = attacker.try_melee_swing(victim, self, other, rng);
-			expect_true("the kill swing is an attempt", swing.has_value());
-			expect_true("the swing names the part the seed drew", is_part(swing->part, part));
-			expect_close("the swing does its rank-1 damage", swing.has_value() ? swing->damage : 0.0f,
-						 kRank1Damage);
-			if (limb) {
-				// A limb at zero is not a death, so the lethal outcome for a limb
-				// hit is main HP running out: clamped at zero, and the limb itself
-				// keeps whatever the one hit left on it.
-				expect_close("main HP is clamped at zero, never negative", victim.pool(open::PoolKind::Hp).current,
-							 0.0f, 0.001f);
-				expect_true("the hit limb is reduced by one hit only",
-							close(victim.body_part(part).current, before_victim.parts[i] - kRank1Damage, 0.001f));
-			} else {
-				// Head and torso at zero are deaths of their own, and the part
-				// clamps instead of going negative.
-				expect_close("the hit part is clamped at zero, never negative", victim.body_part(part).current,
-							 0.0f, 0.001f);
+
+			// One part, one main-HP charge per blow, and one kill credit for the whole
+			// fight. Head and torso die at their own zero; a limb has to finish the job
+			// through main HP, so this runs until it does rather than pretending one
+			// rank-1 blow can be timed to land the last point exactly.
+			//
+			// The first blow is answered by a defence with nothing to pay for itself
+			// (half gets through); every blow after it finds that defence's clock still
+			// running, because only the attacker feels time here, and so arrives whole.
+			open::Character victim = make_character(2);
+			const float before_hp = victim.pool(open::PoolKind::Hp).current;
+
+			// One part, one main-HP charge per blow, and one kill credit for the whole
+			// fight. Head and torso die at their own zero; a limb has to finish the job
+			// through main HP, so the fight runs until it does rather than pretending one
+			// rank-1 blow can be timed to land the last point exactly. The blow sizes are
+			// not re-derived here - `weapon_combat` owns the typed arithmetic, and the
+			// weapon trains as it hits, so a per-blow number would move under the test.
+			// What must not move is the shape of a blow: one part, one main-HP charge,
+			// nothing else, once per swing, and exactly one kill at the end.
+			unsigned swings = 0;
+			unsigned blows = 0;
+			bool bad_part = false;
+			bool bad_charge = false;
+			while (victim.alive() && swings < 4000) {
+				++swings;
+				exhaust_defence(victim);          // answered, at half: never a free hit
+				drain_to(attacker, 8.0f);         // paid: never an exhausted swing
+				const float hp_before = victim.pool(open::PoolKind::Hp).current;
+				std::array<float, kPartCount> parts_before{};
+				for (std::size_t j = 0; j < kPartCount; ++j) {
+					parts_before[j] = victim.body_part(kParts[j]).current;
+				}
+				const std::optional<open::SwingResult> swing =
+					attacker.try_melee_swing(victim, self, other, rng);
+				if (!swing.has_value()) {
+					expect_true("the kill fight is refused mid-way", false);
+					break;
+				}
+				if (swing->damage > 0.0f) {
+					++blows;
+					// One blow charges main HP once and exactly one body part once: the
+					// same amount, give or take whichever of the two clamped at zero, and
+					// never a second part and never a second helping of the difference.
+					const float hp_lost = hp_before - victim.pool(open::PoolKind::Hp).current;
+					unsigned moved = 0;
+					std::optional<open::BodyPart> mover;
+					float mover_lost = 0.0f;
+					for (std::size_t j = 0; j < kPartCount; ++j) {
+						const float lost = parts_before[j] - victim.body_part(kParts[j]).current;
+						if (!close(lost, 0.0f, 1e-5f)) {
+							++moved;
+							mover = kParts[j];
+							mover_lost = lost;
+						}
+					}
+					bad_part |= moved != 1u || !swing->part.has_value() || !(mover == swing->part);
+					bad_charge |= hp_lost > swing->damage + 1e-4f ||
+								  mover_lost > swing->damage + 1e-4f ||
+								  (hp_lost < swing->damage - 1e-4f &&
+								   mover_lost < swing->damage - 1e-4f);
+				} else {
+					bad_part |= swing->part.has_value();
+				}
+				attacker.advance_combat_clocks(5.0f);
+				victim.advance_combat_clocks(5.0f);
+				attacker.regenerate(1.0f, false);
+				victim.regenerate(1.0f, false);
 			}
-			expect_one_hp_charge(victim, before_victim, kRank1Damage, "the kill charges main HP once");
-			expect_true("the victim dies from this one hit", !victim.alive());
-			expect_true("exactly one Duelist kill is recorded",
-						attacker.title_count(open::Title::Duelist) == before_attacker.titles[kDuelist] + 1u);
+			expect_true("the fight ended in a death", !victim.alive());
+			expect_true("every landed blow moved exactly one body part, the one it named",
+						!bad_part);
+			expect_true("and charged main HP and that part once each, never twice",
+						!bad_charge);
+			expect_true("main HP reached zero, never below",
+						victim.pool(open::PoolKind::Hp).current == 0.0f);
+			expect_true("no part was left negative",
+						[&victim] {
+							for (const open::BodyPart each : kParts) {
+								if (victim.body_part(each).current < 0.0f) {
+									return false;
+								}
+							}
+							return true;
+						}());
+			expect_true("the victim died from the blows it was given", blows > 0u);
+			expect_true("main HP was charged for the fight and is now empty",
+						before_hp - victim.pool(open::PoolKind::Hp).current > 0.0f);
+			expect_true("exactly one kill credit for the whole fight",
+						attacker.title_count(open::Title::Duelist) == 1u);
 			expect_true("no other title moves",
-						attacker.title_count(open::Title::Breaker) == before_attacker.titles[kBreaker] &&
+						attacker.title_count(open::Title::Breaker) == 0u &&
 							attacker.title_count(open::Title::Wall) == 0u);
-			expect_true("the kill trains the weapon once",
-						attacker.basic(open::BasicSkill::OneHandedWeapons).xp ==
-							before_attacker.tracks[kOneHanded].xp + 1u);
-			expect_true("the dead victim is credited nothing",
-						victim.title_count(open::Title::Wall) == 0u &&
-							victim.basic(open::BasicSkill::Dodging).xp == before_victim.tracks[kDodging].xp);
+			expect_true("the fight trains the weapon for landing blows",
+						attacker.basic(open::BasicSkill::OneHandedWeapons).xp > 0u);
+			expect_true("the victim is credited no block, and a dead sheet keeps nothing",
+						victim.title_count(open::Title::Wall) == 0u && !victim.alive());
 
 			// A dead target is not a swing: no damage, no XP, no title, and the
 			// attacker keeps its stale order instead of acquiring a new one.
+			const unsigned xp_after_kill = attacker.basic(open::BasicSkill::OneHandedWeapons).xp;
 			expect_no_attempt("a swing at the fresh corpse is refused", attacker, victim, self, other, seed);
+			expect_true("a corpse trains nothing",
+						attacker.basic(open::BasicSkill::OneHandedWeapons).xp == xp_after_kill);
 			expect_true("the attacker does not acquire a new target after a kill",
 						attacker.attack_target() == std::optional<std::uint64_t>(2));
 		}
 
 		{
-			// A two-handed weapon reports Breaker, not Duelist.
-			open::Character attacker = make_character(1);
-			expect_true("a great sword is carried",
-						attacker.add_item(two_handed(951, open::BasicSkill::TwoHandedWeapons)));
-			expect_true("the great sword is held", attacker.equip(951, open::Slot::LeftHand));
+			// A limb hit that ends the limb is not a death by itself, and a dead
+			// limb's overkill is not charged to main HP a second time.
+			open::Character attacker = sheet(1);
+			wield(attacker, kSwordDef, 953, open::Slot::LeftHand);
 			expect_true("the attack order is accepted", attacker.set_attack_target(2));
 			open::Character victim = make_character(2);
-			leave_part_below_one_hit(victim, open::BodyPart::Torso, kRank1Damage);
+			exhaust_defence(victim);
+			const float first_hit = kRank1Damage * 0.5f / kUnpaidDefenceDivisor;
+			const float leg_before = victim.body_part(open::BodyPart::LeftLeg).current;
+			std::mt19937_64 rng(seed_for_first_part(open::BodyPart::LeftLeg));
+			const std::optional<open::SwingResult> swing = attacker.try_melee_swing(victim, self, other, rng);
+			expect_true("the limb swing lands", swing.has_value() && swing->damage > 0.0f);
+			expect_true("the sampled part is the limb", is_part(swing->part, open::BodyPart::LeftLeg));
+			expect_close("the limb is charged once, not twice",
+						 leg_before - victim.body_part(open::BodyPart::LeftLeg).current, first_hit, 0.001f);
+			expect_one_hp_charge(victim, observe(victim), 0.0f, "limb damage is not charged to main HP twice");
+			expect_true("a wounded limb is not a dead character", victim.alive());
+			expect_true("no kill credit for a limb",
+						attacker.title_count(open::Title::Duelist) == 0u &&
+							attacker.title_count(open::Title::Breaker) == 0u);
+		}
+
+		{
+			// A two-handed weapon reports Breaker, not Duelist.
+			open::Character attacker = sheet(1);
+			wield(attacker, kGreatswordDef, 951, open::Slot::LeftHand);
+			expect_true("the attack order is accepted", attacker.set_attack_target(2));
+			open::Character victim = make_character(2);
+			exhaust_defence(victim);
+			leave_part_below_one_hit(victim, open::BodyPart::Torso, first_blow(kRank1Damage));
 			std::mt19937_64 rng(seed_for_first_part(open::BodyPart::Torso));
 			const std::optional<open::SwingResult> swing = attacker.try_melee_swing(victim, self, other, rng);
 			expect_true("the two-handed kill swing lands", swing.has_value() && swing->damage > 0.0f);
@@ -873,7 +1158,8 @@ int main() {
 			open::Character bare = make_character(1);
 			expect_true("the attack order is accepted", bare.set_attack_target(2));
 			open::Character victim = make_character(2);
-			leave_part_below_one_hit(victim, open::BodyPart::Head, kRank1Damage);
+			exhaust_defence(victim);
+			leave_part_below_one_hit(victim, open::BodyPart::Head, first_blow(kRank1Damage));
 			std::mt19937_64 rng(seed_for_first_part(open::BodyPart::Head));
 			const std::optional<open::SwingResult> swing = bare.try_melee_swing(victim, self, other, rng);
 			expect_true("the unarmed kill swing lands", swing.has_value() && swing->damage > 0.0f);
@@ -881,12 +1167,12 @@ int main() {
 			expect_true("an unarmed kill records no title",
 						bare.title_count(open::Title::Duelist) == 0u && bare.title_count(open::Title::Breaker) == 0u);
 
-			open::Character spearman = make_character(3);
-			expect_true("a spear is carried", spearman.add_item(two_handed(952, open::BasicSkill::Polearms)));
-			expect_true("the spear is held", spearman.equip(952, open::Slot::LeftHand));
+			open::Character spearman = sheet(3);
+			wield(spearman, kSpearDef, 952, open::Slot::LeftHand);
 			expect_true("the attack order is accepted", spearman.set_attack_target(4));
 			open::Character other_victim = make_character(4);
-			leave_part_below_one_hit(other_victim, open::BodyPart::Torso, kRank1Damage);
+			exhaust_defence(other_victim);
+			leave_part_below_one_hit(other_victim, open::BodyPart::Torso, first_blow(kRank1Damage));
 			std::mt19937_64 polearm_rng(seed_for_first_part(open::BodyPart::Torso));
 			const std::optional<open::SwingResult> poked = spearman.try_melee_swing(other_victim, self, other,
 																					polearm_rng);
@@ -900,13 +1186,12 @@ int main() {
 		{
 			// Overkill on a limb is not charged to main HP a second time, and a
 			// limb at zero is not a death by itself.
-			open::Character attacker = make_character(1);
-			expect_true("a sword is carried",
-						attacker.add_item(one_handed(953, open::BasicSkill::OneHandedWeapons)));
-			expect_true("the sword is held", attacker.equip(953, open::Slot::LeftHand));
+			open::Character attacker = sheet(1);
+			wield(attacker, kSwordDef, 953, open::Slot::LeftHand);
 			expect_true("the attack order is accepted", attacker.set_attack_target(2));
 			open::Character victim = make_character(2);
-			leave_part_below_one_hit(victim, open::BodyPart::LeftLeg, kRank1Damage);
+			exhaust_defence(victim);
+			leave_part_below_one_hit(victim, open::BodyPart::LeftLeg, first_blow(kRank1Damage));
 			const Observed before_victim = observe(victim);
 			std::mt19937_64 rng(seed_for_first_part(open::BodyPart::LeftLeg));
 			const std::optional<open::SwingResult> swing = attacker.try_melee_swing(victim, self, other, rng);
@@ -914,7 +1199,8 @@ int main() {
 			expect_true("the sampled part is the limb", is_part(swing->part, open::BodyPart::LeftLeg));
 			expect_close("the limb is clamped at zero", victim.body_part(open::BodyPart::LeftLeg).current, 0.0f,
 						 0.001f);
-			expect_one_hp_charge(victim, before_victim, kRank1Damage, "limb overkill is not charged twice");
+			expect_one_hp_charge(victim, before_victim, half_of(kRank1Damage),
+								 "limb overkill is not charged twice");
 			expect_true("a dead limb is not a dead character", victim.alive());
 			expect_true("no kill credit for a limb",
 						attacker.title_count(open::Title::Duelist) == 0u &&

@@ -213,6 +213,13 @@ enum class PoolKind {
 };
 
 // Hands is gloves armour; LeftHand/RightHand are the held slots.
+// What a defender answers a blow with. A block is made with an item and only ever
+// reduces what arrives; a dodge has no item and is worth everything it can pay for.
+enum class DefendAction {
+	Block,
+	Dodge,
+};
+
 enum class Slot {
 	Head,
 	Chest,
