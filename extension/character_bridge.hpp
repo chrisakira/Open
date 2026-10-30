@@ -109,6 +109,10 @@ public:
 	// does not know is accepted and kept: the sequence is what the player chose, and it is
 	// not the simulation's to prune.
 	bool configure_techniques(bool enabled, const godot::Array &steps);
+	// Who chooses the moves: player or simulation. This alone changes, and C++ keeps the
+	// sequence, its position, the switch and every clock through the handover - so the scene
+	// can say "this sheet's human is driving" without touching what that human configured.
+	bool set_player_controlled(bool controlled);
 
 	bool apply_damage(int64_t part_id, float amount);
 	bool regenerate(float seconds, bool in_combat);

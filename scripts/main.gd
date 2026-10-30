@@ -330,6 +330,13 @@ func _build_combat() -> void:
 			and not _combat.setup_starter_player(_player.sheet.get_character_id()):
 		push_error("The player's starter backpack could not be given")
 
+	# The one thing in the scene that knows which sheet a human drives: this is the player, so
+	# this is the sheet whose configured sequence chooses its attacks. A configured sequence on
+	# a simulation-driven sheet is kept but not followed - which is what makes the handover the
+	# scene's call and not a side effect of opening a panel.
+	if _player != null and _player.sheet != null and not _player.sheet.set_player_controlled(true):
+		push_error("The player's sheet could not be handed to the player")
+
 	# What the fight looks like, reading the same coordinator the fight runs on. It computes
 	# nothing and orders nothing: held meshes come from each sheet's equipment snapshot, and a
 	# swing animates because C++ reported performing one. It ticks after this node (default

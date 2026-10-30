@@ -246,12 +246,130 @@ func _free(world: Node) -> void:
 	await process_frame
 
 
+# --- the popup over real starter weapons (Task 14b) ----------------------------
+
+const SLOT_RIGHT_HAND := 6
+const FOREIGN_ENTRY := 4242
+
+
+func _real_id_of_model(sheet, model_key: String) -> int:
+	for row in sheet.get_equipment_snapshot():
+		if String(row["model_key"]) == model_key:
+			return int(row["item_id"])
+	return 0
+
+
+func _supported_ids(sheet) -> Array:
+	var ids := []
+	for row in sheet.get_technique_snapshot().get("supported", []):
+		ids.append(int(row["technique_id"]))
+	return ids
+
+
+func _a_real_sword_offers_real_moves() -> void:
+	var world = await _world()
+	var popup = _popup_of(world)
+	var player: Node = world.get_node("Player")
+	if popup == null:
+		await _free(world)
+		return
+	var sheet = player.sheet
+
+	# The world's own integration: the player's sheet is the one a human drives, so it is the
+	# one the scene hands over. The dummies stay simulation-driven, and no popup click flips
+	# this - opening a panel is not a handover.
+	_check(bool(sheet.get_technique_snapshot().get("player_controlled")),
+			"the world made the player's own sheet player-controlled")
+	_check(not bool(world.get_node("Enemy").get("sheet").get_technique_snapshot()
+			.get("player_controlled")),
+			"while the dummy is still chosen for by the simulation")
+
+	# Equipping the real sword is what makes the real moves exist. The click path that moves
+	# the item is the Equipment popup's own suite; here the same bridge command.
+	var sword := _real_id_of_model(sheet, "Sword")
+	_check(sheet.equip_item(sword, SLOT_RIGHT_HAND), "the sword the player owns goes into hand")
+	_check(_supported_ids(sheet) == [TECHNIQUE_A, TECHNIQUE_B],
+			"and the sheet now really supports Slash and Thrust")
+
+	# Opening the panel must not be able to touch anything a swing spends.
+	var before := _described(sheet.get_technique_snapshot())
+	var stamina_before: float = sheet.get_stamina()
+	popup.open_for_sheet(sheet, Vector2(30.0, 30.0))
+	_check(_described(sheet.get_technique_snapshot()) == before,
+			"opening sent no command, drew no technique and reset no index")
+	_check(_close(sheet.get_stamina(), stamina_before, 0.0001),
+			"and the sheet paid nothing for the panel appearing")
+	await process_frame
+	await process_frame
+	_check(_any_text(popup, "Techniques: On"), "the real panel opens reading the real sheet")
+	var add_slash := _button(popup, "Add%d" % TECHNIQUE_A)
+	var add_thrust := _button(popup, "Add%d" % TECHNIQUE_B)
+	_check(add_slash != null and not add_slash.disabled
+			and add_thrust != null and not add_thrust.disabled,
+			"both moves the sword really offers can be added")
+	_check(not _has_button(popup, "Add%d" % 3),
+			"and the hammer's move is not offered to a sword at all")
+
+	# Add, duplicate and Skip, all through the controls, all read back from the sheet.
+	_click_at(add_slash.get_global_rect().get_center())
+	await process_frame
+	_click_at(add_slash.get_global_rect().get_center())
+	await process_frame
+	_click_at(add_thrust.get_global_rect().get_center())
+	await process_frame
+	_check(_ids(sheet) == [TECHNIQUE_A, TECHNIQUE_A, TECHNIQUE_B],
+			"two Slashes and a Thrust, added as duplicates through the controls")
+	_click_at(_button(popup, "Skip1").get_global_rect().get_center())
+	await process_frame
+	var saved: Array = sheet.get_technique_snapshot().get("sequence", [])
+	_check(saved.size() == 3 and bool(saved[1]["skip_on_cooldown"])
+			and not bool(saved[0]["skip_on_cooldown"])
+			and not bool(saved[2]["skip_on_cooldown"]),
+			"Skip belongs to the entry it was pressed on")
+
+	# The switch, saved.
+	_click_at(_button(popup, "EnableButton").get_global_rect().get_center())
+	await process_frame
+	_check(not bool(sheet.get_technique_snapshot().get("enabled")),
+			"the header button really switches the configured state off")
+	_click_at(_button(popup, "EnableButton").get_global_rect().get_center())
+	await process_frame
+
+	# A saved entry the current weapon does not offer is kept across real swaps, and support
+	# follows the held item. The entry below is an id no weapon offers; the hammer's move is
+	# offered by exactly one.
+	_check(sheet.configure_techniques(true,
+			[_row_step(TECHNIQUE_A, false), _row_step(FOREIGN_ENTRY, true)]),
+			"the sheet holds a Slash and an entry nothing offers")
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "the sword goes back")
+	_check(_supported_ids(sheet).is_empty(), "bare hands offer nothing through a real sheet")
+	_check(_ids(sheet) == [TECHNIQUE_A, FOREIGN_ENTRY], "and the sequence kept both entries")
+	_check(sheet.equip_item(_real_id_of_model(sheet, "Hammer_Small"), SLOT_RIGHT_HAND),
+			"the hammer goes up")
+	_check(_supported_ids(sheet) == [3], "and the hammer offers exactly its own move")
+	await process_frame
+	_check(_has_button(popup, "Add3"), "the panel follows the weapon without being reopened")
+	_check(_any_text(popup, "not offered now"),
+			"while the configured Slash and the foreign entry stay listed as unavailable")
+	_check(_ids(sheet) == [TECHNIQUE_A, FOREIGN_ENTRY], "and swapping deleted nothing")
+	await _free(world)
+
+
+func _row_step(technique_id: int, skip: bool) -> Dictionary:
+	return {"technique_id": technique_id, "skip_on_cooldown": skip}
+
+
+func _close(a: float, b: float, epsilon: float = 0.0001) -> bool:
+	return absf(a - b) < epsilon
+
+
 func _run() -> void:
 	_viewport_size = root.get_visible_rect().size
 	await _entry_and_live_sheet()
 	await _recorder_rows_and_commands()
 	await _input_isolation()
 	await _edges()
+	await _a_real_sword_offers_real_moves()
 	if failures == 0:
 		print("Technique popup: all checks passed")
 	quit(1 if failures else 0)
@@ -299,8 +417,9 @@ func _entry_and_live_sheet() -> void:
 	await process_frame
 	_check(popup.visible, "the panel stays when the sheet it came from closes")
 
-	# What the bare-handed sheet really is: enabled, simulation-driven, nothing offered, and
-	# three configured entries nothing supports - kept, and saying so.
+	# What the bare-handed sheet really is: enabled, player-driven since the scene handed it
+	# over, nothing offered - a sequence names no move until a weapon does - and three
+	# configured entries nothing supports: kept, and saying so.
 	_check(_any_text(popup, "Techniques: On"), "the panel shows the switch as the sheet holds it")
 	_check(_button(popup, "Add%d" % TECHNIQUE_A) == null,
 			"with bare hands there is nothing to add, and no invented technique appears")

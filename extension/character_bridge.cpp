@@ -189,6 +189,8 @@ void OpenCharacter::_bind_methods() {
 							   &OpenCharacter::get_technique_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("configure_techniques", "enabled", "steps"),
 							   &OpenCharacter::configure_techniques);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_player_controlled", "controlled"),
+							   &OpenCharacter::set_player_controlled);
 	godot::ClassDB::bind_method(godot::D_METHOD("apply_damage", "part_id", "amount"),
 							   &OpenCharacter::apply_damage);
 	godot::ClassDB::bind_method(godot::D_METHOD("regenerate", "seconds", "in_combat"),
@@ -653,4 +655,14 @@ bool OpenCharacter::configure_techniques(bool enabled, const godot::Array &steps
 		parsed.push_back(entry);
 	}
 	return c->configure_techniques(enabled, parsed);
+}
+
+bool OpenCharacter::set_player_controlled(bool controlled) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	// No validation belongs here: the command carries one bool, and whether this sheet may be
+	// handed over at all - a dead one may not - is C++'s rule, returned as-is.
+	return c->set_player_controlled(controlled);
 }

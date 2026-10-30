@@ -254,11 +254,277 @@ func _equip_commands_are_refused_safely() -> void:
 	_check(fallen.get_equipment_snapshot().is_empty(), "with nothing to list")
 
 
+# --- Task 14b: the same bridge over the real starter content -------------------
+#
+# Everything above pins the contract against a sheet that owns nothing, because in 14a nothing
+# could. Here the items and techniques are the production ones: the coordinator's own setup
+# command mints the backpack, the catalog resolves the real definitions, and a fight run through
+# this very bridge starts real clocks. No fixture technique ids below - 1/2/3 are the starter
+# moves, and every id comes from a snapshot, never from a hardcoded instance number.
+
+const SLASH := 1
+const THRUST := 2
+const BLUNT_EDGE := 3
+
+# Which starter techniques each starter weapon offers, from docs/weapons.md's table.
+const OFFERED_BY_MODEL := {
+	"Sword": [SLASH, THRUST],
+	"Dagger": [SLASH, THRUST],
+	"Spear": [THRUST],
+	"Hammer_Small": [BLUNT_EDGE],
+}
+
+
+func _step_ids(steps: Array) -> Array:
+	var ids := []
+	for step in steps:
+		ids.append(int(step["technique_id"]))
+	return ids
+
+
+func _supported_ids(sheet) -> Array:
+	var ids := []
+	for row in sheet.get_technique_snapshot().get("supported", []):
+		ids.append(int(row["technique_id"]))
+	return ids
+
+
+func _cooldown_of(sheet, technique_id: int) -> float:
+	for row in sheet.get_technique_snapshot().get("cooldowns", []):
+		if int(row["technique_id"]) == technique_id:
+			return float(row["cooldown_remaining"])
+	return 0.0
+
+
+func _model_ids(sheet) -> Dictionary:
+	var by_model := {}
+	for row in sheet.get_equipment_snapshot():
+		by_model[String(row["model_key"])] = int(row["item_id"])
+	return by_model
+
+
+func _real_backpack(actor_id: int) -> Dictionary:
+	# A real coordinator and a real sheet: the same two classes the scene builds.
+	var sheet = _sheet(actor_id)
+	var combat = ClassDB.instantiate(&"OpenCombat")
+	_check(combat.add_character(sheet, Vector3.ZERO), "the fixture sheet joins the coordinator")
+	_check(combat.setup_starter_player(actor_id), "and the production command gives it the backpack")
+	_check(combat.setup_starter_player(actor_id), "and is legal to call again")
+	var by_model := _model_ids(sheet)
+	_check(by_model.size() == 5 and sheet.get_equipment_snapshot().size() == 5,
+			"still exactly one of each: setup through the bridge cannot mint twice")
+	return {"sheet": sheet, "combat": combat, "ids": by_model}
+
+
+func _real_rows_round_trip() -> void:
+	var kit := _real_backpack(10)
+	var sheet = kit["sheet"]
+	var by_model: Dictionary = kit["ids"]
+	var definitions := []
+	for row in sheet.get_equipment_snapshot():
+		definitions.append(int(row["definition_id"]))
+	definitions.sort()
+	_check(definitions == [101, 102, 103, 104, 105],
+			"the owned instances resolve the production definitions: %s" % str(definitions))
+
+	# A real snapshot row is a copy: scribbling on what a read returned cannot rewrite the sheet.
+	var first: Dictionary = sheet.get_equipment_snapshot()[0]
+	var first_name := String(first["model_key"])
+	first["model_key"] = "Rewritten"
+	first["slots"] = [7, 8, 9]
+	first["durability"] = -5
+	var reread: Dictionary = sheet.get_equipment_snapshot()[0]
+	_check(String(reread["model_key"]) == first_name and int(reread["durability"]) == 100
+			and (reread["slots"] as Array).is_empty(),
+			"mutating a real equipment row changes the dictionary and not the sheet")
+
+	# Variant edges against ids that are genuinely alive on some other sheet. The second sheet
+	# joins the same coordinator, so both backpacks come from the one allocator and the ids
+	# really are somebody else's.
+	var other = _sheet(11)
+	_check(kit["combat"].add_character(other, Vector3(50.0, 0.0, 50.0)),
+			"a second sheet joins the same coordinator")
+	_check(kit["combat"].setup_starter_player(11), "and is given its own kit by the same command")
+	var foreign_sword := int(_model_ids(other)["Sword"])
+	_check(foreign_sword != 0 and foreign_sword != int(by_model["Sword"]),
+			"the second sheet's sword is a real instance with its own id")
+	var before := _held_description(sheet)
+	_check(not sheet.equip_item(foreign_sword, SLOT_RIGHT_HAND),
+			"a real item another sheet owns is refused here")
+	_check(not sheet.equip_item(987654321, SLOT_RIGHT_HAND), "an unknown positive id is refused")
+	_check(_held_description(sheet) == before, "and neither refusal touched what is held")
+	_check(sheet.get_weapon_snapshot(foreign_sword).is_empty(),
+			"and resolves no weapon snapshot for it either")
+	# The shield is owned but not a weapon: it resolves no weapon snapshot.
+	_check(sheet.get_weapon_snapshot(int(by_model["Shield_Round"])).is_empty(),
+			"a shield offers no attack profile")
+
+
+func _held_description(sheet) -> String:
+	var parts := []
+	for row in sheet.get_equipment_snapshot():
+		parts.append("%s:%s" % [String(row["model_key"]), str(row["slots"])])
+	parts.sort()
+	return "|".join(parts)
+
+
+func _unhold_all(sheet) -> void:
+	# Free both hands however the last item was worn, through the bridge's own answers.
+	for pass_no in range(3):
+		var released := false
+		for row in sheet.get_equipment_snapshot():
+			var slots: Array = row["slots"]
+			if not slots.is_empty():
+				_check(sheet.unequip_item(int(slots[0])),
+						"the %s comes out of the hand(s)" % String(row["model_key"]))
+				released = true
+		if not released:
+			return
+
+
+func _real_weapons_offer_their_real_techniques() -> void:
+	var kit := _real_backpack(12)
+	var sheet = kit["sheet"]
+	var by_model: Dictionary = kit["ids"]
+	_check(_supported_ids(sheet).is_empty(), "bare hands offer no technique through the bridge")
+
+	# A configured sequence survives every swap below: support comes and goes with the held
+	# weapon, the player's list does not.
+	_check(sheet.configure_techniques(true, [_step(SLASH, true), _step(UNKNOWN_TECHNIQUE, false)]),
+			"the sheet takes a sequence with a foreign entry")
+	var sequence_before := _sequence_ids(sheet)
+
+	for model in ["Sword", "Dagger", "Spear", "Hammer_Small"]:
+		_unhold_all(sheet)
+		var item := int(by_model[String(model)])
+		_check(sheet.equip_item(item, SLOT_RIGHT_HAND), "the %s is held" % String(model))
+		_check(_supported_ids(sheet) == OFFERED_BY_MODEL[String(model)],
+				"%s supports exactly %s through the bridge, got %s"
+				% [String(model), str(OFFERED_BY_MODEL[String(model)]), str(_supported_ids(sheet))])
+		var weapon: Dictionary = sheet.get_weapon_snapshot(item)
+		var weapon_techniques := []
+		for technique_id in weapon.get("techniques", []):
+			weapon_techniques.append(int(technique_id))
+		_check(weapon_techniques == OFFERED_BY_MODEL[String(model)],
+				"and the weapon snapshot names the same list")
+		for row in sheet.get_technique_snapshot().get("supported", []):
+			_check(bool(row["defined"]) and bool(row["available"]),
+					"a starter technique on a level-1 sheet is defined and unlocked, not a fixture")
+		_check(_sequence_ids(sheet) == sequence_before,
+				"and swapping to the %s kept the configured sequence" % String(model))
+
+	# The numbers on the rows are the locked table's.
+	_unhold_all(sheet)
+	_check(sheet.equip_item(int(by_model["Sword"]), SLOT_RIGHT_HAND), "the sword is back in hand")
+	for row in sheet.get_technique_snapshot().get("supported", []):
+		if int(row["technique_id"]) == SLASH:
+			_check(_close(float(row["cooldown"]), 6.0)
+					and _close(float(row["cut"]), 1.25)
+					and _close(float(row["pierce"]), 1.0)
+					and not bool(row["has_stamina_cost"]),
+					"Slash resolves its locked 6s cooldown, cut factor and no cost override")
+		_check(_close(float(row["required_rank"]), 1.0), "and every starter move asks rank 1")
+
+
+func _controller_handover_round_trips() -> void:
+	var sheet = _sheet(13)
+	_check(sheet.has_method("set_player_controlled"),
+			"the bridge exposes the controller handover C++ already has")
+	if not sheet.has_method("set_player_controlled"):
+		return
+	_check(not bool(sheet.get_technique_snapshot().get("player_controlled")),
+			"a fresh sheet is simulation-driven")
+	_check(sheet.set_player_controlled(true), "the handover succeeds on a living sheet")
+	_check(bool(sheet.get_technique_snapshot().get("player_controlled")),
+			"and the snapshot says the player chooses now")
+
+	# Only who chooses changes: an edit-free toggle keeps the sequence, the switch and the index.
+	_check(sheet.configure_techniques(false, [_step(SLASH, true)]), "the sheet holds one off entry")
+	_check(sheet.set_player_controlled(false), "and can be handed back")
+	var snapshot: Dictionary = sheet.get_technique_snapshot()
+	_check(not bool(snapshot.get("enabled")) and _sequence_ids(sheet) == [SLASH]
+			and int(snapshot.get("index")) == 0,
+			"while switch, sequence and position stay exactly where the player left them")
+
+	var unconfigured = _bare_sheet()
+	_check(not unconfigured.set_player_controlled(true), "an unconfigured sheet is not a handover")
+	var fallen = _sheet(14)
+	_check(fallen.apply_damage(1, 1.0e30) and not fallen.is_alive(), "and a dead sheet")
+	_check(not fallen.set_player_controlled(true), "gets no handover either")
+
+
+func _a_performed_technique_starts_a_real_clock() -> void:
+	var kit := _real_backpack(15)
+	var sheet = kit["sheet"]
+	var combat = kit["combat"]
+	if not sheet.has_method("set_player_controlled"):
+		_check(false, "the fight fixture needs the controller handover")
+		return
+	var victim = _sheet(16)
+	var bystander = _sheet(17)
+	combat.add_character(victim, Vector3(1.0, 0.0, 0.0))
+	combat.add_character(bystander, Vector3(20.0, 0.0, 20.0))
+
+	_check(sheet.equip_item(int(_model_ids(sheet)["Sword"]), SLOT_RIGHT_HAND),
+			"the attacker fights with the sword it owns")
+	_check(sheet.set_player_controlled(true), "and chooses its own moves")
+	_check(sheet.configure_techniques(true, [_step(SLASH, true), _step(BLUNT_EDGE, true)]),
+			"the sequence is Slash, then the hammer move a sword does not offer")
+	_check(combat.issue_attack(15, 16), "an order is on")
+
+	var events: Array = []
+	var guard := 0
+	while guard < 60 and events.is_empty():
+		combat.step(0.1)
+		events = combat.take_combat_events()
+		guard += 1
+	_check(events.size() == 1, "one performed swing is reported, got %d" % events.size())
+	if events.is_empty():
+		return
+	_check(int(events[0]["technique_id"]) == SLASH,
+			"and it performed the sequence's first entry, not the unsupported one")
+	_check(_cooldown_of(sheet, BLUNT_EDGE) == 0.0,
+			"an entry skipped for being unsupported starts no clock")
+
+	var cooling := _cooldown_of(sheet, SLASH)
+	_check(cooling > 5.0, "the performed Slash is cooling from its own 6s: %s" % str(cooling))
+	_check(_cooldown_of(victim, SLASH) == 0.0, "the clock belongs to the one who swung")
+
+	# Swapping weapons between two steps starts no clock and spends none: the value has to
+	# carry across untouched, and the sequence with it.
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "the sword comes off")
+	_check(sheet.equip_item(int(_model_ids(sheet)["Dagger"]), SLOT_RIGHT_HAND),
+			"the dagger goes on")
+	_check(_close(_cooldown_of(sheet, SLASH), cooling),
+			"the swap across supporting weapons changed no clock")
+	_check(_sequence_ids(sheet) == [SLASH, BLUNT_EDGE], "and erased no entry")
+
+	# The next swing, still inside the cooldown: Slash is Skip-while-cooling, the hammer move
+	# is unsupported on this weapon too, one loop finds nothing, and the attack is a basic one.
+	events = []
+	guard = 0
+	while guard < 200 and events.is_empty():
+		combat.step(0.1)
+		events = combat.take_combat_events()
+		guard += 1
+	_check(events.size() == 1, "the fight swung again on its own clock")
+	if events.size() == 1:
+		_check(int(events[0]["technique_id"]) == 0,
+				"with every entry skipped, the performed attack is the weapon's own basic one")
+	_check(_cooldown_of(sheet, SLASH) < cooling,
+			"while the clock kept wearing down between the swings, once per step")
+	_check(_cooldown_of(sheet, SLASH) > 0.0, "and was still running at the second swing")
+
+
 func _run() -> void:
 	_surface_and_schema()
 	_configure_rejections()
 	_configure_validation_edges()
 	_equip_commands_are_refused_safely()
+	_real_rows_round_trip()
+	_real_weapons_offer_their_real_techniques()
+	_controller_handover_round_trips()
+	_a_performed_technique_starts_a_real_clock()
 	if failures == 0:
 		print("Weapon bridge: all checks passed")
 	quit(1 if failures else 0)
