@@ -50,6 +50,14 @@ public:
 	// All-or-nothing: without the funds nothing is spent.
 	bool spend(ResourceUse use, float quantity = 1.0f);
 
+	// Pays a cost the caller calculated, for actions whose price is not one of the
+	// fixed table entries: a swing costs what the weapon and the wielder's
+	// shortfall add up to, and a defense has its own tunable price. Finite and
+	// nonnegative, or the call is refused. All-or-nothing like spend(): affordable
+	// pays exactly once, anything less pays nothing and says no, and a dead sheet
+	// pays neither. Zero is a legal price that spends zero.
+	bool spend_stamina(float amount);
+
 	// Resources only; HP and body parts never regen here.
 	bool regenerate(float seconds, bool in_combat, const Attributes &attributes);
 

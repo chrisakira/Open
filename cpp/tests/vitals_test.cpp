@@ -535,5 +535,32 @@ int main() {
 		expect_close("main hp clamps at zero on a corpse", vitals.pool(open::PoolKind::Hp).current, 0.0f);
 	}
 
+	{
+		// Break this catches: a variable-cost attack paying without funds, paying
+		// twice, or a refused amount that still drains the bar.
+		const open::Attributes attributes = basic_sheet();
+		const open::Skills skills;
+		open::Vitals vitals(attributes, skills);
+		expect_close("the bar starts full", vitals.pool(open::PoolKind::Stamina).current, 100.0f);
+		expect_true("zero is a legal cost", vitals.spend_stamina(0.0f));
+		expect_close("and it spent nothing", vitals.pool(open::PoolKind::Stamina).current, 100.0f);
+		expect_true("an affordable amount is paid", vitals.spend_stamina(14.5f));
+		expect_close("exactly once", vitals.pool(open::PoolKind::Stamina).current, 85.5f);
+		expect_true("short by a tenth is refused", !vitals.spend_stamina(85.6f));
+		expect_close("and nothing left the bar", vitals.pool(open::PoolKind::Stamina).current, 85.5f);
+		expect_true("the exact remainder is paid", vitals.spend_stamina(85.5f));
+		expect_close("the bar is empty", vitals.pool(open::PoolKind::Stamina).current, 0.0f);
+		expect_true("an empty bar cannot pay", !vitals.spend_stamina(0.5f));
+		expect_true("negative is refused", !vitals.spend_stamina(-1.0f));
+		expect_true("NaN is refused", !vitals.spend_stamina(std::numeric_limits<float>::quiet_NaN()));
+		expect_true("infinity is refused", !vitals.spend_stamina(std::numeric_limits<float>::infinity()));
+		expect_close("three refusals changed nothing", vitals.pool(open::PoolKind::Stamina).current, 0.0f);
+
+		open::Vitals dead(attributes, skills);
+		expect_true("a killing blow", dead.damage(open::BodyPart::Head, 25.0f));
+		expect_true("the dead do not spend", !dead.spend_stamina(1.0f));
+		expect_true("not even nothing", !dead.spend_stamina(0.0f));
+	}
+
 	return test_summary();
 }

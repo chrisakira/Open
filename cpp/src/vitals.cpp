@@ -203,6 +203,25 @@ bool Vitals::spend(ResourceUse use, float quantity) {
 	return true;
 }
 
+bool Vitals::spend_stamina(float amount) {
+	if (!std::isfinite(amount) || amount < 0.0f) {
+		return false;
+	}
+	if (!alive()) {
+		return false;
+	}
+
+	Pool &stamina = pools_[pool_slot(PoolKind::Stamina)];
+	// Compared in double so the exact remainder is affordable, and charged in one
+	// step: a swing is either paid for or it is not.
+	if (static_cast<double>(amount) > static_cast<double>(stamina.current)) {
+		return false;
+	}
+	const double left = static_cast<double>(stamina.current) - static_cast<double>(amount);
+	stamina.current = left < 0.0 ? 0.0f : static_cast<float>(left);
+	return true;
+}
+
 bool Vitals::regenerate(float seconds, bool in_combat, const Attributes &attributes) {
 	if (!std::isfinite(seconds) || seconds < 0.0f) {
 		return false;

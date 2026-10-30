@@ -84,6 +84,7 @@ public:
 	bool record_use(BasicSkill skill, std::optional<AdvancedSkill> option, bool successful);
 	bool record_title_progress(Title title, bool successful);
 	bool spend(ResourceUse use, float quantity = 1.0f);
+	bool spend_stamina(float amount);
 	bool regenerate(float seconds, bool in_combat);
 	bool damage(BodyPart part, float amount);
 	bool add_item(const ItemRef &item);

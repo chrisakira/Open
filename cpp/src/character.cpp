@@ -192,6 +192,10 @@ bool Character::spend(ResourceUse use, float quantity) {
 	return vitals_.spend(use, quantity);
 }
 
+bool Character::spend_stamina(float amount) {
+	return vitals_.spend_stamina(amount);
+}
+
 bool Character::regenerate(float seconds, bool in_combat) {
 	return vitals_.regenerate(seconds, in_combat, attributes_);
 }
