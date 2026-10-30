@@ -237,6 +237,15 @@ enum class Slot {
 	Count,
 };
 
+// How a held record is carried. It lives with the rest of the shared vocabulary
+// because item definitions need it without knowing about the equipment container.
+enum class HandUse {
+	None,
+	OneHanded,
+	TwoHanded,
+	Count,
+};
+
 // Checked before any conversion or array index. Callers that cannot throw (the
 // Godot bridge) use these instead of catching.
 bool valid(Faction faction);
@@ -247,6 +256,7 @@ bool valid(Title title);
 bool valid(BodyPart part);
 bool valid(PoolKind pool);
 bool valid(Slot slot);
+bool valid(HandUse use);
 bool valid(int level);
 
 // Throws std::invalid_argument for a level outside 1..7.

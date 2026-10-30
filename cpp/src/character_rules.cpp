@@ -237,6 +237,10 @@ bool valid(Slot slot) {
 	return in_range(slot);
 }
 
+bool valid(HandUse use) {
+	return in_range(use);
+}
+
 bool valid(int level) {
 	return level >= 1 && level <= static_cast<int>(kLevelMultipliers.size());
 }

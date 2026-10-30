@@ -67,11 +67,6 @@ bool tagged_ok(const ItemRef &item) {
 
 }  // namespace
 
-bool valid(HandUse use) {
-	const int id = static_cast<int>(use);
-	return id >= 0 && id < static_cast<int>(HandUse::Count);
-}
-
 bool Equipment::coherent(const ItemRef &item) const {
 	if (item.id == 0) {
 		return false;

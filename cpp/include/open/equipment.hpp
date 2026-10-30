@@ -16,14 +16,7 @@ namespace open {
 // may go and how it is held.
 using ItemId = std::uint64_t;
 
-enum class HandUse {
-	None,
-	OneHanded,
-	TwoHanded,
-	Count,
-};
-
-bool valid(HandUse use);
+// HandUse lives in character_rules.hpp with the rest of the enum vocabulary.
 
 struct ItemRef {
 	ItemId id = 0;
