@@ -367,6 +367,9 @@ std::optional<WeaponAttackProfile> weapon_attack_profile(const Character &charac
 		profile.durability = armed->durability;
 		profile.max_durability = armed->max_durability;
 		profile.enchantments = enchantments;
+		// Support travels with the resolved weapon, so eligibility never has to look the
+		// item up again or guess which hand won.
+		profile.techniques = weapon.supported_techniques;
 		return profile;
 	}
 

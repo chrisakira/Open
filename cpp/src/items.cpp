@@ -189,6 +189,42 @@ bool valid_enchantment(const EnchantmentDefinition &enchantment) {
 	return enchantment.blunt_per_trained_rank > 0.0 || enchantment.requirement.has_value();
 }
 
+// A technique that cannot be priced or cannot be unlocked is a typo, not a move. Every
+// factor is a positive finite multiplier (an absent effect is 1), the cooldown is a
+// positive finite number of seconds, a declared stamina cost is a positive finite number,
+// the required rank is a rank a sheet can actually be at, and the titles that grant it are
+// real and listed once.
+bool valid_technique(const TechniqueDefinition &technique) {
+	if (technique.id == 0 || technique.required_rank == 0) {
+		return false;
+	}
+	if (!std::isfinite(technique.cooldown) || technique.cooldown <= 0.0) {
+		return false;
+	}
+	const DamageComponents factors = technique.factors;
+	if (!std::isfinite(factors.cut) || !std::isfinite(factors.pierce) ||
+		!std::isfinite(factors.blunt) || factors.cut <= 0.0 || factors.pierce <= 0.0 ||
+		factors.blunt <= 0.0) {
+		return false;
+	}
+	if (technique.stamina_cost.has_value() &&
+		(!std::isfinite(*technique.stamina_cost) || *technique.stamina_cost <= 0.0)) {
+		return false;
+	}
+	std::vector<Title> granted = technique.granting_titles;
+	for (std::size_t i = 0; i < granted.size(); ++i) {
+		if (!valid(granted[i])) {
+			return false;
+		}
+		for (std::size_t j = i + 1; j < granted.size(); ++j) {
+			if (granted[j] == granted[i]) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 bool valid_material(const MaterialDefinition &material) {
 	if (material.id == 0 || material.max_durability_by_quality.size() != kQualityTierCount) {
 		return false;
@@ -231,8 +267,21 @@ std::optional<AppliedEnchantment> make_applied_enchantment(const EnchantmentDefi
 
 std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items,
 											   std::vector<MaterialDefinition> materials,
-											   std::vector<EnchantmentDefinition> enchantments) {
+											   std::vector<EnchantmentDefinition> enchantments,
+											   std::vector<TechniqueDefinition> techniques) {
 	ItemCatalog catalog;
+	// Techniques first, because a weapon's support list points at them: the link is a
+	// foreign key, and it is checked below once every table exists.
+	for (auto &technique : techniques) {
+		if (!valid_technique(technique)) {
+			return std::nullopt;
+		}
+		const TechniqueId id = technique.id;
+		if (catalog.techniques_.count(id) != 0) {
+			return std::nullopt;
+		}
+		catalog.techniques_.emplace(id, std::move(technique));
+	}
 	for (auto &item : items) {
 		if (!valid_item(item)) {
 			return std::nullopt;
@@ -263,6 +312,19 @@ std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items
 		}
 		catalog.enchantments_.emplace(id, std::move(enchantment));
 	}
+	// Every technique a weapon claims to support has to exist. A weapon pointing at
+	// nothing is not a weapon with a hidden move: it is a definition that will not resolve
+	// at the moment someone equips it, so it never becomes a catalog.
+	for (const auto &entry : catalog.items_) {
+		if (!entry.second.weapon.has_value()) {
+			continue;
+		}
+		for (const TechniqueId supported : entry.second.weapon->supported_techniques) {
+			if (catalog.techniques_.count(supported) == 0) {
+				return std::nullopt;
+			}
+		}
+	}
 	return catalog;
 }
 
@@ -280,6 +342,16 @@ const EnchantmentDefinition *ItemCatalog::enchantment(EnchantmentId id) const {
 	}
 	const auto found = enchantments_.find(id);
 	return found == enchantments_.end() ? nullptr : &found->second;
+}
+
+// Technique ids are their own domain: no item, material or enchantment id resolves here,
+// and no technique id resolves there.
+const TechniqueDefinition *ItemCatalog::technique(TechniqueId id) const {
+	if (id == 0) {
+		return nullptr;
+	}
+	const auto found = techniques_.find(id);
+	return found == techniques_.end() ? nullptr : &found->second;
 }
 
 const MaterialDefinition *ItemCatalog::material(MaterialId id) const {

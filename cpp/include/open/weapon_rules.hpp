@@ -102,6 +102,10 @@ struct WeaponAttackProfile {
 	// the weapon's own after quality, and their requirements are already folded into
 	// `effectiveness` below.
 	std::vector<AppliedEnchantment> enchantments;
+	// The technique ids this weapon explicitly supports, copied from its definition. The
+	// unarmed fallback is empty: an unarmed attack has no techniques, so the list is not a
+	// default the fallback happens to get but a fact about the thing being swung.
+	std::vector<TechniqueId> techniques;
 };
 
 // What a defender defends with. `mitigation` is the item's declared percentage,

@@ -4,7 +4,8 @@ project(open_cpp CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_library(open_sim STATIC src/stagger.cpp src/items.cpp src/work_actions.cpp src/weapon_rules.cpp src/item_instance.cpp src/move_order.cpp src/combat_rules.cpp src/combat_session.cpp src/character_rules.cpp src/attributes.cpp src/skills.cpp src/vitals.cpp src/equipment.cpp src/character.cpp src/character_combat.cpp)
+add_library(open_sim STATIC src/stagger.cpp
+	src/techniques.cpp src/items.cpp src/work_actions.cpp src/weapon_rules.cpp src/item_instance.cpp src/move_order.cpp src/combat_rules.cpp src/combat_session.cpp src/character_rules.cpp src/attributes.cpp src/skills.cpp src/vitals.cpp src/equipment.cpp src/character.cpp src/character_combat.cpp)
 target_include_directories(open_sim PUBLIC include)
 target_compile_options(open_sim PRIVATE -Wall -Wextra -Werror)
 set_target_properties(open_sim PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -104,6 +105,11 @@ add_executable(stagger_tests tests/stagger_test.cpp)
 target_link_libraries(stagger_tests PRIVATE open_sim)
 target_compile_options(stagger_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME stagger COMMAND stagger_tests)
+
+add_executable(techniques_tests tests/techniques_test.cpp)
+target_link_libraries(techniques_tests PRIVATE open_sim)
+target_compile_options(techniques_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME techniques COMMAND techniques_tests)
 
 add_executable(weapon_combat_tests tests/weapon_combat_test.cpp)
 target_link_libraries(weapon_combat_tests PRIVATE open_sim)

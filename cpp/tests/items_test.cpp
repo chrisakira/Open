@@ -145,9 +145,27 @@ std::vector<open::ItemDefinition> good_items() {
 	return {good_weapon(), good_shield(), good_armour(), good_plain()};
 }
 
+// The techniques the good weapon says it supports, so the catalog's foreign-key check has
+// something to resolve: support is a link now, and these are its two rows.
+std::vector<open::TechniqueDefinition> good_techniques() {
+	std::vector<open::TechniqueDefinition> made;
+	for (open::TechniqueId id : {open::TechniqueId{1}, open::TechniqueId{2}}) {
+		open::TechniqueDefinition technique;
+		technique.id = id;
+		technique.required_rank = 1;
+		technique.factors = open::DamageComponents{1.25, 1.0, 1.0};
+		technique.cooldown = 6.0;
+		made.push_back(technique);
+	}
+	return made;
+}
+
 bool accepted(std::vector<open::ItemDefinition> items,
-			  std::vector<open::MaterialDefinition> materials = good_materials()) {
-	return open::ItemCatalog::create(std::move(items), std::move(materials)).has_value();
+			  std::vector<open::MaterialDefinition> materials = good_materials(),
+			  std::vector<open::TechniqueDefinition> techniques = good_techniques()) {
+	return open::ItemCatalog::create(std::move(items), std::move(materials), {},
+									 std::move(techniques))
+		.has_value();
 }
 
 // One field wrong, everything else already valid.
@@ -174,7 +192,7 @@ bool materials_rejected(const std::function<void(std::vector<open::MaterialDefin
 }
 
 void definition_not_instance() {
-	auto catalog = open::ItemCatalog::create(good_items(), good_materials());
+	auto catalog = open::ItemCatalog::create(good_items(), good_materials(), {}, good_techniques());
 	expect_true("a valid catalog is built", catalog.has_value());
 	if (!catalog) {
 		return;
@@ -233,7 +251,7 @@ void definition_not_instance() {
 	expect_true("a tagged ItemRef confers no definition", catalog->item(legacy.id) == nullptr);
 
 	// Same input, same description: no hidden identity and no shared mutable state.
-	auto again = open::ItemCatalog::create(good_items(), good_materials());
+	auto again = open::ItemCatalog::create(good_items(), good_materials(), {}, good_techniques());
 	const open::ItemDefinition *other = again ? again->item(kWeapon) : nullptr;
 	expect_true("the same input builds an equal definition",
 				other != nullptr && weapon != nullptr && other->id == weapon->id &&
@@ -379,7 +397,9 @@ void catalog_atomic_validation() {
 						static_cast<open::WeightClass>(static_cast<int>(open::WeightClass::Count));
 				}));
 
-	// Technique support is stored now; its links are checked in Task 12.
+	// Technique support is a foreign key: the list is well-formed on its own terms, and an
+	// id the catalog does not define is a broken weapon rather than a move nobody can use.
+	// (What a technique definition itself must satisfy is `techniques`' case.)
 	expect_true("a zero technique id is rejected",
 				item_rejected([](open::ItemDefinition &item) {
 					item.weapon->supported_techniques = {0};
@@ -388,10 +408,20 @@ void catalog_atomic_validation() {
 				item_rejected([](open::ItemDefinition &item) {
 					item.weapon->supported_techniques = {1, 1};
 				}));
-	expect_true("an unknown technique id is not rejected here",
-				!item_rejected([](open::ItemDefinition &item) {
+	expect_true("a technique id no definition provides is rejected",
+				item_rejected([](open::ItemDefinition &item) {
 					item.weapon->supported_techniques = {9001};
 				}));
+	// The empty table is a real answer, not a missing one: it means no weapon may support
+	// anything, which is what every legacy fixture and every plain weapon wants.
+	expect_true("supporting nothing needs no technique table", [] {
+		auto items = good_items();
+		items[0].weapon->supported_techniques = {};
+		return accepted(std::move(items), good_materials(), {});
+	}());
+	expect_true("and a technique list with no table at all is rejected", [] {
+		return !accepted(good_items(), good_materials(), {});
+	}());
 
 	// Roles and placement.
 	expect_true("one record cannot be both a weapon and a shield",

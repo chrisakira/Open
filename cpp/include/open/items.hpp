@@ -131,6 +131,34 @@ struct AppliedEnchantment {
 std::optional<AppliedEnchantment> make_applied_enchantment(const EnchantmentDefinition &definition,
 														   unsigned trained);
 
+// One technique: the multipliers it lays on the weapon's own damage components, who may
+// use it, and what performing it costs in seconds and stamina. A technique is not a
+// weapon and carries no damage of its own — a 1.25 cut factor on a weapon with 0 cut is
+// still 0 cut — so the only place its numbers make sense is beside a resolved attack
+// profile, which is also where its job comes from.
+//
+// `required_rank` is a trained rank in the supporting weapon's resolved job (matching
+// specialisation if one is chosen, the frozen parent otherwise), never an effective
+// skill. `granting_titles` is the second, additive way in: a title on the list unlocks the
+// technique whatever the rank says. The support itself always has to come from the weapon,
+// from whichever route the technique was unlocked by.
+struct TechniqueDefinition {
+	TechniqueId id = 0;
+	unsigned required_rank = 0;
+	std::vector<Title> granting_titles;
+	// Per-component multipliers. Every one is positive and finite: an absent effect is 1,
+	// not 0, so "this technique says nothing about blunt" cannot read as "blunt is free".
+	DamageComponents factors{1.0, 1.0, 1.0};
+	// Absent means "whatever the weapon costs", which is the starter slice; a technique may
+	// declare its own cost, and the effectiveness adjustment and exhaustion apply to it the
+	// same way they apply to the weapon's.
+	std::optional<double> stamina_cost;
+	// Seconds this technique is unavailable for after it is performed. It belongs to the
+	// character and to this technique alone: no other technique shares it, and swapping
+	// weapons does not move it.
+	double cooldown = 0.0;
+};
+
 // Where a record may go and how it is held. Identity only: what an item is worth
 // in combat comes from its definition, and what it has left comes from its
 // instance. A record with no definition is a placement-only legacy item and
@@ -171,20 +199,26 @@ class ItemCatalog {
 public:
 	// Validates everything and keeps immutable copies. Any single bad entry
 	// rejects the whole input: there is no partially valid catalog to observe.
+	// Techniques are validated before the items, because a weapon's support list is a
+	// foreign key into them: an id that names no technique is a broken definition and
+	// rejects the whole catalog rather than becoming a technique nobody can perform.
 	static std::optional<ItemCatalog> create(std::vector<ItemDefinition> items,
 											 std::vector<MaterialDefinition> materials,
-											 std::vector<EnchantmentDefinition> enchantments = {});
+											 std::vector<EnchantmentDefinition> enchantments = {},
+											 std::vector<TechniqueDefinition> techniques = {});
 
 	// Non-owning lookups, stable for the catalog's lifetime. Zero and unknown ids
 	// answer nullptr, and the two id domains never resolve as each other.
 	const ItemDefinition *item(DefinitionId id) const;
 	const MaterialDefinition *material(MaterialId id) const;
 	const EnchantmentDefinition *enchantment(EnchantmentId id) const;
+	const TechniqueDefinition *technique(TechniqueId id) const;
 
 private:
 	std::unordered_map<DefinitionId, ItemDefinition> items_;
 	std::unordered_map<MaterialId, MaterialDefinition> materials_;
 	std::unordered_map<EnchantmentId, EnchantmentDefinition> enchantments_;
+	std::unordered_map<TechniqueId, TechniqueDefinition> techniques_;
 };
 
 }  // namespace open
