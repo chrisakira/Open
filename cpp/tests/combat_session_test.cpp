@@ -158,6 +158,8 @@ struct Observed {
 	std::array<unsigned, kTitleCount> titles{};
 	float attack_clock = 0.0f;
 	float defend_clock = 0.0f;
+	double meter = 0.0;
+	double stun = 0.0;
 	int level = 0;
 	bool alive = false;
 	std::uint64_t order = 0;
@@ -180,6 +182,8 @@ Observed observe(const open::Character &c) {
 	}
 	made.attack_clock = c.attack_cooldown_remaining();
 	made.defend_clock = c.defend_cooldown_remaining();
+	made.meter = c.stagger_buildup();
+	made.stun = c.stun_remaining();
 	made.level = c.level();
 	made.alive = c.alive();
 	made.order = c.attack_target().value_or(0);
@@ -219,6 +223,12 @@ const char *first_difference(const Observed &before, const Observed &after, bool
 	}
 	if (!close(before.defend_clock, after.defend_clock)) {
 		return "the defence clock";
+	}
+	if (before.meter != after.meter) {
+		return "the stagger meter";
+	}
+	if (before.stun != after.stun) {
+		return "the stun";
 	}
 	if (before.level != after.level) {
 		return "the level";
@@ -773,6 +783,404 @@ int main() {
 		expect_true("both are still in combat", session.in_combat(1, world) && session.in_combat(2, world));
 		expect_close("the distance is unchanged: the coordinator never moved anyone",
 					 distance(world[0].position, world[1].position), 1.0f);
+	}
+
+	{
+		// no_catch_up_on_a_long_frame: one step is one attempt per ordered sheet,
+		// however much time it covers. A coordinator that looped its own clocks would
+		// swing several times in a 60 s frame and none of its bookkeeping would show it.
+		open::Character hitter = make_character(1);
+		open::Character target = make_character(2);
+		exhaust_defence(hitter);
+		exhaust_defence(target);
+		const std::vector<open::Combatant> world =
+			roster({{&hitter, at(0.0f, 0.0f, 0.0f)}, {&target, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession whole(61);
+		expect_true("the fight is issued", whole.issue_attack(world, 1, 2));
+
+		const float spent_blow = kRank1Damage * 0.25f / kToughnessDivisor;
+		const Observed before_whole = observe(target);
+		expect_true("one 60-second frame runs", whole.step(60.0f, world));
+		expect_close("exactly one blow arrives across a minute of game time",
+					 hp_lost(before_whole, target), spent_blow, 0.001f);
+		expect_true("and the attacker trained once",
+					hitter.basic(open::BasicSkill::UnarmedCombat).xp == 1u);
+		// The clocks of a step run before the swings, so the minute bought one attempt
+		// and one cooldown - not twelve of each. This is the catch-up this case rules
+		// out: a coordinator that looped its clocks inside the frame would be ready
+		// again, and a second blow would have landed.
+		expect_close("the swing this frame took is still cooling at the end of it",
+					 hitter.attack_cooldown_remaining(), 5.0f, 0.001f);
+		expect_close("and so is the answer it forced",
+					 target.defend_cooldown_remaining(), 5.0f, 0.001f);
+
+		// The same wall of time, walked a second at a time, is as many swings as the clock
+		// allows and no more. The difference is the point: the cooldown gates swings, and
+		// a frame does not re-buy one it already paid for, nor does it bank the time it
+		// skipped into extra attempts.
+		open::Character stepper = make_character(1);
+		open::Character patient = make_character(2);
+		exhaust_defence(stepper);
+		exhaust_defence(patient);
+		const std::vector<open::Combatant> ticked =
+			roster({{&stepper, at(0.0f, 0.0f, 0.0f)}, {&patient, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession by_hand(61);
+		expect_true("the same fight is issued", by_hand.issue_attack(ticked, 1, 2));
+		unsigned ticked_swings = 0;
+		for (int second = 0; second < 60; ++second) {
+			// Both bars are emptied before every tick. A second of in-combat regen is 5
+			// stamina, under the 8 a defence costs, so each tick is met the same way: an
+			// unpaid swing and an unpaid answer. Without this the bar regrows, the victim's
+			// dodge becomes payable, and a payable dodge turns every later blow aside -
+			// which is a defence rule, and not what "how many swings does a clock allow"
+			// is about.
+			exhaust_defence(stepper);
+			exhaust_defence(patient);
+			const float hp_pre = patient.pool(open::PoolKind::Hp).current;
+			expect_true("a second passes", by_hand.step(1.0f, ticked));
+			// Counting the ticks a blow arrived on, rather than dividing total HP by one
+			// blow's size, because the blow is not one size: the skill trains as it lands
+			// hits and the rank rising makes each later one bigger.
+			ticked_swings += patient.pool(open::PoolKind::Hp).current < hp_pre ? 1u : 0u;
+		}
+		// Every blow of this fight is the same size - unpaid swing, unpaid answer - so the
+		// HP the victim lost is an exact count of the swings that arrived. HP is used
+		// rather than XP because the weapon skill ranks up as it trains and a rank-up
+		// discards the residual progress, which is a skill rule and not this one.
+		//
+		// The count is the clock's own schedule: an unpaid rank-1 swing is the slowest
+		// cooldown in the band, 5 s, so sixty seconds is twelve swings. The single 60 s
+		// frame above is the same fight and the same twelve seconds of cooldown, and one
+		// swing.
+		const float single_hp = hp_lost(before_whole, target);
+		expect_true("sixty seconds walked a second at a time is twelve swings, one every 5 s",
+					ticked_swings == 12u);
+		expect_true("and not one per frame", ticked_swings < 20u);
+		expect_close("with exactly one swing for the same time in a single frame", single_hp, spent_blow,
+					 0.001f);
+	}
+
+	{
+		// roster_order_is_who_goes_first: the roster is the order the coordinator acts
+		// in, and reversing it reverses who gets the scarce resource. Two fighters start
+		// with enough for exactly one paid swing between them; whichever the roster asks
+		// first is the one that swings whole, and the other swings unpaid.
+		open::Character a = make_character(1);
+		open::Character b = make_character(2);
+		// One swing's price, and one defence's price, split so that only the first
+		// actor in the roster can afford both.
+		expect_true("a holds exactly a swing", a.spend(open::ResourceUse::Sprint, (100.0f - 8.0f) / 10.0f));
+		expect_true("b holds nothing", b.spend(open::ResourceUse::Sprint, 10.0f));
+		expect_close("a can pay for one swing", a.pool(open::PoolKind::Stamina).current, 8.0f, 0.001f);
+		expect_close("b cannot", b.pool(open::PoolKind::Stamina).current, 0.0f, 0.001f);
+
+		const std::vector<open::Combatant> a_first =
+			roster({{&a, at(0.0f, 0.0f, 0.0f)}, {&b, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(71);
+		expect_true("a orders b", session.issue_attack(a_first, 1, 2));
+		expect_true("b orders a", session.issue_attack(a_first, 2, 1));
+		const Observed before_a = observe(a);
+		const Observed before_b = observe(b);
+		expect_true("one tick runs", session.step(0.05f, a_first));
+		// The paid attacker's blow arrives at the unpaid-defence half; the unpaid
+		// attacker's blow is half again on top of that.
+		const float paid_blow = kRank1Damage * 0.5f / kToughnessDivisor;
+		const float unpaid_blow = kRank1Damage * 0.25f / kToughnessDivisor;
+		expect_close("the first fighter in the roster lands the paid blow", hp_lost(before_b, b), paid_blow,
+					 0.001f);
+		expect_close("the second lands the unpaid one", hp_lost(before_a, a), unpaid_blow, 0.001f);
+		expect_close("and the first one spent its whole bar on it",
+					 a.pool(open::PoolKind::Stamina).current, 0.25f, 0.01f);
+
+		// Reverse the roster and the swing order moves with it: the same two sheets with
+		// the same two bars, the same seed and the same frame, only asked in the other
+		// order, and the sheet that got the paid blow is now the one that got the unpaid
+		// one. The point is the swap, so the two are compared with each other rather
+		// than with a number that would also pass if the halves went the other way.
+		open::Character c = make_character(1);
+		open::Character d = make_character(2);
+		expect_true("c holds exactly a swing", c.spend(open::ResourceUse::Sprint, (100.0f - 8.0f) / 10.0f));
+		expect_true("d holds nothing", d.spend(open::ResourceUse::Sprint, 10.0f));
+		const std::vector<open::Combatant> d_first =
+			roster({{&d, at(1.0f, 0.0f, 0.0f)}, {&c, at(0.0f, 0.0f, 0.0f)}});
+		open::CombatSession reversed(71);
+		expect_true("c orders d", reversed.issue_attack(d_first, 1, 2));
+		expect_true("d orders c", reversed.issue_attack(d_first, 2, 1));
+		const Observed before_c = observe(c);
+		const Observed before_d = observe(d);
+		expect_true("the same tick runs in the other order", reversed.step(0.05f, d_first));
+		const float c_was_hit = hp_lost(before_c, c);
+		const float d_was_hit = hp_lost(before_d, d);
+		// Asked second, the funded sheet meets an unpaid blow it can afford to answer, and
+		// a ready dodge it has paid for is worth everything: nothing arrives. Asked first,
+		// the same sheet spent the same 8 on the swing instead and both blows landed. One
+		// bar, two orders, and the roster decided what it bought.
+		expect_close("the sheet asked second turns its unpaid blow aside", c_was_hit, 0.0f, 1e-6);
+		expect_close("and lands the unpaid blow the other order never got", d_was_hit, unpaid_blow,
+					 0.001f);
+		expect_true("where that order had both blows arrive",
+					hp_lost(before_a, a) > 0.0f && hp_lost(before_b, b) > 0.0f);
+		expect_close("and the funded sheet spent its bar on the answer instead",
+					 c.pool(open::PoolKind::Stamina).current, 0.25f, 0.01f);
+
+		// A corpse in the roster is not an actor at all: the sheet it had ordered is
+		// reconciled away in the same step, and nobody it pointed at is hit twice.
+		open::Character living = make_character(1);
+		open::Character corpse = make_character(2);
+		const std::vector<open::Combatant> dying =
+			roster({{&living, at(0.0f, 0.0f, 0.0f)}, {&corpse, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession after(72);
+		expect_true("the living orders the doomed one", after.issue_attack(dying, 1, 2));
+		expect_true("the doomed one orders back", after.issue_attack(dying, 2, 1));
+		expect_true("and it dies inside the frame", corpse.damage(open::BodyPart::Torso, 500.0f));
+		const Observed before_living = observe(living);
+		expect_true("one tick runs", after.step(0.05f, dying));
+		expect_unchanged("a corpse neither swings nor is swung at", before_living, living, false);
+		expect_true("and its order was reconciled, not kept for later",
+					!corpse.attack_target().has_value());
+	}
+
+	{
+		// a_stun_freezes_the_fighter_and_nobody_else: a stun reached through the session
+		// by a real fight, and everything it does and must not do.
+		//
+		// Reaching one is a matter of skill rather than a bigger weapon, which is worth
+		// writing down because the meter decays: it loses a tenth of its threshold every
+		// second, so a rank-1 blow (0.04 blunt once every 4.7 s) can never fill it, while
+		// a rank-100 unarmed sheet lands 4 blunt 1.6 times a second and fills it after
+		// about half a minute of exchange with half its health left. Nothing outside a
+		// sheet can stun one, so a fight like this is the only way to be stunned in a test
+		// - which is exactly why the state is worth pinning here rather than only in the
+		// `stagger` case's state machine.
+		auto master = [](std::uint64_t id) {
+			open::Character made = make_character(id);
+			while (made.basic(open::BasicSkill::UnarmedCombat).rank < 100u) {
+				made.record_use(open::BasicSkill::UnarmedCombat, std::nullopt, true);
+			}
+			return made;
+		};
+
+		open::Character left = master(1);
+		open::Character right = master(2);
+		const std::vector<open::Combatant> world =
+			roster({{&left, at(0.0f, 0.0f, 0.0f)}, {&right, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(91);
+		expect_true("the fighter the roster asks to first orders the other",
+					session.issue_attack(world, 1, 2));
+		expect_true("and the other orders back", session.issue_attack(world, 2, 1));
+
+		// Both bars are emptied before every step so no blow is ever turned aside whole:
+		// the meter is then the only thing deciding when this fight changes shape.
+		double left_in_step = 0.0;
+		double right_in_step = 0.0;
+		int steps = 0;
+		for (; steps < 2000; ++steps) {
+			exhaust_defence(left);
+			exhaust_defence(right);
+			left_in_step = left.pool(open::PoolKind::Hp).current;
+			right_in_step = right.pool(open::PoolKind::Hp).current;
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+			left_in_step -= left.pool(open::PoolKind::Hp).current;
+			right_in_step -= right.pool(open::PoolKind::Hp).current;
+			if (left.is_stunned() || right.is_stunned()) {
+				break;
+			}
+		}
+		expect_true("the fight stunned one of them before either died",
+					left.is_stunned() != right.is_stunned() && left.alive() && right.alive());
+		const bool first_was_stunned = left.is_stunned();
+		open::Character &down = first_was_stunned ? left : right;
+		open::Character &standing = first_was_stunned ? right : left;
+		// What each sheet *took* in the stun step is what the other one landed. The sheet
+		// the roster asked first swings first, so its blow is the one that started the
+		// stun, and the answer it forced is the attempt the stun then refused.
+		const double down_took = first_was_stunned ? left_in_step : right_in_step;
+		const double standing_took = first_was_stunned ? right_in_step : left_in_step;
+		expect_true("and it is the sheet the roster asked second, whose attempt the stun "
+					"refused before it could be made",
+					!first_was_stunned);
+		expect_true("the one asked first landed the blow that started it", down_took > 0.0);
+		expect_close("and the sheet it stunned landed nothing in that same step", standing_took, 0.0,
+					 1e-9);
+		expect_close("for the promised two seconds of stun", down.stun_remaining(), 2.0, 1e-9);
+		expect_true("and the meter reset rather than carrying the overkill", down.stagger_buildup() == 0.0);
+
+		// What the stun holds and what it must not touch: the order, the fight, the
+		// clocks and the schedule it was set on.
+		const std::optional<std::uint64_t> held_order = down.attack_target();
+		const double frozen_attack = down.attack_cooldown_remaining();
+		const double frozen_defence = down.defend_cooldown_remaining();
+		expect_true("a stunned sheet still holds its attack order", held_order.has_value());
+		expect_true("and is still in the fight it is losing", session.in_combat(2, world));
+		expect_true("its defence clock was left running by the answer it made", frozen_defence > 0.0);
+		expect_vec("a stunned sheet does not walk", session.velocity_at(2, world), 0.0f, 0.0f, 0.0f);
+
+		// Every claim below is checked on every one of those ten-frames: a stun is two
+		// seconds of a sheet being frozen while everything else about it keeps running.
+		int stunned_frames = 0;
+		double health_at_expiry = down.pool(open::PoolKind::Hp).current;
+		double health_before_stun_window = health_at_expiry;
+		while (down.is_stunned() && stunned_frames < 60) {
+			const double stun_before = down.stun_remaining();
+			const double hp_before = down.pool(open::PoolKind::Hp).current;
+			exhaust_defence(left);
+			exhaust_defence(right);
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+			++stunned_frames;
+			// A frame that runs out of the stun is not a frozen frame: the clocks of the
+			// unstunned remainder run, and so may the swing, which is the resumption
+			// asserted below.
+			if (down.is_stunned()) {
+				expect_close("the attack clock is frozen", down.attack_cooldown_remaining(), frozen_attack,
+							 1e-9);
+				expect_close("the defence clock is frozen", down.defend_cooldown_remaining(),
+							 frozen_defence, 1e-9);
+				expect_close("the meter holds still", down.stagger_buildup(), 0.0, 1e-9);
+			}
+			// Regen is not frozen with the clocks: a stun is two seconds of being hit, not
+			// a lockout from recovering while hit, and it happens once per step however
+			// many clocks it touches.
+			expect_close("one step regrows one step's stamina",
+						 static_cast<double>(down.pool(open::PoolKind::Stamina).current), 0.5, 0.01);
+			expect_close("the stun counts down by exactly the frame it was given, and stops at zero",
+						 down.stun_remaining(), stun_before > 0.1 ? stun_before - 0.1 : 0.0, 1e-6);
+			expect_vec("and holds the sheet in place", session.velocity_at(2, world), 0.0f, 0.0f, 0.0f);
+			expect_true("with its order intact", down.attack_target() == held_order);
+			expect_true("and still worth hitting", session.in_combat(2, world));
+			if (down.pool(open::PoolKind::Hp).current < hp_before) {
+				health_at_expiry = down.pool(open::PoolKind::Hp).current;
+			}
+		}
+		expect_true("the stun expired", !down.is_stunned());
+		expect_true("on the two-second schedule it started on, and not the frame count",
+					stunned_frames >= 19 && stunned_frames <= 21);
+		expect_true("blows kept landing on a stunned sheet: a stun is not a shield",
+					health_at_expiry < health_before_stun_window);
+
+		// And the freeze was the whole of it: the moment the stun is gone, the clocks the
+		// stun held start running again, and so does the sheet.
+		// The held clocks are not asserted here: the blow the other sheet lands on the
+		// way out restarts the defence clock, so the resume arithmetic belongs to the
+		// `stagger` case and what belongs here is that the sheet is acting again.
+		const double standing_hp_before = standing.pool(open::PoolKind::Hp).current;
+		for (int tick = 0; tick < 20 && standing.pool(open::PoolKind::Hp).current == standing_hp_before;
+			 ++tick) {
+			exhaust_defence(left);
+			exhaust_defence(right);
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+		}
+		expect_true("the freed sheet swings again, which is the clock running again",
+					standing.pool(open::PoolKind::Hp).current < standing_hp_before);
+		expect_true("and the fight was never in doubt about who was in it",
+					session.in_combat(1, world) && session.in_combat(2, world));
+	}
+
+	{
+		// a_stun_holds_a_walker_in_place_without_taking_the_walk_away: the walk is not
+		// cancelled by being stunned, it is only not being done, and it resumes.
+		auto master = [](std::uint64_t id) {
+			open::Character made = make_character(id);
+			while (made.basic(open::BasicSkill::UnarmedCombat).rank < 100u) {
+				made.record_use(open::BasicSkill::UnarmedCombat, std::nullopt, true);
+			}
+			return made;
+		};
+		open::Character hitter = master(1);
+		open::Character walker = make_character(2);
+		// Straight down the Z axis from where it stands, so the walk the coordinator is
+		// being asked for is one number rather than a heading.
+		const std::vector<open::Combatant> world =
+			roster({{&hitter, at(0.0f, 0.0f, 0.0f)}, {&walker, at(0.0f, 0.0f, 1.0f)}});
+		open::CombatSession session(93);
+		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+		expect_true("the victim is walking away", walker.set_destination(0.0f, 0.0f, 30.0f));
+		expect_vec("and is being told to walk by the coordinator", session.velocity_at(2, world), 0.0f,
+				   0.0f, 4.5f);
+
+		int steps = 0;
+		while (!walker.is_stunned() && steps < 2000) {
+			++steps;
+			exhaust_defence(hitter);
+			exhaust_defence(walker);
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+		}
+		expect_true("the walker was stunned mid-stride", walker.is_stunned());
+		expect_vec("which holds them in place", session.velocity_at(2, world), 0.0f, 0.0f, 0.0f);
+		expect_true("without taking the walk away", walker.destination().has_value());
+		expect_true("and without making them a bystander", session.in_combat(2, world));
+
+		int to_expiry = 0;
+		while (walker.is_stunned() && to_expiry < 60) {
+			++to_expiry;
+			exhaust_defence(hitter);
+			exhaust_defence(walker);
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+		}
+		expect_true("the stun ended", !walker.is_stunned());
+		expect_vec("and the walk is the walk it was", session.velocity_at(2, world), 0.0f, 0.0f, 4.5f);
+		expect_true("still to the same place", walker.destination().has_value());
+	}
+
+	{
+		// clocks_answer_to_time_and_nothing_else: retargeting, losing a target to a
+		// removal, and killing a target all leave a cooling clock cooling. An order is
+		// intent, and intent is not a way to swing twice or to hurry a swing up.
+		open::Character swing1 = make_character(1);
+		open::Character foe_a = make_character(2);
+		open::Character foe_b = make_character(3);
+		const std::vector<open::Combatant> world =
+			roster({{&swing1, at(0.0f, 0.0f, 0.0f)},
+					{&foe_a, at(1.0f, 0.0f, 0.0f)},
+					{&foe_b, at(2.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(95);
+		expect_true("the first fight is issued", session.issue_attack(world, 1, 2));
+		exhaust_defence(foe_a);
+		expect_true("one tick swings", session.step(0.05f, world));
+		const double cooling = swing1.attack_cooldown_remaining();
+		expect_true("and starts its clock", cooling > 0.0);
+		expect_close("the blow arrived", 100.0 - foe_a.pool(open::PoolKind::Hp).current,
+					 kRank1Damage * 0.5f / kToughnessDivisor, 0.001f);
+
+		const Observed before_retarget = observe(swing1);
+		expect_true("the order is moved to another target", session.issue_attack(world, 1, 3));
+		expect_true("the new order is the one held", is_target(swing1.attack_target(), 3));
+		expect_unchanged("and retargeting spends nothing and hurries nothing", before_retarget, swing1,
+						 false);
+
+		// And the clock is still the same clock a moment later, with the same time gone.
+		exhaust_defence(foe_b);
+		expect_true("the same tick runs against the new target", session.step(0.0f, world));
+		expect_close("a zero-time step leaves the clock exactly where it was",
+					 static_cast<double>(swing1.attack_cooldown_remaining()), cooling, 1e-9);
+		expect_close("and the new target is untouched by it",
+					 static_cast<double>(foe_b.pool(open::PoolKind::Hp).current), 100.0, 1e-6);
+
+		// Removal: reconciliation drops the order and nothing else.
+		const std::vector<open::Combatant> no_foes = roster({{&swing1, at(0.0f, 0.0f, 0.0f)}});
+		expect_true("a zero-time step with nobody in it is accepted", session.step(0.0f, no_foes));
+		expect_true("the order on the absent sheet is gone", !swing1.attack_target().has_value());
+		expect_close("and the clock it left behind is the same clock",
+					 static_cast<double>(swing1.attack_cooldown_remaining()), cooling, 1e-9);
+
+		// Death: the same, through a fight that ended rather than a roster that shrank.
+		open::Character killer = make_character(1);
+		open::Character doomed = make_character(2);
+		const std::vector<open::Combatant> pair =
+			roster({{&killer, at(0.0f, 0.0f, 0.0f)}, {&doomed, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession killer_session(96);
+		expect_true("the killing fight is issued", killer_session.issue_attack(pair, 1, 2));
+		exhaust_defence(doomed);
+		expect_true("one tick swings", killer_session.step(0.05f, pair));
+		const double after_kill = killer.attack_cooldown_remaining();
+		expect_true("the killer's clock is running", after_kill > 0.0);
+		expect_true("the victim is dying or dead", doomed.pool(open::PoolKind::Hp).current < 100.0f);
+		doomed.damage(open::BodyPart::Torso, 1.0e30f);
+		const Observed killer_after = observe(killer);
+		expect_true("a tick with a corpse in it is accepted", killer_session.step(0.0f, pair));
+		expect_true("the order on the corpse is cancelled", !killer.attack_target().has_value());
+		expect_close("and the clock still reads what the swing set",
+					 static_cast<double>(killer.attack_cooldown_remaining()),
+					 static_cast<double>(killer_after.attack_clock), 1e-9);
 	}
 
 	return test_summary();

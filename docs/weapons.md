@@ -94,7 +94,7 @@ This gives diminishing returns and does not use the level-multiplied effective a
 
 Techniques can favor different components: a slash may favor cut and a thrust may favor pierce. The starter multipliers are locked in Starter techniques below; effects for other techniques remain Open. No extra accuracy/crit roll is implied.
 
-**Current compatibility:** `combat.md` uses one scalar `max(0, weapon × trained/200 − defender base Toughness × armour)`, with a separate all-or-nothing defense test. The locked mixed-damage model is a future target, not current behavior. The detailed formula and defense interaction this paragraph asked to be agreed are agreed: they are the rules above plus Weapon blocking, Character handling and Stagger, which own them, and `combat.md` labels the scalar rules it keeps until the switch. The typed model replaces the scalar slice in one deliberate change; there is no selectable old/new combat mode.
+**Current:** the typed model in this document is what `cpp/` runs. The scalar `max(0, weapon × trained/200 − defender base Toughness × armour)` that `combat.md` used to recite, and its all-or-nothing defense test, were replaced in one deliberate change with no selectable old/new combat mode: mixed damage with per-component armour resistance, percentage mitigation, a defense that pays its own stamina, durability with wear, and stagger from final blunt. Still ahead of that switch, and still this document's target: techniques and the workbench actions.
 
 ## Techniques and range — locked for the starter slice; proposed beyond it
 

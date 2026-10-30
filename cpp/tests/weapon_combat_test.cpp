@@ -669,12 +669,18 @@ void a_part_is_drawn_only_when_something_arrives() {
 // Final blunt alone feeds the meter, exactly and to the point, and a meter that has not
 // reached its threshold stuns nobody. Death then takes the meter with it.
 //
-// This fixture cannot reach a live stun from a real swing, and the reason is worth
-// writing down: the threshold is 10 x effective Toughness while the HP pool is 100 x
-// effective Constitution, and final blunt is never more than a hit's whole total, so on
-// a plain sheet (where the two attributes are the same number) HP is spent at least as
-// fast as the meter fills and the target always dies before it can be staggered. The
-// next section separates the two on purpose.
+// What this fixture cannot do is fill the meter, and the reason is the decay rather than
+// anybody's health: the meter loses a tenth of its threshold every second, so blunt has
+// to arrive faster than threshold/10 per second to get anywhere. A rank-1 hammer blow is
+// 0.04 blunt once every 4.7 s, about a hundredth of what a Toughness-1 sheet's meter
+// leaks, so this fight never stuns anybody however long it goes on. Trained blunt damage
+// does clear that bar - a rank-100 unarmed sheet lands 4 blunt 1.6 times a second and
+// stuns a plain sheet after about half a minute of exchange with half its health left,
+// which `combat_session` pins as a live fight. So the gate on a stun is skill, not
+// invulnerability, and the second half of it is worth writing down too: final blunt is
+// never more than a hit's whole total, so a single blow big enough to reach the threshold
+// would also deal that much damage, and stuns come from accumulation rather than from one
+// heavy hit.
 void blunt_feeds_the_meter_and_a_fall_clears_it() {
 	open::Character attacker = sheet(kAttackerId, open::Attribute::Strength);
 	open::Character defender = sheet(kDefenderId);
@@ -751,19 +757,14 @@ void blunt_feeds_the_meter_and_a_fall_clears_it() {
 // A blunt killing blow is not answered by a stun, and the sheet that lands it is not
 // the sheet that gets one.
 //
-// Why there is no "and here is a live stun from a real swing" assertion here, written
-// out because it is a property of the locked numbers rather than an oversight: the
-// threshold is 10 x effective Toughness, the HP pool is 100 x effective Constitution,
-// and final blunt is never more than a hit's whole total - so a plain sheet (same
-// number on both attributes) spends its last HP on the very blow that could fill its
-// meter, and one point of damage is one point too many to be stunned rather than
-// killed. Separating them needs either healing or revive, neither of which is built
-// (docs/characters.md, Not built), or a way to set a base attribute at creation, which
-// is not either. The stun itself - its length, no refresh, frozen clocks, decay pause -
-// is pinned exactly by the `stagger` case, and the acting gates are pinned here on a
-// dead sheet, which runs the same three checks; Task 11 re-tests the exchange through
-// the session. If a real stagger is wanted in play, the threshold coefficient or the HP
-// formula has to move, and that is a balance call for the human, not this task.
+// The live stun, and everything it holds shut, is `combat_session`'s
+// a_stun_freezes_the_fighter_and_nobody_else: it takes a rank-100 unarmed sheet about
+// half a minute of exchange to accumulate past a plain sheet's threshold, which is a
+// reachable fight and nothing here needs it faking. What this section owns is the other
+// end - a blow that kills does not also stun - and the acting gates, pinned here on the
+// dead sheet because death and a stun close the same three doors: no walk, no swing, no
+// order kept. The stun's own schedule (its length, no refresh, frozen clocks, the meter
+// holding still) is pinned exactly by the `stagger` case.
 void a_blunt_killing_blow_stuns_nobody() {
 	open::Character attacker = sheet(kAttackerId, open::Attribute::Strength);
 	open::Character defender = sheet(kDefenderId);

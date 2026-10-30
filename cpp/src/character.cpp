@@ -338,6 +338,13 @@ std::optional<Vec3> Character::destination() const {
 }
 
 Vec3 Character::velocity_at(float px, float py, float pz) const {
+	if (is_stunned()) {
+		// A stun holds the sheet where it stands. The order it was walking is kept, so the
+		// walk resumes on its own when the stun does, which is the same rule
+		// `attack_velocity_at` follows and for the same reason: being unable to act is not
+		// having been stood down.
+		return {};
+	}
 	return order_.velocity_at(px, py, pz, walk_speed());
 }
 

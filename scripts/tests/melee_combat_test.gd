@@ -3,8 +3,12 @@ extends SceneTree
 # Task 6 scene tests. Left-clicking a living dummy opens one tiny action popup;
 # pressing Attack sends a C++ order through the coordinator, a floor click still
 # moves and cancels, and the world owns exactly one combat/regeneration tick per
-# physics frame. Every combat number (0.04 damage, reach, cooldown, in_combat)
-# must come from C++: nothing in the scene decides it.
+# physics frame. Every combat number (damage, reach, cooldown, in_combat) must come
+# from C++: nothing in the scene decides it. The numbers are now the typed ones, which
+# changes what a scene test can watch: a rank-1 unarmed blow is 8 x 1/200 over the
+# target's Toughness (0.04 / 1.05) when nothing answers it, and a defence that is ready
+# and paid for turns it aside entirely, so the first swing of a fresh fight does no
+# damage at all. Landed damage is therefore watched with two attackers on one target.
 #
 # The popup and the coordinator are reached by node lookup and duck-typed calls,
 # so a missing AttackPopup or missing scene wiring fails as an assertion here
@@ -14,6 +18,11 @@ var failures := 0
 var _emissions: Array = []
 
 var _viewport_size := Vector2.ZERO
+
+# What one rank-1 unarmed blow costs a sheet that cannot answer it. The arithmetic is
+# pinned in C++; this suite only needs the amount to say "the number that arrived is the
+# typed one" and to insist that damage arrives in whole blows rather than fragments.
+const TYPED_BLOW := 0.04 / 1.05
 
 
 func _initialize() -> void:
@@ -165,6 +174,17 @@ func _parts_lost(sheet: OpenCharacter) -> Array:
 			changed += 1
 			total += lost
 	return [changed, total]
+
+
+func _wait_for_stamina_dip(sheet: OpenCharacter, limit: int) -> int:
+	# Frames until this sheet's bar next falls below full: the only way to see a swing or
+	# a defence that did no damage. Both cost 8 and neither can afford to be twice as
+	# frequent as the bar regrows, so a dip is one action. -1 when it never came.
+	var guard := 0
+	while guard < limit and sheet.get_stamina() > 99.0:
+		await physics_frame
+		guard += 1
+	return guard if guard < limit else -1
 
 
 func _attack_target_id(sheet: OpenCharacter) -> int:
@@ -481,24 +501,33 @@ func _approach_then_auto_swing() -> void:
 	_check(_attack_target_id(player.sheet) == 3, "Attack ordered the player through C++")
 	_check(combat.is_in_combat(1), "the coordinator says the attacker is fighting")
 
-	# Approach: walk up to the target, bounded so a stall fails instead of hangs.
+	# Approach: walk up to the target, bounded so a stall fails instead of hangs. The
+	# wait is for the gap and not for damage: under the typed rules the opening swing is
+	# turned aside, so health says nothing about whether the fight arrived.
 	var guard := 0
-	while guard < 240 and _close(enemy.sheet.get_health(), enemy_hp):
+	var gap := horizontal_gap(player.global_position, enemy.global_position)
+	while guard < 240 and gap > 1.5 + 0.001:
 		await physics_frame
 		guard += 1
-	_check(guard < 240, "the player reached the Enemy within 240 physics frames")
+		gap = horizontal_gap(player.global_position, enemy.global_position)
+	_check(guard < 240, "the player closed to melee reach within 240 physics frames")
 	if guard >= 240:
 		await _free_world(world)
 		return
 
-	var gap := horizontal_gap(player.global_position, enemy.global_position)
 	_check(player.global_position.distance_to(player_start) > 1.0, "the player really approached")
 	_check(gap <= 1.5 + 0.001, "and stopped inside melee range, not beyond it")
 	_check(gap > 0.8, "without walking into the dummy")
-	_check(_close(enemy_hp - enemy.sheet.get_health(), 0.04), "the first C++ swing cost 0.04 hp")
-	var parts: Array = _parts_lost(enemy.sheet)
-	_check(int(parts[0]) == 1, "exactly one body part took the hit")
-	_check(_close(float(parts[1]), 0.04), "and it lost 0.04")
+
+	# The opening swing, seen through the two bars it spent. A fresh Enemy has a ready
+	# dodge and the stamina to pay for it, and a defence that is ready and paid for is
+	# worth everything it can do, so the blow lands as nothing: no health, no body part.
+	guard = await _wait_for_stamina_dip(enemy.sheet, 240)
+	_check(guard >= 0, "the Enemy answered a swing within 240 physics frames of the fight arriving")
+	_check(enemy.sheet.get_stamina() < 93.0, "the answer cost the Enemy its 8")
+	_check(player.sheet.get_stamina() < 93.0, "and the swing cost the player its own 8")
+	_check(_close(enemy.sheet.get_health(), enemy_hp), "and the turned-aside blow changed no health")
+	_check(int(_parts_lost(enemy.sheet)[0]) == 0, "and no body part at all")
 	_check(player.sheet.get_level() == 1, "the player is still level one")
 	_check(_attack_target_id(enemy.sheet) == 0, "the defender never ordered a retaliation")
 	_check(_close(enemy.global_position.x - enemy_start.x, 0.0) and \
@@ -506,14 +535,18 @@ func _approach_then_auto_swing() -> void:
 	_check(not enemy.sheet.get_can_move(), "and it still cannot move on its own")
 	_check(_close(player.sheet.get_health(), 100.0), "nothing was swung back at the player")
 
-	# Automatic repeat: no further clicks, just the scene clock passing a cooldown.
-	var first_hp: float = enemy.sheet.get_health()
+	# Automatic repeat: no further clicks, just the scene clock passing a cooldown. The
+	# bar refills well before the next swing is due, so a second dip can only be a second
+	# exchange, and the only thing that drives it is the world's own frame loop.
 	guard = 0
-	while guard < 420 and not _close(first_hp - enemy.sheet.get_health(), 0.04, 0.0005):
+	while guard < 120 and enemy.sheet.get_stamina() < 99.0:
 		await physics_frame
 		guard += 1
-	_check(guard < 420, "the fight swung again on its own after one cooldown")
-	_check(_close(enemy_hp - enemy.sheet.get_health(), 0.08, 0.0005), "the second hit also cost 0.04")
+	_check(guard < 120, "the Enemy's bar came back while the cooldown ran")
+	guard = await _wait_for_stamina_dip(enemy.sheet, 300)
+	_check(guard >= 0, "the fight swung again on its own after one cooldown")
+	_check(guard >= 0 and enemy.sheet.get_stamina() < 93.0, "and the Enemy paid for the answer again")
+	_check(_close(enemy.sheet.get_health(), enemy_hp), "still turned aside, so still no damage")
 	_check(_close(player.sheet.get_health(), 100.0), "and the player is still unhurt")
 	_check(_attack_target_id(enemy.sheet) == 0, "the defender still ordered nobody")
 
@@ -554,16 +587,22 @@ func _friendly_target_proves_no_faction_gate() -> void:
 	_check(_attack_target_id(player.sheet) == 2, "C++ holds the Friendly as the target")
 	_check(combat.is_in_combat(1) and combat.is_in_combat(2), "both are in combat")
 
-	var ally_hp: float = ally.sheet.get_health()
 	var guard := 0
-	while guard < 240 and _close(ally.sheet.get_health(), ally_hp):
+	var gap := horizontal_gap(player.global_position, ally.global_position)
+	while guard < 240 and gap > 1.5 + 0.001:
 		await physics_frame
 		guard += 1
-	_check(guard < 240, "the player reached the Friendly within 240 physics frames")
+		gap = horizontal_gap(player.global_position, ally.global_position)
+	_check(guard < 240, "the player closed on the Friendly within 240 physics frames")
 	if guard < 240:
-		_check(_close(ally_hp - ally.sheet.get_health(), 0.04), "a Friendly takes the same 0.04 hit")
-		_check(horizontal_gap(player.global_position, ally.global_position) <= 1.5 + 0.001,
-			"and stopped in range")
+		_check(gap <= 1.5 + 0.001, "and stopped in range")
+		# Faction changes nothing about the order, and nothing about the answer either: the
+		# Friendly defends itself exactly as the Enemy does, which is to say the first blow
+		# of the fight is turned aside and paid for.
+		guard = await _wait_for_stamina_dip(ally.sheet, 240)
+		_check(guard >= 0, "the Friendly answered a swing within 240 physics frames")
+		_check(ally.sheet.get_stamina() < 93.0, "and paid the same 8 for the privilege")
+		_check(_close(ally.sheet.get_health(), 100.0), "with the same result: no damage at all")
 	await _free_world(world)
 
 
@@ -592,7 +631,8 @@ func _manual_tick_regeners_once() -> void:
 	_check(enemy.get("combat") == combat, "and the Enemy")
 
 	# Controlled fixture: stand the player just inside reach and drive the world
-	# by hand, so exactly one 0.1 s frame is being measured.
+	# by hand, so exactly one 0.1 s frame is being measured. Nothing here depends on
+	# whether the blow landed: what one frame did is visible in the two bars.
 	ally.global_position = Vector3(-4.0, 0.1, -2.0)
 	player.global_position = Vector3(-2.7, 0.1, -2.0)
 	await physics_frame
@@ -604,10 +644,17 @@ func _manual_tick_regeners_once() -> void:
 
 	_check(combat.issue_attack(1, 2), "the in-range attack order is accepted")
 	_tick(world, 0.1)
-	_check(_close(ally.sheet.get_health(), 99.96), "the manual tick landed the opening swing")
+	# The swing happened on this tick and the ally's ready, paid dodge turned it aside, so
+	# the tick is measured in bars: 100 - 8 + one combat frame's 0.5 for each of them, the
+	# swing and the defence priced the same way.
+	_check(_close(ally.sheet.get_health(), 100.0), "the manual tick's opening swing was turned aside")
+	_check(int(_parts_lost(ally.sheet)[0]) == 0, "and wounded no body part")
 	var after_swing: float = player.sheet.get_stamina()
-	_check(after_swing > 91.0 and after_swing < 94.0, "the swing paid its stamina")
+	_check(_close(after_swing, 92.5, 0.0001), "the swing paid 8 and one frame regrew 0.5")
+	_check(_close(ally.sheet.get_stamina(), 92.5, 0.0001),
+		"the defence that answered it paid the same 8 and regrew the same 0.5")
 	var ally_stamina: float = ally.sheet.get_stamina()
+	var ally_mana: float = ally.sheet.get_mana()
 	var enemy_stamina: float = enemy.sheet.get_stamina()
 	var ally_hp: float = ally.sheet.get_health()
 	var player_hp: float = player.sheet.get_health()
@@ -619,13 +666,72 @@ func _manual_tick_regeners_once() -> void:
 	_tick(enemy, 0.1)
 	_check(_close(player.sheet.get_stamina() - after_swing, 0.5, 0.0001),
 		"one combat frame regrew 0.5 stamina, exactly once")
-	_check(_close(ally.sheet.get_stamina(), ally_stamina), "the other full pools stayed clamped at max")
-	_check(_close(enemy.sheet.get_stamina(), enemy_stamina), "the bystander's too")
+	_check(_close(ally.sheet.get_stamina() - ally_stamina, 0.5, 0.0001),
+		"and the sheet that spent a defence regrows it, once, like anybody else")
+	_check(_close(ally.sheet.get_mana(), ally_mana), "with its untouched mana still clamped at max")
+	_check(_close(enemy.sheet.get_stamina(), enemy_stamina), "the bystander's pools stayed full")
 	_check(_close(ally.sheet.get_health(), ally_hp), "the still-cooling attack did not spend again")
 	_check(_close(player.sheet.get_health(), player_hp), "and nobody was hit back")
 	_check(_attack_target_id(ally.sheet) == 0, "the passive defender never gained outgoing intent")
 	_check(_attack_target_id(enemy.sheet) == 0, "and neither did the bystander")
 
+	await _free_world(world)
+
+
+func _two_attackers_land_whole_blows() -> void:
+	# A landed blow, seen through the scene. One rank-1 attacker can never land on a fresh
+	# rank-1 defender: they refresh on the same clock and every answer is paid for. With a
+	# second attacker on the same target, the target answers one and the other arrives
+	# while that answer is cooling, whole, at the typed amount, once per cooldown and with
+	# no further input. Watching for that is how this suite proves the scene is running the
+	# C++ clock rule rather than showing damage it decided itself.
+	var world := await _new_world()
+	var player: Node = world.get_node("Player")
+	var ally: Node = world.get_node("Friendly")
+	var enemy: Node = world.get_node("Enemy")
+	var combat = _combat_of(world)
+	if combat == null:
+		await _free_world(world)
+		return
+
+	# Fixture: both attackers already inside reach of the Enemy, so nobody has to walk and
+	# the two swings are gated by nothing but their own cooldowns.
+	ally.global_position = enemy.global_position + Vector3(0.0, 0.0, 0.9)
+	player.global_position = enemy.global_position + Vector3(0.9, 0.0, 0.0)
+	await physics_frame
+	await physics_frame
+	_check(combat.issue_attack(1, 3), "the player is ordered at the Enemy")
+	_check(combat.issue_attack(2, 3), "and the Friendly is ordered at the same Enemy")
+	_check(combat.is_in_combat(2), "so the Friendly is in the fight as an attacker")
+
+	var enemy_hp: float = enemy.sheet.get_health()
+	var drops := 0
+	var whole_blows := 0
+	var guard := 0
+	while guard < 600 and drops < 3:
+		await physics_frame
+		guard += 1
+		var lost: float = enemy_hp - enemy.sheet.get_health()
+		if lost <= 0.0001:
+			continue
+		drops += 1
+		enemy_hp = enemy.sheet.get_health()
+		var blows := int(roundf(lost / TYPED_BLOW))
+		if _close(lost, blows * TYPED_BLOW, 0.0002):
+			whole_blows += blows
+		_check(_close(lost, blows * TYPED_BLOW, 0.0002),
+			"a drop is a whole number of unanswered typed blows, never a fragment")
+	_check(drops >= 3, "blows kept landing on their own, with no further input")
+	_check(_close(100.0 - enemy.sheet.get_health(), whole_blows * TYPED_BLOW, 0.0002),
+		"and the Enemy's whole wound count is exactly the blows that arrived")
+	var parts: Array = _parts_lost(enemy.sheet)
+	_check(int(parts[0]) >= 1, "at least one body part took them")
+	_check(_close(float(parts[1]), whole_blows * TYPED_BLOW, 0.0002),
+		"the body parts were charged once for the same damage main HP was")
+	_check(_close(player.sheet.get_health(), 100.0) and _close(ally.sheet.get_health(), 100.0),
+		"neither attacker was hit back: a defence is not a retaliation")
+	_check(_attack_target_id(enemy.sheet) == 0, "the target still ordered nobody")
+	_check(combat.remove_character(2), "the second attacker is stood down again")
 	await _free_world(world)
 
 
@@ -759,6 +865,7 @@ func _run() -> void:
 	await _popup_ignores_a_non_positive_target_id()
 	await _approach_then_auto_swing()
 	await _friendly_target_proves_no_faction_gate()
+	await _two_attackers_land_whole_blows()
 	await _marker_follows_attack_acceptance()
 	await _every_actor_uses_the_coordinator()
 	await _scene_uses_combat_regen_once()

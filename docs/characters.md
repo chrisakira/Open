@@ -57,7 +57,7 @@ configuration per object. Reads answer `0` / `false` / `-1` and bad ids report a
 error instead of throwing across Godot. `velocity_at(position)` takes no speed —
 the sheet owns it.
 
-Not built: earning levels or attribute bases, healing, crit and drop rolls, the item catalog and item stats as owned instances, backpack capacity, the encumbrance formula, recruiting, squads, hunger/bleed, prosthetics and save/load. Combat resolution exists as the scalar melee slice `combat.md` describes; the typed weapon rules, durability, techniques and workbench actions there are locked target content in `weapons.md`, not current behavior. `OpenMoveOrder` stays
+Not built: earning levels or attribute bases, healing, crit and drop rolls, backpack capacity, the encumbrance formula, recruiting, squads, hunger/bleed, prosthetics and save/load. Combat resolution is the typed model `weapons.md` owns and `combat.md` sequences: an item catalog with owned instances, attack and defence profiles resolved from what a sheet actually holds, cut/pierce/blunt damage resisted by armour, percentage mitigation with a defence that costs its own stamina, durability and wear, and a stagger meter that stuns. Built and running, in other words. Still locked target from the same document: techniques, workbench actions (craft, repair and enchant work), and the equipment UI — the `OpenCharacter` bridge does not yet register catalog instances, so the scene's three dummies fight with bare hands. `OpenMoveOrder` stays
 registered as a utility, but it is no longer the player's sheet.
 
 ## 1. Attributes — locked

@@ -28,6 +28,18 @@ func _close(a: float, b: float, epsilon: float = 0.0001) -> bool:
 	return absf(a - b) < epsilon
 
 
+# What one rank-1 unarmed blow costs a sheet that cannot answer it: 8 damage x 1/200 of
+# trained rank, over a fresh sheet's Toughness of 1 (so / 1.05). The arithmetic itself is
+# pinned in C++ (weapon_combat); what belongs here is that the bridge reports the typed
+# number rather than the placeholder's 0.04, and that a ready defence a defender can pay
+# for is worth everything - so an opening swing is turned aside whole, and the blow that
+# lands is the one that met a defence already spent on somebody else.
+const TYPED_BLOW := 0.04 / 1.05
+
+# What any answer costs the sheet that makes it, whether it is a block or a dodge.
+const DEFENCE_COST := 8.0
+
+
 func _combat():
 	return ClassDB.instantiate(&"OpenCombat")
 
@@ -36,6 +48,19 @@ func _sheet(id: int, sheet_name: String) -> OpenCharacter:
 	var sheet := OpenCharacter.new()
 	_check(sheet.configure(id, sheet_name, 0, 1, 0), "the %s sheet configures" % sheet_name)
 	return sheet
+
+
+func _parts_hit(sheet: OpenCharacter) -> Array:
+	# [how many parts moved, what the one mover lost], so a caller can say "one part, this
+	# amount" without knowing which part the engine drew.
+	var changed := 0
+	var amount := 0.0
+	for part in range(6):
+		var lost: float = sheet.get_part_max_health(part) - sheet.get_part_health(part)
+		if not _close(lost, 0.0):
+			changed += 1
+			amount = lost
+	return [changed, amount]
 
 
 func _attack_target_of(sheet: OpenCharacter) -> int:
@@ -125,19 +150,40 @@ func _end_to_end_fight() -> void:
 	_check(_close(target.get_health(), 100.0), "a refused frame damaged nobody")
 
 	_check(combat.step(0.01), "one physics frame is accepted")
-	_check(_close(target.get_health(), 99.96), "the C++ swing cost the target 0.04 hp")
-	var changed_parts := 0
-	for part in range(6):
-		var lost: float = target.get_part_max_health(part) - target.get_part_health(part)
-		if not _close(lost, 0.0):
-			changed_parts += 1
-			_check(_close(lost, 0.04), "the stricken part lost exactly 0.04")
-	_check(changed_parts == 1, "exactly one body part took the hit")
+	# The opening swing happens and is turned aside. A fresh sheet has a ready dodge and
+	# 100 stamina to pay for it, and a paid answer is worth everything it can do, so the
+	# blow does nothing at all - which the bridge can only show through the two bars that
+	# moved, because nothing else about the exchange is visible from here.
+	_check(_close(target.get_health(), 100.0), "a ready, paid defence turns the opening swing aside")
 	_check(_close(player.get_health(), 100.0), "the attacker was not hurt by swinging")
 	_check(player.get_stamina() > 92.0 and player.get_stamina() < 93.0,
 		"the swing paid 8 stamina and only this frame's combat regen came back")
+	_check(target.get_stamina() > 92.0 and target.get_stamina() < 93.0,
+		"and so did the defence that turned it aside, unasked")
 	_check(_attack_target_of(target) == 0, "the defender never took an attack order itself")
 	_check(combat.is_in_combat(2), "the defender is in the fight without ordering anything")
+	var parts: Array = _parts_hit(target)
+	_check(int(parts[0]) == 0, "a turned-aside swing wounds no body part at all")
+
+	# The defence is one clock whatever it answers with, so the next attacker meets a
+	# sheet that has just spent its answer: this blow is unanswered, and it arrives at the
+	# typed amount, charged to exactly one body part.
+	var second_attacker := _sheet(4, "Second Attacker")
+	_check(combat.add_character(second_attacker, Vector3(1.0, 0.0, 0.8)),
+		"an attacker standing inside the same reach registers")
+	_check(combat.issue_attack(4, 2), "and it is ordered at the same target")
+	var target_stamina_before: float = target.get_stamina()
+	_check(combat.step(0.01), "the next frame is accepted")
+	_check(_close(100.0 - target.get_health(), TYPED_BLOW),
+		"the blow the spent defence could not answer costs the typed amount")
+	var landed: Array = _parts_hit(target)
+	_check(int(landed[0]) == 1, "exactly one body part took the hit")
+	_check(_close(float(landed[1]), TYPED_BLOW), "and that part lost exactly the typed amount")
+	_check(_close(second_attacker.get_stamina(), 100.0 - DEFENCE_COST + 0.05, 0.02),
+		"the second attacker paid 8 for its own swing and nothing else")
+	_check(target.get_stamina() > target_stamina_before,
+		"and nothing at all is charged for an answer the clock refused")
+	_check(combat.remove_character(4), "the extra attacker is stood down, so the fight below is one on one")
 
 	_check(player.set_destination(Vector3(6.0, 0.0, 0.0)), "a floor-style move order goes through the sheet")
 	_check(_attack_target_of(player) == 0, "the move order cancelled the attack")
@@ -154,7 +200,7 @@ func _end_to_end_fight() -> void:
 	_check(combat.velocity_at(1) == Vector3.ZERO, "the retarget stands inside reach too")
 	_check(combat.step(0.01), "the next frame is accepted")
 	_check(_close(third.get_health(), 100.0), "retargeting does not bypass the attack cooldown")
-	_check(_close(target.get_health(), 99.96), "and the old target is not hit again")
+	_check(_close(target.get_health(), 100.0 - TYPED_BLOW), "and the old target is not hit again")
 
 
 func _lifetime_and_safety() -> void:
@@ -252,28 +298,39 @@ func _seeding_varies_per_session() -> void:
 	# Two coordinator objects fight the same way from the same fixture. If the
 	# default constructor ever seeds from a constant - a fixed number, or a shared
 	# engine - both body-part sequences come out identical. Six parts over twelve
-	# swings is not a coincidence one can reach by chance.
+	# landed blows is not a coincidence one can reach by chance.
 	var first := _swing_parts(12)
 	var second := _swing_parts(12)
-	_check(first.size() == 12 and second.size() == 12, "both sessions swung twelve times")
+	_check(first.size() == 12 and second.size() == 12, "both sessions landed twelve blows")
 	_check(first != second, "two OpenCombat objects do not draw the same body-part sequence")
 
 
 func _swing_parts(swing_count: int) -> Array:
+	# Two attackers on one target, which is not decoration: a single rank-1 attacker and a
+	# single rank-1 defender refresh on the same clock, so every blow it throws is answered
+	# and the draw is never spent. With two, the target answers one and the other lands, so
+	# each landed blow is one draw of one body part, which is what this is collecting.
 	var combat = _combat()
-	var attacker := _sheet(1, "Seeded Attacker")
+	var first_attacker := _sheet(1, "Seeded Attacker")
+	var second_attacker := _sheet(4, "Seeded Attacker Two")
 	var target := _sheet(2, "Seeded Target")
-	_check(combat.add_character(attacker, Vector3.ZERO), "the attacker registers")
+	_check(combat.add_character(first_attacker, Vector3.ZERO), "the first attacker registers")
+	_check(combat.add_character(second_attacker, Vector3(0.2, 0.0, 0.0)),
+		"the second attacker registers inside the same reach")
 	_check(combat.add_character(target, Vector3(1.0, 0.0, 0.0)), "the target registers inside reach")
-	_check(combat.issue_attack(1, 2), "the attack is ordered")
+	_check(combat.issue_attack(1, 2), "the first attack is ordered")
+	_check(combat.issue_attack(4, 2), "and the second")
 
 	var drawn: Array = []
-	for swing in range(swing_count):
+	var frames := 0
+	while drawn.size() < swing_count and frames < 60:
+		frames += 1
 		var was: Array = []
 		for part in range(6):
 			was.append(target.get_part_health(part))
-		# A rank-1 clock is 1/0.214 s, so one 5 s frame is exactly one swing.
-		_check(combat.step(5.0), "a frame long enough for one swing runs")
+		# A rank-1 clock is 1/0.214 s, so one 5 s frame is one swing each: one answered,
+		# one not.
+		_check(combat.step(5.0), "a frame long enough for both swings runs")
 		for part in range(6):
 			if not _close(float(was[part]), target.get_part_health(part)):
 				drawn.append(part)
