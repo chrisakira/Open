@@ -1,11 +1,13 @@
 #include "open/character.hpp"
 #include "open/combat_rules.hpp"
 #include "open/move_order.hpp"
+#include "open/weapon_rules.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <utility>
 
 #include "test_support.hpp"
 
@@ -205,6 +207,109 @@ int main() {
 				   c.attack_velocity_at({0.0f, 0.0f, 0.0f}, {inf, 0.0f, 0.0f}), 0.0f, 0.0f, 0.0f);
 		expect_vec("an overflowing separation does not move",
 				   c.attack_velocity_at({-1.0e30f, 0.0f, 0.0f}, {1.0e30f, 0.0f, 0.0f}), 0.0f, 0.0f, 0.0f);
+	}
+
+	{
+		// Task 5 reach helpers. Break this catches: an exclusive maximum, a minimum
+		// penalty applied on the boundary, height entering the test, a non-finite
+		// measurement opening a swing, or pursuit that cannot close on a weapon
+		// whose reach is shorter than the 0.4 arrival radius.
+		const open::Vec3 here = {0.0f, 1.0f, 0.0f};
+		const auto across = [](float distance) {
+			return open::Vec3{distance, 1.0f, 0.0f};
+		};
+
+		expect_true("just inside the maximum is in reach",
+					open::horizontal_in_reach(here, across(1.4999f), 1.5));
+		expect_true("exactly on the maximum is in reach",
+					open::horizontal_in_reach(here, across(1.5f), 1.5));
+		expect_true("just past the maximum is not",
+					!open::horizontal_in_reach(here, across(1.5001f), 1.5));
+		expect_true("height is ignored, both ways",
+					open::horizontal_in_reach(here, {1.5f, 900.0f, 0.0f}, 1.5) &&
+						!open::horizontal_in_reach(here, {1.5001f, -900.0f, 0.0f}, 1.5));
+		expect_true("a short reach has its own bound",
+					open::horizontal_in_reach(here, across(0.2f), 0.2) &&
+						!open::horizontal_in_reach(here, across(0.2001f), 0.2));
+		expect_true("a long reach has its own bound",
+					open::horizontal_in_reach(here, across(3.0f), 3.0) &&
+						!open::horizontal_in_reach(here, across(3.0001f), 3.0));
+		expect_true("0.4 is not privileged any more",
+					open::horizontal_in_reach(here, across(0.4f), 0.4) &&
+						!open::horizontal_in_reach(here, across(0.4001f), 0.4));
+		expect_true("a non-finite position is never in reach",
+					!open::horizontal_in_reach(here, {nan, 0.0f, 0.0f}, 1.5) &&
+						!open::horizontal_in_reach(here, {inf, 0.0f, 0.0f}, 1.5));
+		expect_true("a non-positive reach admits nothing",
+					!open::horizontal_in_reach(here, here, 0.0) && !open::horizontal_in_reach(here, here, -1.0));
+
+		// The minimum is strict: standing on it costs nothing, one hair inside halves.
+		expect_close("no minimum never penalises", open::minimum_range_factor(0.0, 0.0), 1.0f, 1e-6f);
+		expect_close("exactly at the minimum", open::minimum_range_factor(0.6, 0.6), 1.0f, 1e-6f);
+		expect_close("a hair inside the minimum", open::minimum_range_factor(0.59999, 0.6), 0.5f, 1e-6f);
+		expect_close("well inside the minimum", open::minimum_range_factor(0.1, 0.6), 0.5f, 1e-6f);
+		expect_close("outside the minimum", open::minimum_range_factor(2.0, 0.6), 1.0f, 1e-6f);
+		expect_close("minimum equal to maximum, on it", open::minimum_range_factor(1.0, 1.0), 1.0f, 1e-6f);
+		expect_close("minimum equal to maximum, inside it", open::minimum_range_factor(0.999, 1.0), 0.5f,
+					 1e-6f);
+
+		const auto speed_of = [](const open::Vec3 &v) {
+			return std::sqrt(v.x * v.x + v.z * v.z);
+		};
+		const float walk = 4.5f;
+
+		const open::Vec3 closing = open::pursuit_velocity(here, across(10.0f), 1.5, walk);
+		expect_true("out of reach it walks", speed_of(closing) > 0.05f);
+		expect_true("toward the target", closing.x > 0.0f);
+		expect_close("at the caller's speed", speed_of(closing), walk, 1e-3f);
+		expect_true("and never vertically", closing.y == 0.0f);
+		expect_close("in reach it stops", speed_of(open::pursuit_velocity(here, across(1.0f), 1.5, walk)),
+					 0.0f, 1e-6f);
+		expect_close("too close it does not retreat",
+					 speed_of(open::pursuit_velocity(here, across(0.2f), 1.5, walk)), 0.0f, 1e-6f);
+
+		// Walk the pursuit to a stop with the same arrival band a floor click uses.
+		const auto settle = [&](double reach, float target_x) {
+			open::Vec3 walker = here;
+			for (int step = 0; step < 4000; ++step) {
+				const open::Vec3 move =
+					open::pursuit_velocity(walker, {target_x, 1.0f, 0.0f}, reach, walk);
+				if (speed_of(move) <= 0.0f) {
+					return std::make_pair(true, std::fabs(walker.x - target_x));
+				}
+				walker.x += move.x * 0.1f;
+				walker.z += move.z * 0.1f;
+			}
+			return std::make_pair(false, 0.0f);
+		};
+		{
+			const std::pair<bool, float> normal = settle(1.5, 10.0f);
+			expect_true("a normal reach closes", normal.first);
+			expect_true("and stops inside its own reach", normal.second <= 1.5 + 1e-3);
+			// A weapon shorter than the 0.4 arrival radius must still reach: the aim
+			// point moves past the target rather than refusing to move.
+			const std::pair<bool, float> short_reach = settle(0.2, 10.0f);
+			expect_true("a 0.2 reach closes instead of stalling", short_reach.first);
+			expect_true("a 0.2 reach stops at 0.2", short_reach.second <= 0.2 + 1e-3);
+			const std::pair<bool, float> radius_reach = settle(0.4, 10.0f);
+			expect_true("a reach equal to the arrival radius closes", radius_reach.first);
+			expect_true("and stops within it", radius_reach.second <= 0.4 + 1e-3);
+			const std::pair<bool, float> long_reach = settle(3.0, 20.0f);
+			expect_true("a 3.0 reach closes", long_reach.first);
+			expect_true("and stops at 3.0", long_reach.second <= 3.0 + 1e-3);
+		}
+
+		expect_close("an injured leg's 2.25 is the caller's to choose",
+					 speed_of(open::pursuit_velocity(here, across(10.0f), 1.5, 2.25f)), 2.25f, 1e-3f);
+		expect_true("zero speed never moves",
+					speed_of(open::pursuit_velocity(here, across(10.0f), 1.5, 0.0f)) == 0.0f);
+		expect_true("bad geometry produces no velocity",
+					speed_of(open::pursuit_velocity({nan, 0.0f, 0.0f}, across(10.0f), 1.5, walk)) == 0.0f &&
+						speed_of(open::pursuit_velocity(here, {inf, 0.0f, 0.0f}, 1.5, walk)) == 0.0f &&
+						speed_of(open::pursuit_velocity(here, {1.5f, 0.0f, 0.0f}, 0.0, walk)) == 0.0f);
+		expect_true("an overflowing separation produces no velocity",
+					speed_of(open::pursuit_velocity({-1.0e30f, 0.0f, 0.0f}, {1.0e30f, 0.0f, 0.0f}, 1.5,
+													walk)) == 0.0f);
 	}
 
 	return test_summary();

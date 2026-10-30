@@ -1,7 +1,9 @@
 #pragma once
 
 #include "open/character.hpp"
+#include "open/combat_rules.hpp"
 #include "open/items.hpp"
+#include "open/move_order.hpp"
 
 #include <optional>
 
@@ -55,5 +57,68 @@ double weapon_attack_cost(double base_cost, double effectiveness);
 // The cooldown belongs to the character, so the caller stores the result on the
 // sheet; swapping or losing a weapon never resets what is already running.
 float weapon_cooldown(unsigned trained, double speed, double effectiveness, bool exhausted);
+
+// Which item is being swung, what it is worth, and how well the wielder measures up
+// to it. Resolved from the character's equipment and catalog at the moment the
+// attempt is made, so a broken arm takes a weapon out of use without taking it off
+// the character, and a cooldown or a cancelled order never removes a loadout.
+//
+// Captured at the start of an attempt by the caller: durability used for the whole
+// action is the value in here, so wear from this very swing cannot discount the
+// swing that caused it.
+struct WeaponAttackProfile {
+	SkillJob job;
+	unsigned trained = 0;
+	std::optional<ItemId> item;      // none means the locked unarmed fallback
+	WeaponStats stats;
+	double effectiveness = 1.0;
+	unsigned quality = 0;            // unarmed reports tier 1, whose multiplier is 1
+	unsigned durability = 0;         // unarmed has nothing to wear
+	unsigned max_durability = 0;
+};
+
+// What a defender defends with. `mitigation` is the item's declared percentage,
+// undiscounted: the caller applies the zero-durability and unpaid-action factors,
+// so this stays a description of the loadout rather than of one exchange.
+struct WeaponDefendProfile {
+	DefendAction action;
+	SkillJob job;
+	unsigned trained = 0;
+	std::optional<ItemId> item;      // none means a dodge
+	double mitigation = 0.0;         // percent; a dodge is worth everything
+	unsigned durability = 0;
+};
+
+// The attack loadout: the right hand's usable weapon, else the left hand's, else
+// the locked unarmed fallback. A shield never attacks, and neither does a record
+// this sheet's catalog cannot describe - a placement-only or undefined record
+// confers no stats, so it is skipped rather than guessed at. A two-handed item
+// reserves both hands and is still read once. Dead, there is no attack.
+std::optional<WeaponAttackProfile> weapon_attack_profile(const Character &character);
+
+// The defense loadout: a usable shield, even at zero durability or zero mitigation;
+// otherwise, with a usable weapon, the better of the relevant effective Blocking
+// and Dodging, ties to dodge; otherwise a dodge. The clock a defense starts reads
+// the trained rank in here, never the effective values the choice compared.
+std::optional<WeaponDefendProfile> weapon_defend_profile(const Character &character);
+
+// Horizontal reach with an inclusive maximum: exactly at reach is in reach, a hair
+// further is not, and height is ignored as it is when walking. A non-finite input
+// or a non-positive reach is never in reach, so a bad observation cannot open a
+// swing.
+bool horizontal_in_reach(const Vec3 &self, const Vec3 &target, double max_reach);
+
+// The minimum-reach penalty: strictly inside the minimum each offensive component
+// is halved, exactly on it is free, and a weapon with no minimum is never penalised.
+// One factor among several, so it stacks with exhaustion rather than replacing it.
+double minimum_range_factor(double separation, double min_reach);
+
+// Walking toward an attack target at a declared reach: zero when already in reach
+// (never retreat), otherwise the sheet's own walk speed toward the point that makes
+// the existing 0.4 arrival band stop the actor at reach. For a weapon whose reach is
+// shorter than that band the aim point moves past the target, which is what keeps a
+// 0.2-reach weapon from stalling outside it. `speed` is the caller's, so an injured
+// leg stays half as fast. Bad geometry answers zero rather than a wild velocity.
+Vec3 pursuit_velocity(const Vec3 &self, const Vec3 &target, double max_reach, float speed);
 
 }  // namespace open

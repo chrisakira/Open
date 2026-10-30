@@ -7,9 +7,14 @@
 
 #include "open/character.hpp"
 #include "open/character_rules.hpp"
+#include "open/equipment.hpp"
+#include "open/item_instance.hpp"
 #include "open/items.hpp"
 #include "open/vitals.hpp"
 #include "test_support.hpp"
+
+#include <memory>
+#include <vector>
 
 // Task 4 tests. Break these catches: quality smoothing the ×100 tier away,
 // requirement shortfalls multiplied instead of taking the worst, trained/200
@@ -313,6 +318,468 @@ void an_attack_pays_when_it_can_and_nothing_when_it_cannot() {
 	expect_true("and a negative quantity is refused", !legacy.spend(open::ResourceUse::MeleeSwing, -1.0f));
 }
 
+
+// ---------- Task 5: the loadout a swing is resolved from ----------
+
+constexpr open::DefinitionId kSwordDef = 501;
+constexpr open::DefinitionId kDaggerDef = 502;
+constexpr open::DefinitionId kSpearDef = 503;
+constexpr open::DefinitionId kHammerDef = 504;
+constexpr open::DefinitionId kShieldDef = 505;
+constexpr open::MaterialId kStarterMaterial = 611;
+
+open::WeaponStats wield(open::DamageComponents damage, double min_reach, double max_reach, double block,
+						double cost = 8.0) {
+	open::WeaponStats weapon;
+	weapon.damage = damage;
+	weapon.min_reach = min_reach;
+	weapon.max_reach = max_reach;
+	weapon.speed = 1.0;
+	weapon.stamina_cost = cost;
+	weapon.block_percent = block;
+	weapon.weight = 2.0;
+	weapon.required_trained_rank = 1;
+	return weapon;
+}
+
+open::ItemDefinition hand_item(open::DefinitionId id, const char *model, open::HandUse use) {
+	open::ItemDefinition item;
+	item.id = id;
+	item.model_key = model;
+	item.allowed_slots.set(static_cast<std::size_t>(open::Slot::LeftHand));
+	item.allowed_slots.set(static_cast<std::size_t>(open::Slot::RightHand));
+	item.hand_use = use;
+	return item;
+}
+
+// One fixture catalog, two dials: shield mitigation and how demanding the sword's
+// requirement is. Everything else is the starter shape.
+std::shared_ptr<const open::ItemCatalog> loadout_catalog(double shield_block = 60.0,
+														 double sword_dexterity = 5.0) {
+	std::vector<open::ItemDefinition> items;
+
+	open::ItemDefinition sword = hand_item(kSwordDef, "Sword", open::HandUse::OneHanded);
+	open::WeaponDefinition sword_role;
+	sword_role.job = {open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Sword};
+	sword_role.stats = wield({6.0, 2.0, 0.0}, 0.0, 1.5, 25.0);
+	sword_role.stats.requirements = {{open::Attribute::Dexterity, sword_dexterity}};
+	sword.weapon = sword_role;
+	items.push_back(sword);
+
+	open::ItemDefinition dagger = hand_item(kDaggerDef, "Dagger", open::HandUse::OneHanded);
+	open::WeaponDefinition dagger_role;
+	dagger_role.job = {open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Dagger};
+	dagger_role.stats = wield({2.0, 5.0, 0.0}, 0.0, 1.0, 15.0, 6.0);
+	dagger.weapon = dagger_role;
+	items.push_back(dagger);
+
+	open::ItemDefinition spear = hand_item(kSpearDef, "Spear", open::HandUse::TwoHanded);
+	open::WeaponDefinition spear_role;
+	spear_role.job = {open::BasicSkill::Polearms, open::AdvancedSkill::Spear};
+	spear_role.stats = wield({0.0, 8.0, 0.0}, 0.6, 2.0, 20.0);
+	spear.weapon = spear_role;
+	items.push_back(spear);
+
+	open::ItemDefinition hammer = hand_item(kHammerDef, "Hammer_Small", open::HandUse::OneHanded);
+	open::WeaponDefinition hammer_role;
+	hammer_role.job = {open::BasicSkill::OneHandedWeapons, open::AdvancedSkill::Mace};
+	hammer_role.stats = wield({0.0, 0.0, 8.0}, 0.0, 1.3, 20.0);
+	hammer.weapon = hammer_role;
+	items.push_back(hammer);
+
+	open::ItemDefinition shield = hand_item(kShieldDef, "Shield_Round", open::HandUse::OneHanded);
+	open::ShieldDefinition shield_role;
+	shield_role.job = {open::BasicSkill::Blocking, open::AdvancedSkill::SmallShields};
+	shield_role.block_percent = shield_block;
+	shield_role.weight = 3.0;
+	shield.shield = shield_role;
+	items.push_back(shield);
+
+	open::MaterialDefinition material;
+	material.id = kStarterMaterial;
+	material.max_durability_by_quality = {100, 100, 100, 100, 100, 100, 100};
+
+	auto made = open::ItemCatalog::create(std::move(items), {material});
+	if (!made.has_value()) {
+		g_failed++;
+		return nullptr;
+	}
+	return std::make_shared<open::ItemCatalog>(std::move(made).value());
+}
+
+// The blessing matters: it is inside an effective attribute, so a Strength blessing
+// quietly makes Blocking the better defense. Tests about the comparison say which
+// blessing the sheet has.
+open::Character wielder(const open::ItemCatalog &made,
+						open::Attribute blessing = open::Attribute::Strength) {
+	open::CharacterConfig setup;
+	setup.id = 1;
+	setup.name = "Wielder";
+	setup.level = 1;
+	setup.blessing = blessing;
+	auto armed = open::Character::create(setup, std::make_shared<open::ItemCatalog>(made));
+	if (!armed.has_value()) {
+		g_failed++;
+	}
+	return std::move(armed).value();
+}
+
+// Owns an instance and wears it. A fixture that silently failed to hold its weapon
+// would test the wrong thing, so every step reports.
+void wear(open::Character &who, open::DefinitionId what, open::ItemId which, open::Slot where,
+		  unsigned quality = 1) {
+	const std::shared_ptr<const open::ItemCatalog> made = who.catalog();
+	if (made == nullptr) {
+		expect_true("the fixture has a catalog to describe its item", false);
+		return;
+	}
+	const std::optional<open::ItemInstance> instance =
+		open::make_item_instance(*made, what, kStarterMaterial, which, quality);
+	if (!instance.has_value()) {
+		expect_true("the fixture can describe the item", false);
+		return;
+	}
+	expect_true("the fixture can carry it", who.add_instance(*instance));
+	expect_true("and wear it", who.equip(which, where));
+}
+
+// A tagged record with no definition behind it: placeable, worthless in combat.
+void wear_undefined(open::Character &who, open::ItemId which) {
+	open::ItemRef legacy;
+	legacy.id = which;
+	legacy.allowed_slots.set(static_cast<std::size_t>(open::Slot::LeftHand));
+	legacy.allowed_slots.set(static_cast<std::size_t>(open::Slot::RightHand));
+	legacy.hand_use = open::HandUse::OneHanded;
+	legacy.combat_skill = open::BasicSkill::OneHandedWeapons;
+	legacy.combat_option = open::AdvancedSkill::Sword;
+	expect_true("the undefined record is placeable", who.add_item(legacy));
+	expect_true("and wearable", who.equip(which, open::Slot::RightHand));
+}
+
+// Basic to 100, the way the sheet trains.
+void master(open::Character &who, open::BasicSkill skill) {
+	while (who.resolve_skill(skill, std::nullopt).rank < 100u) {
+		who.record_use(skill, std::nullopt, true);
+	}
+}
+
+void the_right_hand_is_the_attack_and_a_shield_never_is() {
+	const std::shared_ptr<const open::ItemCatalog> made = loadout_catalog();
+	if (made == nullptr) {
+		return;
+	}
+
+	// Nothing held: the locked unarmed fallback, with the numbers docs/weapons.md
+	// gives it, and nothing of its own to wear out.
+	open::Character empty = wielder(*made);
+	const std::optional<open::WeaponAttackProfile> bare = open::weapon_attack_profile(empty);
+	expect_true("an empty character still fights", bare.has_value());
+	if (bare) {
+		expect_true("unarmed names no item", !bare->item.has_value());
+		expect_true("unarmed is Unarmed Combat", bare->job.basic == open::BasicSkill::UnarmedCombat);
+		expect_true("0 cut, 0 pierce, 8 blunt", bare->stats.damage.cut == 0.0 &&
+													bare->stats.damage.pierce == 0.0 &&
+													bare->stats.damage.blunt == 8.0);
+		expect_true("reach 0 to 1.5, cost 8, speed 1",
+					bare->stats.min_reach == 0.0 && bare->stats.max_reach == 1.5 &&
+						bare->stats.stamina_cost == 8.0 && bare->stats.speed == 1.0);
+		expect_close("unarmed is always fully effective", bare->effectiveness, 1.0, 1e-9);
+		expect_true("nothing to wear, and tier 1 so quality multiplies by 1",
+					bare->durability == 0 && bare->quality == 1);
+		expect_true("unarmed declares no requirements", bare->stats.requirements.empty() &&
+														   bare->stats.required_trained_rank == 0);
+	}
+
+	// Two one-handed weapons: the right hand attacks.
+	open::Character dual = wielder(*made);
+	wear(dual, kDaggerDef, 701, open::Slot::LeftHand);
+	wear(dual, kSwordDef, 702, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> right = open::weapon_attack_profile(dual);
+	expect_true("the right hand attacks",
+				right.has_value() && right->item.has_value() && *right->item == 702);
+	if (right) {
+		expect_close("with the sword's cut", right->stats.damage.cut, 6.0, 1e-9);
+		expect_true("and the sword's own job",
+					right->job.option.has_value() && *right->job.option == open::AdvancedSkill::Sword);
+	}
+
+	// A right-hand record that nothing describes is not a weapon: the scan falls
+	// through to the defined item in the other hand instead of disabling the sheet.
+	open::Character stale = wielder(*made);
+	wear(stale, kDaggerDef, 703, open::Slot::LeftHand);
+	wear_undefined(stale, 704);
+	const std::optional<open::WeaponAttackProfile> fallback = open::weapon_attack_profile(stale);
+	expect_true("the defined left hand is used",
+				fallback.has_value() && fallback->item.has_value() && *fallback->item == 703);
+	if (fallback) {
+		expect_close("with the dagger's pierce", fallback->stats.damage.pierce, 5.0, 1e-9);
+		expect_close("and the dagger's cheaper cost", fallback->stats.stamina_cost, 6.0, 1e-9);
+	}
+
+	// A shield never attacks, alone or beside a weapon.
+	open::Character shield_only = wielder(*made);
+	wear(shield_only, kShieldDef, 705, open::Slot::LeftHand);
+	const std::optional<open::WeaponAttackProfile> shielded = open::weapon_attack_profile(shield_only);
+	expect_true("a shield alone fights unarmed", shielded.has_value() && !shielded->item.has_value());
+
+	open::Character both_hands = wielder(*made);
+	wear(both_hands, kShieldDef, 706, open::Slot::LeftHand);
+	wear(both_hands, kSwordDef, 707, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> mixed = open::weapon_attack_profile(both_hands);
+	expect_true("the sword attacks while the shield guards",
+				mixed.has_value() && mixed->item.has_value() && *mixed->item == 707);
+
+	// A two-handed reservation names both hands and is one weapon, once.
+	open::Character spearman = wielder(*made);
+	wear(spearman, kSpearDef, 708, open::Slot::LeftHand);
+	const std::optional<open::ItemId> left = spearman.equipped(open::Slot::LeftHand);
+	const std::optional<open::ItemId> reserved = spearman.equipped(open::Slot::RightHand);
+	expect_true("the spear reserves both hands",
+				left.has_value() && reserved.has_value() && *left == *reserved);
+	const std::optional<open::WeaponAttackProfile> spear = open::weapon_attack_profile(spearman);
+	expect_true("and is read once",
+				spear.has_value() && spear->item.has_value() && *spear->item == 708 &&
+					spear->job.basic == open::BasicSkill::Polearms);
+	const std::optional<open::WeaponDefendProfile> spear_guard = open::weapon_defend_profile(spearman);
+	expect_true("one reservation blocks once, and does not double its mitigation",
+				spear_guard.has_value() && spear_guard->action == open::DefendAction::Block &&
+					spear_guard->mitigation == 20.0 && spear_guard->item.has_value() &&
+					*spear_guard->item == 708);
+
+	// Both arms gone: held gear stays on, and the swing is unarmed.
+	open::Character maimed = wielder(*made);
+	wear(maimed, kSwordDef, 709, open::Slot::RightHand);
+	// Each arm to exactly zero. Damage also leaves main HP, so the amount is the
+	// part's own maximum rather than an avalanche that would kill the sheet: the
+	// debuff under test is a live character with nothing to hold.
+	const float arm_max = maimed.body_part(open::BodyPart::LeftArm).maximum;
+	expect_true("an empty arm is still a full hit", maimed.damage(open::BodyPart::LeftArm, arm_max));
+	expect_true("and the other", maimed.damage(open::BodyPart::RightArm, arm_max));
+	expect_true("the sheet survives its arms", maimed.alive());
+	expect_true("the sword is still worn", maimed.equipped(open::Slot::RightHand).has_value());
+	const std::optional<open::WeaponAttackProfile> helpless = open::weapon_attack_profile(maimed);
+	expect_true("with both arms gone the swing is unarmed",
+				helpless.has_value() && !helpless->item.has_value());
+	const std::optional<open::WeaponDefendProfile> helpless_guard = open::weapon_defend_profile(maimed);
+	expect_true("and the answer is a dodge",
+				helpless_guard.has_value() && helpless_guard->action == open::DefendAction::Dodge);
+
+	// Death has no loadout in either direction.
+	open::Character corpse = wielder(*made);
+	wear(corpse, kSwordDef, 710, open::Slot::RightHand);
+	corpse.damage(open::BodyPart::Torso, 1.0e30f);
+	expect_true("a dead character attacks with nothing",
+				!open::weapon_attack_profile(corpse).has_value());
+	expect_true("and defends with nothing", !open::weapon_defend_profile(corpse).has_value());
+}
+
+void the_profile_reads_the_definition_and_the_instance() {
+	const std::shared_ptr<const open::ItemCatalog> made = loadout_catalog();
+	if (made == nullptr) {
+		return;
+	}
+
+	// A chosen matching specialisation is used from rank 1, not a frozen zero.
+	open::Character swordsman = wielder(*made);
+	swordsman.set_base(open::Attribute::Dexterity, 5.0f);  // meets the starter requirement
+	master(swordsman, open::BasicSkill::OneHandedWeapons);
+	expect_true("the parent froze at 100", swordsman.advance(open::AdvancedSkill::Sword));
+	wear(swordsman, kSwordDef, 711, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> sword = open::weapon_attack_profile(swordsman);
+	expect_true("the sword reads its own spec",
+				sword.has_value() && sword->job.option.has_value() &&
+					*sword->job.option == open::AdvancedSkill::Sword);
+	if (sword) {
+		expect_true("a fresh spec is rank 1", sword->trained == 1u);
+		expect_true("the item id is the instance, not the definition", *sword->item == 711);
+		expect_close("quality 1", static_cast<double>(sword->quality), 1.0, 1e-9);
+		expect_close("full durability", static_cast<double>(sword->durability), 100.0, 1e-9);
+		expect_close("meeting its own requirement is whole", sword->effectiveness, 1.0, 1e-9);
+	}
+
+	// The same sheet with a Mace they did not specialise in uses the frozen parent.
+	open::Character mixed = swordsman;
+	wear(mixed, kHammerDef, 712, open::Slot::LeftHand);
+	expect_true("the mace moves to the attacking hand",
+				mixed.unequip(open::Slot::LeftHand) && mixed.unequip(open::Slot::RightHand) &&
+					mixed.equip(712, open::Slot::RightHand));
+	const std::optional<open::WeaponAttackProfile> hammer = open::weapon_attack_profile(mixed);
+	expect_true("a mace in a Sword specialist's hand is still a mace job",
+				hammer.has_value() && hammer->job.option.has_value() &&
+					*hammer->job.option == open::AdvancedSkill::Mace);
+	if (hammer) {
+		expect_true("so the frozen parent pays", hammer->trained == 100u);
+		expect_close("and a rank-1 requirement is met", hammer->effectiveness, 1.0, 1e-9);
+	}
+
+	// Being under requirement changes effectiveness, not whether the weapon is used:
+	// it is still swung, just badly.
+	const std::shared_ptr<const open::ItemCatalog> demanding = loadout_catalog(60.0, 20.0);
+	if (demanding == nullptr) {
+		return;
+	}
+	open::Character puny = wielder(*demanding);
+	wear(puny, kSwordDef, 713, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> struggling = open::weapon_attack_profile(puny);
+	expect_true("under requirement is still a weapon", struggling.has_value());
+	if (struggling) {
+		expect_close("effective Dexterity 1 of 20 is one twentieth squared", struggling->effectiveness,
+					 0.0025, 1e-6);
+		expect_close("the cost rises with the shortfall",
+					 open::weapon_attack_cost(struggling->stats.stamina_cost, struggling->effectiveness),
+					 15.98, 0.01);
+	}
+
+	// Durability reported by the profile is the instance's, as of now, and wear
+	// moves it without moving anything else.
+	open::Character creaky = wielder(*made);
+	wear(creaky, kSwordDef, 714, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> before = open::weapon_attack_profile(creaky);
+	expect_true("it starts whole", before.has_value() && before->durability == 100u);
+	expect_true("one hit wears it", creaky.apply_wear(714, 1));
+	const std::optional<open::WeaponAttackProfile> after = open::weapon_attack_profile(creaky);
+	expect_true("the profile reports 99 and the same maximum",
+				after.has_value() && after->durability == 99u && after->max_durability == 100u);
+	expect_true("and a quality-4 sword reads its own tier",
+				[&] {
+					open::Character fine = wielder(*made);
+					wear(fine, kSwordDef, 715, open::Slot::RightHand, 4);
+					const std::optional<open::WeaponAttackProfile> profile =
+						open::weapon_attack_profile(fine);
+					return profile.has_value() && profile->quality == 4u &&
+						   profile->durability == 100u;
+				}());
+
+	// Capability is read at query time, so a profile does not vanish because a
+	// cooldown is running or an order was cleared: gates stop the action, they do
+	// not delete the loadout and cancel the order with it.
+	open::Character waiting = wielder(*made);
+	wear(waiting, kSwordDef, 716, open::Slot::RightHand);
+	const std::optional<open::WeaponAttackProfile> ready = open::weapon_attack_profile(waiting);
+	waiting.set_attack_target(2);
+	waiting.advance_combat_clocks(2.0f);
+	const std::optional<open::WeaponAttackProfile> cooling = open::weapon_attack_profile(waiting);
+	expect_true("a running cooldown does not change the loadout",
+				ready.has_value() && cooling.has_value() && cooling->item == ready->item &&
+					cooling->trained == ready->trained && cooling->stats.max_reach == ready->stats.max_reach);
+	waiting.clear_order();
+	const std::optional<open::WeaponAttackProfile> unordered = open::weapon_attack_profile(waiting);
+	expect_true("nor does cancelling the order", unordered.has_value() && unordered->item.has_value());
+}
+
+void defense_priority_is_shield_then_weapon_or_dodge() {
+	const std::shared_ptr<const open::ItemCatalog> made = loadout_catalog();
+	if (made == nullptr) {
+		return;
+	}
+
+	// A usable shield wins, whatever the skills say.
+	open::Character shielded = wielder(*made);
+	wear(shielded, kShieldDef, 717, open::Slot::LeftHand);
+	const std::optional<open::WeaponDefendProfile> guard = open::weapon_defend_profile(shielded);
+	expect_true("the shield blocks",
+				guard.has_value() && guard->action == open::DefendAction::Block &&
+					guard->item.has_value() && *guard->item == 717);
+	if (guard) {
+		expect_close("at its declared mitigation", guard->mitigation, 60.0, 1e-9);
+		expect_true("with the shield's own job",
+					guard->job.basic == open::BasicSkill::Blocking && guard->job.option.has_value() &&
+						*guard->job.option == open::AdvancedSkill::SmallShields);
+		expect_close("its clock is the trained rank", static_cast<double>(guard->trained), 1.0, 1e-9);
+	}
+
+	// A shield worn to nothing is still the shield: reduced mitigation is not no
+	// shield, and the profile reports the durability the caller must discount by.
+	open::Character battered = wielder(*made);
+	wear(battered, kShieldDef, 718, open::Slot::LeftHand);
+	expect_true("it wears out", battered.apply_wear(718, 100));
+	const std::optional<open::WeaponDefendProfile> broken_guard = open::weapon_defend_profile(battered);
+	expect_true("and is still chosen, with its mitigation and durability reported",
+				broken_guard.has_value() && broken_guard->action == open::DefendAction::Block &&
+					broken_guard->durability == 0u && broken_guard->mitigation == 60.0);
+
+	// A 0% shield is still a shield, and prevents nothing.
+	const std::shared_ptr<const open::ItemCatalog> useless = loadout_catalog(0.0);
+	if (useless != nullptr) {
+		open::Character holder = wielder(*useless);
+		wear(holder, kShieldDef, 719, open::Slot::LeftHand);
+		const std::optional<open::WeaponDefendProfile> nothing = open::weapon_defend_profile(holder);
+		expect_true("a 0% shield is chosen and mitigates nothing",
+					nothing.has_value() && nothing->action == open::DefendAction::Block &&
+						nothing->mitigation == 0.0);
+	}
+
+	// No shield, a usable weapon: tie goes to dodge, and a dodge is worth everything.
+	// Blessed on neither skill's link, so both sides of the comparison really are equal.
+	open::Character armed = wielder(*made, open::Attribute::Constitution);
+	wear(armed, kSwordDef, 720, open::Slot::RightHand);
+	const std::optional<open::WeaponDefendProfile> dodge = open::weapon_defend_profile(armed);
+	expect_true("equal skills answer with a dodge",
+				dodge.has_value() && dodge->action == open::DefendAction::Dodge &&
+					!dodge->item.has_value());
+	if (dodge) {
+		expect_close("a dodge mitigates everything", dodge->mitigation, 100.0, 1e-9);
+		expect_true("with the dodge job", dodge->job.basic == open::BasicSkill::Dodging);
+		expect_close("and its trained rank for the clock", static_cast<double>(dodge->trained), 1.0, 1e-9);
+	}
+
+	// Better Blocking attributes than Dodging ones flip it to a weapon block, which
+	// borrows no shield specialisation.
+	open::Character blocker = wielder(*made);
+	wear(blocker, kSwordDef, 721, open::Slot::RightHand);
+	blocker.set_base(open::Attribute::Strength, 100.0f);
+	blocker.set_base(open::Attribute::Toughness, 100.0f);
+	const std::optional<open::WeaponDefendProfile> blocked = open::weapon_defend_profile(blocker);
+	expect_true("a better blocker blocks with the weapon",
+				blocked.has_value() && blocked->action == open::DefendAction::Block &&
+					blocked->item.has_value() && *blocked->item == 721);
+	if (blocked) {
+		expect_close("with the weapon's own mitigation", blocked->mitigation, 25.0, 1e-9);
+		expect_true("as the frozen basic Blocking",
+					blocked->job.basic == open::BasicSkill::Blocking && !blocked->job.option.has_value());
+		expect_close("and the durability of that weapon", static_cast<double>(blocked->durability), 100.0,
+					 1e-9);
+	}
+
+	// The comparison is on effective skills and the clock is on the trained rank:
+	// raising an attribute changes which defense is chosen and not what its clock
+	// reads. Dodging links Agility alone, so an Agility blessing is enough to flip
+	// the choice with no training at all.
+	open::Character blessed = wielder(*made);
+	wear(blessed, kSwordDef, 722, open::Slot::RightHand);
+	blessed.set_base(open::Attribute::Agility, 500.0f);
+	const std::optional<open::WeaponDefendProfile> dodging = open::weapon_defend_profile(blessed);
+	expect_true("a dextrous sheet dodges",
+				dodging.has_value() && dodging->action == open::DefendAction::Dodge && dodging->trained == 1u);
+
+	// Unarmed answers with a dodge and no item.
+	open::Character bare = wielder(*made);
+	const std::optional<open::WeaponDefendProfile> unarmed_guard = open::weapon_defend_profile(bare);
+	expect_true("unarmed dodges", unarmed_guard.has_value() && unarmed_guard->action == open::DefendAction::Dodge &&
+									  !unarmed_guard->item.has_value() && unarmed_guard->durability == 0u);
+
+	// A sheet with no catalog cannot describe a held record, so it has no defined
+	// weapon: the locked unarmed fallback, not invented stats.
+	open::CharacterConfig setup;
+	setup.id = 2;
+	setup.name = "Blind";
+	setup.level = 1;
+	setup.blessing = open::Attribute::Strength;
+	auto blind_character = open::Character::create(setup);
+	if (blind_character.has_value()) {
+		open::Character blind = std::move(blind_character).value();
+		wear_undefined(blind, 723);
+		const std::optional<open::WeaponAttackProfile> undefined = open::weapon_attack_profile(blind);
+		expect_true("with nothing described the swing is unarmed",
+					undefined.has_value() && !undefined->item.has_value());
+		const std::optional<open::WeaponDefendProfile> undefined_guard =
+			open::weapon_defend_profile(blind);
+		expect_true("and nothing is blocked with", undefined_guard.has_value() &&
+													   undefined_guard->action == open::DefendAction::Dodge &&
+													   !undefined_guard->item.has_value());
+	}
+}
+
 }  // namespace
 
 int main() {
@@ -322,5 +789,8 @@ int main() {
 	a_weaker_swing_costs_more_stamina();
 	the_cooldown_stays_in_band_and_never_divides_by_zero();
 	an_attack_pays_when_it_can_and_nothing_when_it_cannot();
+	the_right_hand_is_the_attack_and_a_shield_never_is();
+	the_profile_reads_the_definition_and_the_instance();
+	defense_priority_is_shield_then_weapon_or_dodge();
 	return test_summary();
 }
