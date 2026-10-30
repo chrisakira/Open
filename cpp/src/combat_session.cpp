@@ -164,7 +164,16 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
 		if (target == nullptr) {
 			continue;
 		}
-		actor.character->try_melee_swing(*target->character, actor.position, target->position, rng_);
+		const std::optional<SwingResult> swung = actor.character->try_melee_swing(
+			*target->character, actor.position, target->position, rng_);
+		// Performed, so reported. A refused attempt returns nothing and queues nothing, which
+		// is the difference between a swing that missed and a swing nobody was ordered to take.
+		if (swung.has_value()) {
+			if (events_.size() == kMaxPendingEvents) {
+				events_.erase(events_.begin());
+			}
+			events_.push_back(CombatEvent{actor.character->id(), target->character->id(), *swung});
+		}
 	}
 	// Whatever those swings killed has to be reconciled before the frame reports
 	// its combat state, and a fighter who just lost its target does not get a
@@ -185,6 +194,13 @@ bool CombatSession::in_combat(std::uint64_t id, std::span<const Combatant> actor
 	}
 	const Combatant *self = find_actor(actors, id);
 	return self != nullptr && is_engaged(*self, actors);
+}
+
+std::vector<CombatEvent> CombatSession::take_swing_events() {
+	// Moved out and left empty: the queue's whole job is to say "these happened", once.
+	std::vector<CombatEvent> drained;
+	drained.swap(events_);
+	return drained;
 }
 
 Vec3 CombatSession::velocity_at(std::uint64_t id, std::span<const Combatant> actors) const {

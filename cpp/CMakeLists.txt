@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_library(open_sim STATIC src/stagger.cpp
 	src/character_techniques.cpp
+	src/starter_content.cpp
 	src/techniques.cpp src/items.cpp src/work_actions.cpp src/weapon_rules.cpp src/item_instance.cpp src/move_order.cpp src/combat_rules.cpp src/combat_session.cpp src/character_rules.cpp src/attributes.cpp src/skills.cpp src/vitals.cpp src/equipment.cpp src/character.cpp src/character_combat.cpp)
 target_include_directories(open_sim PUBLIC include)
 target_compile_options(open_sim PRIVATE -Wall -Wextra -Werror)
@@ -106,6 +107,11 @@ add_executable(stagger_tests tests/stagger_test.cpp)
 target_link_libraries(stagger_tests PRIVATE open_sim)
 target_compile_options(stagger_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME stagger COMMAND stagger_tests)
+
+add_executable(starter_content_tests tests/starter_content_test.cpp)
+target_link_libraries(starter_content_tests PRIVATE open_sim)
+target_compile_options(starter_content_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME starter_content COMMAND starter_content_tests)
 
 add_executable(techniques_tests tests/techniques_test.cpp)
 target_link_libraries(techniques_tests PRIVATE open_sim)

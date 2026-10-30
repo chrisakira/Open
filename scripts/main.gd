@@ -29,7 +29,9 @@ var _popup: CharacterPopup
 var _attack_popup: AttackPopup
 var _weapon_popup: WeaponPopup
 var _technique_popup: TechniquePopup
+var _equipment_popup: EquipmentPopup
 var _combat: OpenCombat
+var _feedback: CombatFeedback
 
 # Presentation only: the bodies whose positions the coordinator is told about.
 # Faction, health, ranks and orders stay in C++; nothing is mirrored here.
@@ -67,6 +69,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			# to do what it would have done anyway: closing a panel is not an order.
 			if _technique_popup != null:
 				_technique_popup.close()
+			if _equipment_popup != null:
+				_equipment_popup.close()
 			_try_character_or_floor_click(mouse.position)
 
 
@@ -78,7 +82,8 @@ func _popup_covers(point: Vector2) -> bool:
 		return true
 	return (_attack_popup != null and _attack_popup.covers(point)) \
 		or (_weapon_popup != null and _weapon_popup.covers(point)) \
-		or (_technique_popup != null and _technique_popup.covers(point))
+		or (_technique_popup != null and _technique_popup.covers(point)) \
+		or (_equipment_popup != null and _equipment_popup.covers(point))
 
 
 func _toggle_popup() -> void:
@@ -118,6 +123,26 @@ func _on_techniques_requested(at: Vector2) -> void:
 	if _technique_popup == null or _player == null or _player.sheet == null:
 		return
 	_technique_popup.open_for_sheet(_player.sheet, at)
+
+
+func _on_equipment_requested(at: Vector2) -> void:
+	if _equipment_popup == null or _player == null or _player.sheet == null:
+		return
+	_equipment_popup.open_for_sheet(_player.sheet, at)
+
+
+func _on_equip_requested(item_id: int, slot: int) -> void:
+	if _player == null or _player.sheet == null:
+		return
+	# A request, not an assumption: ownership, free hands, limbs and the two-hand reservation
+	# are all decided there, and the panel reads back whatever was agreed to.
+	_player.sheet.equip_item(item_id, slot)
+
+
+func _on_unequip_requested(slot: int) -> void:
+	if _player == null or _player.sheet == null:
+		return
+	_player.sheet.unequip_item(slot)
 
 
 func _on_attack_requested(target_id: int) -> void:
@@ -298,6 +323,22 @@ func _build_combat() -> void:
 			continue
 		actor.set("combat", _combat)
 
+	# One setup command for the player's starting backpack. The table, the instance ids, the
+	# tier and the durability are all C++'s, and this is the only thing in the scene that can
+	# bring an item into existence: the panel below can move what is owned and nothing else.
+	if _player != null and _player.sheet != null \
+			and not _combat.setup_starter_player(_player.sheet.get_character_id()):
+		push_error("The player's starter backpack could not be given")
+
+	# What the fight looks like, reading the same coordinator the fight runs on. It computes
+	# nothing and orders nothing: held meshes come from each sheet's equipment snapshot, and a
+	# swing animates because C++ reported performing one. It ticks after this node (default
+	# priority, and children follow their parent), so it reads the reports the step above made.
+	_feedback = CombatFeedback.new()
+	_feedback.name = "CombatFeedback"
+	add_child(_feedback)
+	_feedback.bind_combat(_combat, _actors)
+
 
 func _build_camera() -> void:
 	_camera = Camera3D.new()
@@ -343,6 +384,17 @@ func _build_hud() -> void:
 	_popup.visible = false
 	layer.add_child(_popup)
 	_popup.bind_sheet(_player.sheet)
+
+	# The equipment panel is a view of the player's own sheet: it lists what the sheet owns and
+	# asks C++ to move things between the hands. Whether any of that happens is C++'s answer.
+	_equipment_popup = EquipmentPopup.new()
+	_equipment_popup.name = "EquipmentPopup"
+	_equipment_popup.visible = false
+	layer.add_child(_equipment_popup)
+	_equipment_popup.bind_sheet(_player.sheet)
+	_popup.equipment_requested.connect(_on_equipment_requested)
+	_equipment_popup.equip_requested.connect(_on_equip_requested)
+	_equipment_popup.unequip_requested.connect(_on_unequip_requested)
 
 	_attack_popup = AttackPopup.new()
 	_attack_popup.name = "AttackPopup"

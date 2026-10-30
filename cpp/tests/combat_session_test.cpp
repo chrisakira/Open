@@ -1183,5 +1183,134 @@ int main() {
 					 static_cast<double>(killer_after.attack_clock), 1e-9);
 	}
 
+	{
+		// swings_are_reported_once_to_whoever_asks: what the session performed, for
+		// presentation to react to. A refused attempt is not an event; an event is a report of
+		// a blow already applied, not a second application of it; and a drained queue stays
+		// drained. Those three are what stop a swing animation playing for a swing that was
+		// never taken, playing twice, or adding damage the simulation already added.
+		open::Character hitter = make_character(1);
+		open::Character second = make_character(3);
+		open::Character target = make_character(2);
+		const std::vector<open::Combatant> world =
+			roster({{&hitter, at(0.0f, 0.0f, 0.0f)},
+					{&target, at(1.0f, 0.0f, 0.0f)},
+					{&second, at(0.5f, 0.0f, 0.0f)}});
+		open::CombatSession session(141);
+		expect_true("a fresh session has performed nothing", session.take_swing_events().empty());
+
+		expect_true("a step with no orders runs", session.step(0.1f, world));
+		expect_true("and reports no swing", session.take_swing_events().empty());
+
+		exhaust_defence(hitter);
+		exhaust_defence(target);
+		expect_true("the fight is issued", session.issue_attack(world, 1, 2));
+		const Observed before_hit = observe(target);
+		expect_true("the first frame runs", session.step(0.1f, world));
+		const std::vector<open::CombatEvent> first = session.take_swing_events();
+		expect_true("one performed blow is one event", first.size() == 1u);
+		if (!first.empty()) {
+			expect_true("named by the two sheets it happened between",
+						first[0].actor == 1u && first[0].target == 2u);
+			// The same blow, twice: what the event reports and what the sheets were left
+			// with. The tolerance is the subtraction's, not the claim's - both sides are
+			// float, and taking two numbers that start near 100 apart leaves about five
+			// digits to argue about. (The size itself is a quarter of an unanswered rank-1
+			// blow here because both bars were drained: the swing was performed exhausted
+			// and the answer unpaid, and each half is a rule with its own case.)
+			expect_close("carrying the damage the target really took", first[0].swing.damage,
+						 hp_lost(before_hit, target), 1e-5f);
+			expect_true("and the part it was charged to, which is the engine's draw",
+						first[0].swing.part.has_value());
+			expect_true("with the technique it performed, which here is none",
+						!first[0].swing.technique.has_value());
+		}
+		expect_true("and asking again reports nothing: a drained queue is not a replay",
+					session.take_swing_events().empty());
+
+		const float hp_after_drain = target.pool(open::PoolKind::Hp).current;
+		expect_true("a zero-time step is accepted", session.step(0.0f, world));
+		expect_true("it reports nothing", session.take_swing_events().empty());
+		expect_close("and reading events applied nothing of its own",
+					 target.pool(open::PoolKind::Hp).current, hp_after_drain, 1e-9f);
+
+		// A cooling clock performs nothing, so it reports nothing.
+		expect_true("the next frame runs", session.step(0.1f, world));
+		expect_true("with the attack still cooling, no event is queued",
+					session.take_swing_events().empty());
+
+		// Out of reach is not a swing, and neither is a corpse or a sheet with no order.
+		open::Character distant = make_character(4);
+		const std::vector<open::Combatant> far_world =
+			roster({{&hitter, at(0.0f, 0.0f, 0.0f)}, {&distant, at(30.0f, 0.0f, 0.0f)}});
+		open::CombatSession far(142);
+		expect_true("the unreachable fight is issued", far.issue_attack(far_world, 1, 4));
+		hitter.advance_combat_clocks(60.0f);
+		expect_true("a frame runs", far.step(0.1f, far_world));
+		expect_true("and no swing is reported", far.take_swing_events().empty());
+
+		// A wholly turned-aside blow was still performed: it spent the swing, the stamina and
+		// the clock, which is exactly why presentation has to be told about it.
+		open::Character blocker = make_character(5);
+		open::Character blocked = make_character(6);
+		const std::vector<open::Combatant> duel =
+			roster({{&blocker, at(0.0f, 0.0f, 0.0f)}, {&blocked, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession guarded(143);
+		expect_true("the guarded fight is issued", guarded.issue_attack(duel, 5, 6));
+		expect_true("a frame runs", guarded.step(0.1f, duel));
+		const std::vector<open::CombatEvent> turned = guarded.take_swing_events();
+		expect_true("the turned-aside blow is still one event", turned.size() == 1u);
+		if (!turned.empty()) {
+			expect_true("reported as nullified, with no damage to show",
+						turned[0].swing.nullified && turned[0].swing.damage == 0.0f);
+			// What a dodge worth everything prevents is the whole offensive - before the
+			// Toughness soak a blow that arrives would have paid, which it now does not.
+			// `weapon_combat` pins this same equality on a bigger blow.
+			expect_close("and the defence the other sheet paid for prevented the whole swing",
+						 turned[0].swing.prevented, kRank1Damage, 1e-6f);
+		}
+
+		// Two attackers on one target: two events, in the order the roster was given, because
+		// that is the order the swings happened in.
+		open::Character left = make_character(7);
+		open::Character right = make_character(8);
+		open::Character middle = make_character(9);
+		const std::vector<open::Combatant> three =
+			roster({{&left, at(0.0f, 0.0f, 0.0f)},
+					{&right, at(0.4f, 0.0f, 0.0f)},
+					{&middle, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession crowded(144);
+		exhaust_defence(left);
+		exhaust_defence(right);
+		exhaust_defence(middle);
+		expect_true("the first attacker is ordered", crowded.issue_attack(three, 7, 9));
+		expect_true("and the second", crowded.issue_attack(three, 8, 9));
+		expect_true("a frame runs", crowded.step(0.1f, three));
+		const std::vector<open::CombatEvent> pair = crowded.take_swing_events();
+		expect_true("two performed blows are two events", pair.size() == 2u);
+		if (pair.size() == 2u) {
+			expect_true("in roster order", pair[0].actor == 7u && pair[1].actor == 8u);
+			expect_true("both against the sheet they were ordered at",
+						pair[0].target == 9u && pair[1].target == 9u);
+		}
+
+		// A dead sheet is not swung at, so a kill cannot keep generating events afterwards.
+		open::Character killer = make_character(10);
+		open::Character victim = make_character(11);
+		const std::vector<open::Combatant> last =
+			roster({{&killer, at(0.0f, 0.0f, 0.0f)}, {&victim, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession ending(145);
+		exhaust_defence(killer);
+		exhaust_defence(victim);
+		expect_true("the killing fight is issued", ending.issue_attack(last, 10, 11));
+		expect_true("a frame runs", ending.step(0.1f, last));
+		expect_true("the killing blow is reported once", ending.take_swing_events().size() == 1u);
+		victim.damage(open::BodyPart::Torso, 1.0e30f);
+		killer.advance_combat_clocks(60.0f);
+		expect_true("the next frame runs", ending.step(0.1f, last));
+		expect_true("with a corpse and a cancelled order, nothing is reported",
+					ending.take_swing_events().empty());
+	}
+
 	return test_summary();
 }

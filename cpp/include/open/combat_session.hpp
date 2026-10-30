@@ -1,10 +1,12 @@
 #pragma once
 
+#include "open/combat_rules.hpp"
 #include "open/move_order.hpp"
 
 #include <cstdint>
 #include <random>
 #include <span>
+#include <vector>
 
 namespace open {
 
@@ -17,6 +19,22 @@ class Character;
 struct Combatant {
 	Character *character;
 	Vec3 position;
+};
+
+// One swing this session actually performed, reported afterwards for presentation to react
+// to: which two sheets it happened between and the whole result C++ already applied - damage,
+// the body part it was charged to, what the defence turned aside, and the technique it
+// performed, if any.
+//
+// It is a report and not a request. The blow is in the sheets already, so a listener that
+// "applies" an event is double-counting the simulation, and one that invents an event it did
+// not receive is animating a swing that never happened. That is also why a refused attempt is
+// not here at all: an order on a target out of reach, a cooling clock, a corpse and a stunned
+// sheet each produced no swing, no stamina, no wear and no event.
+struct CombatEvent {
+	std::uint64_t actor = 0;
+	std::uint64_t target = 0;
+	SwingResult swing;
 };
 
 // Coordinates the parts a single Character cannot judge on its own: what an
@@ -62,9 +80,25 @@ public:
 	// it.
 	Vec3 velocity_at(std::uint64_t id, std::span<const Combatant> actors) const;
 
+	// Every swing performed since the last call, oldest first, and the queue emptied. Reading
+	// is the only way to clear it, which is what makes "one event, one animation" true for a
+	// listener that polls every frame and for one that polls twice: the second read is empty
+	// and cannot replay the blow.
+	//
+	// The queue is bounded: a listener that never reads cannot grow the simulation's memory, so
+	// the oldest events are dropped once `kMaxPendingEvents` are waiting. Losing a swing's worth
+	// of presentation is cheap; losing a swing is not, and nothing here loses one.
+	std::vector<CombatEvent> take_swing_events();
+
+	// How many performed swings can wait to be read before the oldest is dropped.
+	static constexpr std::size_t kMaxPendingEvents = 64u;
+
 private:
 	// Part draws only. The swing, its clocks and its stamina belong to the sheets.
 	std::mt19937_64 rng_;
+	// Presentation's queue, drained by `take_swing_events`. Not part of the fight's state:
+	// nothing in a step reads it, and a session that reports nothing still fights the same.
+	std::vector<CombatEvent> events_;
 };
 
 }  // namespace open

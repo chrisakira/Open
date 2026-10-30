@@ -12,6 +12,9 @@ extends PanelContainer
 # player's technique settings are, and whether any of this is possible at all, stays C++'s.
 signal techniques_requested(at: Vector2)
 
+# The other half of the same screen: what this character owns and is holding.
+signal equipment_requested(at: Vector2)
+
 const ATTRIBUTE_NAMES := ["Strength", "Dexterity", "Agility", "Toughness", "Constitution",
 	"Perception", "Intelligence", "Charisma", "Luck", "Profanity"]
 
@@ -103,6 +106,12 @@ func _on_visibility_changed() -> void:
 		_refresh()
 
 
+func _on_equipment_pressed() -> void:
+	# An entry point only, like the techniques one: no item is read, moved or worn by opening a
+	# panel, and the panel that opens cannot decide anything the sheet has not already agreed to.
+	equipment_requested.emit(get_global_rect().end - Vector2(0.0, 40.0))
+
+
 func _on_techniques_pressed() -> void:
 	# An entry point only: this opens a panel and sends no command. What the sheet's
 	# technique settings are is read from C++, and only the technique popup's own controls
@@ -171,6 +180,20 @@ func _build_skeleton() -> void:
 	_level_label = _make_label("", 11)
 	_level_label.add_theme_color_override("font_color", MUTED_GOLD)
 	identity.add_child(_level_label)
+	var equipment := Button.new()
+	equipment.name = "EquipmentButton"
+	equipment.text = "Equipment"
+	equipment.custom_minimum_size = Vector2(120, 34)
+	equipment.add_theme_font_override("font", _serif_font)
+	equipment.add_theme_font_size_override("font_size", 15)
+	equipment.add_theme_color_override("font_color", INK)
+	equipment.add_theme_color_override("font_hover_color", Color("fff0ce"))
+	equipment.add_theme_stylebox_override("normal", _button_style(Color("382b21")))
+	equipment.add_theme_stylebox_override("hover", _button_style(Color("62472f")))
+	equipment.add_theme_stylebox_override("pressed", _button_style(Color("241b16")))
+	equipment.pressed.connect(_on_equipment_pressed)
+	header.add_child(equipment)
+
 	var techniques := Button.new()
 	techniques.name = "TechniquesButton"
 	techniques.text = "Techniques"

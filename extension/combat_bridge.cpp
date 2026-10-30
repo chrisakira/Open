@@ -1,11 +1,16 @@
 #include "combat_bridge.hpp"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/array.hpp>
+#include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <vector>
+
+#include "open/starter_content.hpp"
 
 // This adapter is compiled with -fno-exceptions, exactly like the rest of the
 // extension, so no call here may be able to throw: every input is checked before
@@ -74,6 +79,10 @@ void OpenCombat::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("step", "seconds"), &OpenCombat::step);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_in_combat", "id"), &OpenCombat::is_in_combat);
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "id"), &OpenCombat::velocity_at);
+	godot::ClassDB::bind_method(godot::D_METHOD("setup_starter_player", "actor_id"),
+							   &OpenCombat::setup_starter_player);
+	godot::ClassDB::bind_method(godot::D_METHOD("take_combat_events"),
+							   &OpenCombat::take_combat_events);
 }
 
 OpenCombat::OpenCombat() : session_(random_seed()) {}
@@ -184,7 +193,60 @@ bool OpenCombat::step(float seconds) {
 	}
 	// The session rejects a bad frame before it reads or writes anything, so an
 	// earlier position stays valid.
-	return session_.step(seconds, roster);
+	if (!session_.step(seconds, roster)) {
+		return false;
+	}
+	// Collected here rather than handed straight on: a frame that performed nothing has
+	// nothing to add, and a listener may read the reports on its own schedule.
+	std::vector<open::CombatEvent> performed = session_.take_swing_events();
+	events_.insert(events_.end(), performed.begin(), performed.end());
+	return true;
+}
+
+bool OpenCombat::setup_starter_player(int64_t actor_id) {
+	if (!usable_id(actor_id)) {
+		return false;
+	}
+	const auto entry = find(actor_id);
+	if (entry == entries_.end()) {
+		return false;
+	}
+	open::Character *who = entry->sheet == nullptr ? nullptr : entry->sheet->sheet();
+	if (who == nullptr) {
+		return false;  // add_character makes this impossible; a sheet with no sim is not a sheet
+	}
+	// All of the work is C++'s: the table, the ids, the tier, the durability and the
+	// all-or-nothing rule. This cannot be asked for anything else.
+	return open::initialize_starter_inventory(*who, ids_);
+}
+
+godot::Array OpenCombat::take_combat_events() {
+	godot::Array events;
+	for (const open::CombatEvent &event : events_) {
+		const open::SwingResult &swing = event.swing;
+		godot::Dictionary entry;
+		entry["actor_id"] = static_cast<std::int64_t>(event.actor);
+		entry["target_id"] = static_cast<std::int64_t>(event.target);
+		// 0 for "no part was charged", which is what happens when nothing arrived: armour took
+		// it all, or a defence worth everything turned the blow aside.
+		entry["part"] = swing.part.has_value() ? static_cast<std::int64_t>(*swing.part) : 0;
+		entry["damage"] = swing.damage;
+		entry["prevented"] = swing.prevented;
+		entry["nullified"] = swing.nullified;
+		// 0 means no technique: the attack was the weapon's own. A technique that did no
+		// damage is still named, which is the difference presentation has to keep.
+		entry["technique_id"] =
+			swing.technique.has_value() ? static_cast<std::int64_t>(*swing.technique) : 0;
+		// 0 for bare hands, and for an answer that was never made: in each case C++ reports no
+		// item there, and the bridge does not turn that into a guess.
+		entry["attacker_item"] =
+			swing.attack_item.has_value() ? static_cast<std::int64_t>(*swing.attack_item) : 0;
+		entry["defender_item"] =
+			swing.defense_item.has_value() ? static_cast<std::int64_t>(*swing.defense_item) : 0;
+		events.push_back(entry);
+	}
+	events_.clear();
+	return events;
 }
 
 bool OpenCombat::is_in_combat(int64_t id) const {

@@ -13,6 +13,8 @@
 #include <random>
 #include <vector>
 
+#include "open/starter_content.hpp"
+
 namespace {
 
 // Godot integers are 64-bit. Check the domain before narrowing to the int the
@@ -207,8 +209,17 @@ bool OpenCharacter::configure(int64_t id, const godot::String &name, int64_t fac
 	}
 	const open::Faction team = static_cast<open::Faction>(static_cast<int>(faction));
 	const open::Attribute blessed = static_cast<open::Attribute>(static_cast<int>(blessing));
-	const std::optional<open::Character> made = open::Character::create(open::CharacterConfig{
-		static_cast<std::uint64_t>(id), std::string(name.utf8().get_data()), team, level, blessed});
+	// Every sheet the scene makes is made against the one production item catalog, because
+	// every sheet the scene makes can own items from it. A catalog changes no rule and no
+	// number for a character that owns nothing - bare hands are still bare hands - and without
+	// it an instance could not be described, an equipment row could not name its model and a
+	// technique id could not be resolved. Task 15's setup command mints the starting backpack;
+	// this is what makes the sheet able to read it.
+	const std::optional<open::Character> made =
+		open::Character::create(open::CharacterConfig{
+									static_cast<std::uint64_t>(id),
+									std::string(name.utf8().get_data()), team, level, blessed},
+								open::make_starter_catalog());
 	if (!made.has_value()) {
 		return false;
 	}
@@ -230,8 +241,11 @@ bool OpenCharacter::configure_npc(int64_t id, const godot::String &name, int64_t
 	const open::Faction team = static_cast<open::Faction>(static_cast<int>(faction));
 	std::mt19937_64 rng(static_cast<std::uint64_t>(seed));
 	const open::Attribute blessed = open::random_blessing(rng);
-	const std::optional<open::Character> made = open::Character::create(open::CharacterConfig{
-		static_cast<std::uint64_t>(id), std::string(name.utf8().get_data()), team, level, blessed});
+	const std::optional<open::Character> made =
+		open::Character::create(open::CharacterConfig{
+									static_cast<std::uint64_t>(id),
+									std::string(name.utf8().get_data()), team, level, blessed},
+								open::make_starter_catalog());
 	if (!made.has_value()) {
 		return false;
 	}

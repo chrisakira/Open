@@ -9,6 +9,7 @@
 
 #include "character_bridge.hpp"
 #include "open/combat_session.hpp"
+#include "open/item_instance.hpp"
 
 // Godot-facing handle on one open::CombatSession. It keeps the OpenCharacter
 // objects the scene registered alive, remembers where each was last standing, and
@@ -42,6 +43,23 @@ public:
 	bool is_in_combat(int64_t id) const;
 	godot::Vector3 velocity_at(int64_t id) const;
 
+	// The scene's one item-minting command, and deliberately narrow: it puts this registered
+	// sheet's starting backpack on it - the five starter definitions, one instance each, at
+	// tier 1, worn by nothing - and it can do nothing else. There is no definition id, no
+	// quantity and no quality to pass, because the table is C++'s; a second call cannot mint a
+	// duplicate, and a sheet that cannot carry anything is refused with its backpack intact.
+	bool setup_starter_player(int64_t actor_id);
+
+	// The swings this session has performed since the last read, oldest first, drained as it is
+	// returned: a listener that asks twice gets the second answer empty, so a swing cannot be
+	// animated or counted twice. Each dictionary is one report - who hit whom, what arrived,
+	// what was turned aside, which part, and which technique was performed (0 when the attack
+	// was the weapon's own). Presentation reads these and never decides from them.
+	//
+	// Keys: actor_id, target_id, part, damage, prevented, nullified, technique_id,
+	// attacker_item, defender_item. Absent part, technique and items are 0.
+	godot::Array take_combat_events();
+
 private:
 	struct Entry {
 		godot::Ref<OpenCharacter> sheet;
@@ -53,6 +71,14 @@ private:
 	bool build_roster(std::vector<open::Combatant> &roster) const;
 	std::vector<Entry>::iterator find(int64_t id);
 	std::vector<Entry>::const_iterator find(int64_t id) const;
+
+	// Ids for every instance this scene will ever own, and the only thing that mints them
+	// besides the workbench actions to come. Reserved before use and never recycled, so an id
+	// the popup is holding cannot belong to a second item later in the same session.
+	open::ItemIdAllocator ids_;
+	// Swings collected from the session on the step that performed them, so that reading them
+	// is a separate decision from fighting.
+	std::vector<open::CombatEvent> events_;
 
 	std::vector<Entry> entries_;
 	open::CombatSession session_;

@@ -20,7 +20,9 @@ protected:
 	static void _bind_methods();
 
 public:
-	// One successful configuration per object.
+	// One successful configuration per object. The sheet is made against the production item
+	// catalog (see the source): a character with nothing in its hands is unarmed whatever the
+	// catalog holds, and a character who is given something can be told what it is.
 	bool configure(int64_t id, const godot::String &name, int64_t faction, int64_t level,
 			   int64_t blessing);
 	bool configure_npc(int64_t id, const godot::String &name, int64_t faction, int64_t level, int64_t seed);
