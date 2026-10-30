@@ -18,6 +18,7 @@ namespace open {
 // no RNG, no timers and no knowledge of Godot; the simulation reads them.
 
 using DefinitionId = std::uint64_t;
+using EnchantmentId = std::uint64_t;
 using MaterialId = std::uint64_t;
 using TechniqueId = std::uint64_t;
 
@@ -99,6 +100,37 @@ struct ArmourDefinition {
 	double weight = 0.0;
 };
 
+// What one bench application does, described once for every weapon it is applied to.
+// The starter slice has Blunt Edge only: fixed blunt added to the weapon, and an
+// Intelligence requirement added to the wielder's workload, both scaled by the
+// enchanter's trained rank *at the moment of application* (see AppliedEnchantment).
+// An enchantment never expires, is never replaced, and does nothing except add.
+struct EnchantmentDefinition {
+	EnchantmentId id = 0;
+	std::string model_key;  // presentation only
+	// Blunt damage added per rank of the enchanting job: 0.01 for Blunt Edge.
+	double blunt_per_trained_rank = 0.0;
+	// The attribute the wielder must bring, and the divisor for it: Blunt Edge adds
+	// ceil(trained / 20) Intelligence. A requirement is absent, never zero.
+	std::optional<Attribute> requirement;
+	unsigned requirement_divisor = 0;
+};
+
+// One enchantment as it was actually made. The values are captured, not derived, so
+// the enchanter training further or a new wielder's attributes cannot rewrite a
+// weapon that has already left the bench.
+struct AppliedEnchantment {
+	EnchantmentId definition = 0;
+	double added_blunt = 0.0;
+	std::optional<Requirement> requirement;  // fixed value for the attribute above
+};
+
+// The applied form of an enchantment at a captured rank: added blunt is the rank times
+// the definition's rate, and the requirement is ceil(rank / divisor). Refused for rank
+// 0, for a definition with no effect, and for arithmetic that would not stay finite.
+std::optional<AppliedEnchantment> make_applied_enchantment(const EnchantmentDefinition &definition,
+														   unsigned trained);
+
 // Where a record may go and how it is held. Identity only: what an item is worth
 // in combat comes from its definition, and what it has left comes from its
 // instance. A record with no definition is a placement-only legacy item and
@@ -140,16 +172,19 @@ public:
 	// Validates everything and keeps immutable copies. Any single bad entry
 	// rejects the whole input: there is no partially valid catalog to observe.
 	static std::optional<ItemCatalog> create(std::vector<ItemDefinition> items,
-											 std::vector<MaterialDefinition> materials);
+											 std::vector<MaterialDefinition> materials,
+											 std::vector<EnchantmentDefinition> enchantments = {});
 
 	// Non-owning lookups, stable for the catalog's lifetime. Zero and unknown ids
 	// answer nullptr, and the two id domains never resolve as each other.
 	const ItemDefinition *item(DefinitionId id) const;
 	const MaterialDefinition *material(MaterialId id) const;
+	const EnchantmentDefinition *enchantment(EnchantmentId id) const;
 
 private:
 	std::unordered_map<DefinitionId, ItemDefinition> items_;
 	std::unordered_map<MaterialId, MaterialDefinition> materials_;
+	std::unordered_map<EnchantmentId, EnchantmentDefinition> enchantments_;
 };
 
 }  // namespace open

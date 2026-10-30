@@ -1,5 +1,6 @@
 #include "open/equipment.hpp"
 
+#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <stdexcept>
@@ -71,6 +72,21 @@ bool tagged_ok(const ItemRef &item) {
 // agree. A placement-only record has none of them and stays that way.
 bool carries_item_state(const ItemInstance &item) {
 	return item.definition != 0;
+}
+
+// An attachment has to be self-consistent: Equipment cannot see the catalog to check
+// it names a real enchantment, but it can refuse a blank, a negative or a non-finite
+// one, and a requirement that names no attribute.
+bool attachment_coherent(const AppliedEnchantment &enchantment) {
+	if (enchantment.definition == 0 || !std::isfinite(enchantment.added_blunt) ||
+		enchantment.added_blunt < 0.0) {
+		return false;
+	}
+	if (enchantment.requirement.has_value()) {
+		const Requirement &need = *enchantment.requirement;
+		return valid(need.attribute) && std::isfinite(need.value) && need.value > 0.0;
+	}
+	return true;
 }
 
 bool instance_ok(const ItemInstance &item) {
@@ -334,6 +350,23 @@ std::optional<ItemInstance> Equipment::instance(ItemId id) const {
 		}
 	}
 	return std::nullopt;
+}
+
+bool Equipment::attach_enchantment(ItemId id, const AppliedEnchantment &enchantment) {
+	if (!attachment_coherent(enchantment)) {
+		return false;
+	}
+	ItemInstance *record = find_owned(id);
+	if (record == nullptr || !carries_item_state(*record)) {
+		return false;
+	}
+	// The limit is the quality tier the item was made at, carried on the record so the
+	// container does not need a catalog to enforce it.
+	if (record->enchantments.size() >= record->enchantment_slots) {
+		return false;
+	}
+	record->enchantments.push_back(enchantment);
+	return true;
 }
 
 bool Equipment::apply_wear(ItemId id, unsigned amount) {

@@ -248,6 +248,13 @@ std::optional<ItemInstance> Character::instance(ItemId id) const {
 	return equipment_.instance(id);
 }
 
+bool Character::attach_enchantment(ItemId id, const AppliedEnchantment &enchantment) {
+	if (!alive()) {
+		return false;
+	}
+	return equipment_.attach_enchantment(id, enchantment);
+}
+
 bool Character::apply_wear(ItemId id, unsigned amount) {
 	return equipment_.apply_wear(id, amount);
 }

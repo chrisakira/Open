@@ -50,6 +50,15 @@ public:
 	// change durability, and they are refused for a record that has no definition
 	// and therefore no durability to change.
 	std::optional<ItemInstance> instance(ItemId id) const;
+
+	// Fixes an enchantment to an owned item, permanently. Only a weapon has slots, and
+	// a tier has exactly as many as its number, so the next application past that is
+	// refused. There is deliberately no counterpart to this call: an enchantment is
+	// never removed, replaced or expired, and its values came from the bench, so a
+	// caller cannot edit them here either. Settlement code only - it is not a way for a
+	// player to enchant anything, which is what the workbench action is for.
+	bool attach_enchantment(ItemId id, const AppliedEnchantment &enchantment);
+
 	bool apply_wear(ItemId id, unsigned amount);
 	bool restore_durability(ItemId id, unsigned amount);
 

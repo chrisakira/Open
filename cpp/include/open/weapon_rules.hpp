@@ -6,6 +6,7 @@
 #include "open/move_order.hpp"
 
 #include <optional>
+#include <vector>
 
 namespace open {
 
@@ -40,8 +41,13 @@ std::optional<double> requirement_effectiveness(double actual, double required);
 // 1/200 of the strength there. The two penalties stack in the attack pipeline.
 // A requirement absent from the definition is omitted, so an unarmed swing and a
 // starter shield are 1.0 here.
+// `enchantments` are the ones fixed to the item being swung, when there is one: their
+// attribute requirements add to the weapon's own for the same attribute, so a blade
+// demanding 1 Intelligence with two Blunt Edges at 2 each asks 5 in total, while a
+// Profanity requirement stays a separate check. Passing none judges the weapon alone.
 std::optional<double> weapon_effectiveness(const Character &character, const WeaponStats &stats,
-										   const SkillJob &job);
+										   const SkillJob &job,
+										   const std::vector<AppliedEnchantment> &enchantments = {});
 
 // Stamina cost of a swing: base x (2 - effectiveness). Full effectiveness pays the
 // base, none pays double, and a fractional effectiveness pays a fractional cost.
@@ -75,6 +81,10 @@ struct WeaponAttackProfile {
 	unsigned quality = 0;            // unarmed reports tier 1, whose multiplier is 1
 	unsigned durability = 0;         // unarmed has nothing to wear
 	unsigned max_durability = 0;
+	// The enchantments fixed to the blade, as they were made. Their added blunt joins
+	// the weapon's own after quality, and their requirements are already folded into
+	// `effectiveness` below.
+	std::vector<AppliedEnchantment> enchantments;
 };
 
 // What a defender defends with. `mitigation` is the item's declared percentage,

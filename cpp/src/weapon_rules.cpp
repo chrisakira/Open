@@ -115,6 +115,16 @@ struct Armed {
 	unsigned max_durability = 0;
 };
 
+// The enchantments on the owned record being swung, as they were made: read at query
+// time so a blade enchanted between two swings is priced from what it actually has.
+std::vector<AppliedEnchantment> enchantments_of(const Character &character, ItemId id) {
+	const std::optional<ItemInstance> instance = character.instance(id);
+	if (!instance.has_value()) {
+		return {};
+	}
+	return instance->enchantments;
+}
+
 // An item this sheet cannot describe has no combat stats: no catalog, no owned
 // instance, or an instance whose definition is not in the catalog. None of those
 // are guessed at, which is what keeps a placement-only record from arming anyone.
@@ -179,7 +189,8 @@ std::optional<double> requirement_effectiveness(double actual, double required) 
 }
 
 std::optional<double> weapon_effectiveness(const Character &character, const WeaponStats &stats,
-										   const SkillJob &job) {
+											   const SkillJob &job,
+											   const std::vector<AppliedEnchantment> &enchantments) {
 	if (stats.required_trained_rank == 0) {
 		return std::nullopt;  // a declared requirement is always positive
 	}
@@ -190,8 +201,35 @@ std::optional<double> weapon_effectiveness(const Character &character, const Wea
 	// The worst single shortfall limits the weapon. Multiplying them would punish a
 	// character twice for one bad day, and the spec says the largest shortfall is
 	// the limiting factor.
+	// Every requirement the wielder actually faces: the weapon's own, with each
+	// enchantment's requirement added to a matching attribute rather than competing
+	// with it as a second line. Two edges asking 2 Intelligence alongside a base 1 ask
+	// 5 in total, checked once, while a Profanity requirement stays separate.
+	std::vector<Requirement> faced = stats.requirements;
+	for (const AppliedEnchantment &applied : enchantments) {
+		if (!applied.requirement.has_value()) {
+			continue;
+		}
+		const Attribute attribute = applied.requirement->attribute;
+		const double value = applied.requirement->value;
+		if (!valid(attribute) || !std::isfinite(value) || value <= 0.0) {
+			return std::nullopt;
+		}
+		bool merged = false;
+		for (Requirement &existing : faced) {
+			if (existing.attribute == attribute) {
+				existing.value += value;
+				merged = true;
+				break;
+			}
+		}
+		if (!merged) {
+			faced.push_back(Requirement{attribute, value});
+		}
+	}
+
 	double effectiveness = 1.0;
-	for (const Requirement &need : stats.requirements) {
+	for (const Requirement &need : faced) {
 		if (!valid(need.attribute) || !std::isfinite(need.value) || need.value <= 0.0) {
 			return std::nullopt;
 		}
@@ -317,7 +355,9 @@ std::optional<WeaponAttackProfile> weapon_attack_profile(const Character &charac
 			continue;  // a shield, a carried thing, or a record with no definition
 		}
 		const WeaponDefinition &weapon = *armed->definition->weapon;
-		const std::optional<double> effectiveness = weapon_effectiveness(character, weapon.stats, weapon.job);
+		const std::vector<AppliedEnchantment> enchantments = enchantments_of(character, id);
+		const std::optional<double> effectiveness =
+			weapon_effectiveness(character, weapon.stats, weapon.job, enchantments);
 		if (!effectiveness.has_value()) {
 			return std::nullopt;  // a definition the rules cannot price is not swung blindly
 		}
@@ -330,6 +370,7 @@ std::optional<WeaponAttackProfile> weapon_attack_profile(const Character &charac
 		profile.quality = armed->quality;
 		profile.durability = armed->durability;
 		profile.max_durability = armed->max_durability;
+		profile.enchantments = enchantments;
 		return profile;
 	}
 
@@ -554,10 +595,23 @@ std::optional<DamageComponents> scaled_offense(const WeaponAttackProfile &profil
 	const double durability =
 		(profile.item.has_value() && profile.durability == 0) ? kZeroDurabilityFactor : 1.0;
 
-	auto scale = [&](double base, double factor) -> std::optional<double> {
-		// Quality applies to the base components first; an enchantment's fixed blunt
-		// joins there (Task 8), and every penalty below applies to the combination.
-		double value = base * *quality;
+	// The enchantments' fixed blunt, added to the weapon's own after quality: a tier-7
+	// blade with 8 base blunt and 2 added is 802 before any other factor, not
+	// (8 + 2) x 100.
+	double added_blunt = 0.0;
+	for (const AppliedEnchantment &applied : profile.enchantments) {
+		added_blunt += applied.added_blunt;
+	}
+	if (!finite(added_blunt) || added_blunt < 0.0) {
+		return std::nullopt;
+	}
+
+	auto scale = [&](double base, double factor, double fixed) -> std::optional<double> {
+		// Quality multiplies the base components, the enchantment contributes its fixed
+		// amount beside them, and only then does every remaining factor apply - to the
+		// combination, so a blunt-favouring technique scales the enchantment too and a
+		// ruined blade discounts it along with the rest.
+		double value = base * *quality + fixed;
 		value *= skill * profile.effectiveness * factor * exhaustion * min_factor * durability;
 		if (!finite(value)) {
 			return std::nullopt;
@@ -565,9 +619,10 @@ std::optional<DamageComponents> scaled_offense(const WeaponAttackProfile &profil
 		return value;
 	};
 
-	const std::optional<double> cut = scale(profile.stats.damage.cut, technique_factors.cut);
-	const std::optional<double> pierce = scale(profile.stats.damage.pierce, technique_factors.pierce);
-	const std::optional<double> blunt = scale(profile.stats.damage.blunt, technique_factors.blunt);
+	const std::optional<double> cut = scale(profile.stats.damage.cut, technique_factors.cut, 0.0);
+	const std::optional<double> pierce = scale(profile.stats.damage.pierce, technique_factors.pierce, 0.0);
+	const std::optional<double> blunt =
+		scale(profile.stats.damage.blunt, technique_factors.blunt, added_blunt);
 	if (!cut.has_value() || !pierce.has_value() || !blunt.has_value()) {
 		return std::nullopt;
 	}

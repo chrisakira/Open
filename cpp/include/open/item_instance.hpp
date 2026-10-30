@@ -20,7 +20,23 @@ struct ItemInstance {
 	unsigned quality = 0;             // 1..7 for a made item, 0 when it was never made
 	unsigned durability = 0;          // 0..max_durability
 	unsigned max_durability = 0;      // read from the material at this quality
+
+	// Enchantments fixed to this item, oldest first. They are permanent: nothing here
+	// removes, replaces or expires one, and their values were captured when they were
+	// applied, so neither the enchanter nor the wielder can change them afterwards.
+	std::vector<AppliedEnchantment> enchantments;
+
+	// How many enchantments fit: one per quality tier for a weapon, and none for a
+	// shield, a carried thing or a placement-only record. Stored rather than looked up
+	// so the limit travels with the item and needs no catalog to enforce it.
+	unsigned enchantment_slots = 0;
 };
+
+// The attribute requirements the enchantments on this item add, aggregated by
+// attribute: two enchantments asking 2 Intelligence each ask 4 Intelligence in total,
+// and a Profanity requirement stays a separate one. A wielder's own workload is this
+// list plus the weapon's base requirements, and matching attributes add.
+std::vector<Requirement> enchantment_requirements(const ItemInstance &item);
 
 // Builds an owned instance from a catalog: the placement record is filled from
 // the definition, the durability maximum is read from the material's table at

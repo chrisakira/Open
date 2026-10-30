@@ -95,6 +95,11 @@ target_link_libraries(craftsmanship_tests PRIVATE open_sim)
 target_compile_options(craftsmanship_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME craftsmanship COMMAND craftsmanship_tests)
 
+add_executable(enchantments_tests tests/enchantments_test.cpp)
+target_link_libraries(enchantments_tests PRIVATE open_sim)
+target_compile_options(enchantments_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME enchantments COMMAND enchantments_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)

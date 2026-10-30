@@ -43,7 +43,35 @@ std::optional<ItemInstance> make_item_instance(const ItemCatalog &catalog, Defin
 	instance.quality = quality;
 	instance.max_durability = maximum;
 	instance.durability = maximum;  // a new item is whole
+	// Only a weapon has enchantment slots, and one per quality tier.
+	if (made->weapon.has_value()) {
+		instance.enchantment_slots = quality;
+	}
 	return instance;
+}
+
+std::vector<Requirement> enchantment_requirements(const ItemInstance &item) {
+	std::vector<Requirement> totals;
+	for (const AppliedEnchantment &applied : item.enchantments) {
+		if (!applied.requirement.has_value()) {
+			continue;
+		}
+		const Attribute attribute = applied.requirement->attribute;
+		const double value = applied.requirement->value;
+		bool merged = false;
+		for (Requirement &total : totals) {
+			if (total.attribute == attribute) {
+				// Same-type requirements add; different attributes stay separate checks.
+				total.value += value;
+				merged = true;
+				break;
+			}
+		}
+		if (!merged) {
+			totals.push_back(Requirement{attribute, value});
+		}
+	}
+	return totals;
 }
 
 namespace {

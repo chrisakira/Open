@@ -97,6 +97,10 @@ public:
 	// Durability changes only through the sheet that owns the record, and only on
 	// a record that has any: a placement-only item refuses both.
 	bool apply_wear(ItemId id, unsigned amount);
+	// Fixes an enchantment to an item this sheet owns. Settlement-only: the bench
+	// action that pays for the work is Task 16's, and nothing in the bridge reaches
+	// either call.
+	bool attach_enchantment(ItemId id, const AppliedEnchantment &enchantment);
 	bool restore_durability(ItemId id, unsigned amount);
 	bool equip(ItemId id, Slot slot);
 	bool unequip(Slot slot);

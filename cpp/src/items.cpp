@@ -172,6 +172,23 @@ bool valid_item(const ItemDefinition &item) {
 	return valid_weapon(item) && valid_shield(item) && valid_armour(item);
 }
 
+// At least one effect, and any requirement has a real attribute and divisor. A
+// definition that does nothing is not an enchantment, it is a typo.
+bool valid_enchantment(const EnchantmentDefinition &enchantment) {
+	if (enchantment.id == 0 || !std::isfinite(enchantment.blunt_per_trained_rank) ||
+		enchantment.blunt_per_trained_rank < 0.0) {
+		return false;
+	}
+	if (enchantment.requirement.has_value()) {
+		if (!valid(*enchantment.requirement) || enchantment.requirement_divisor == 0) {
+			return false;
+		}
+	} else if (enchantment.requirement_divisor != 0) {
+		return false;
+	}
+	return enchantment.blunt_per_trained_rank > 0.0 || enchantment.requirement.has_value();
+}
+
 bool valid_material(const MaterialDefinition &material) {
 	if (material.id == 0 || material.max_durability_by_quality.size() != kQualityTierCount) {
 		return false;
@@ -186,8 +203,35 @@ bool valid_material(const MaterialDefinition &material) {
 
 }  // namespace
 
+// The applied form of an enchantment, at a captured rank: added blunt is the rank
+// times the definition's own rate, and the requirement is the ceiling of the rank over
+// the definition's divisor. Both are then frozen on the weapon.
+std::optional<AppliedEnchantment> make_applied_enchantment(const EnchantmentDefinition &definition,
+														   unsigned trained) {
+	if (trained == 0 || !valid_enchantment(definition)) {
+		return std::nullopt;
+	}
+	AppliedEnchantment applied;
+	applied.definition = definition.id;
+	applied.added_blunt = static_cast<double>(trained) * definition.blunt_per_trained_rank;
+	if (!std::isfinite(applied.added_blunt) || applied.added_blunt < 0.0) {
+		return std::nullopt;
+	}
+	if (definition.requirement.has_value()) {
+		// ceil(trained / divisor), in integers: rank 1 of 20 still asks for 1.
+		const unsigned value =
+			(trained + definition.requirement_divisor - 1u) / definition.requirement_divisor;
+		if (value == 0) {
+			return std::nullopt;
+		}
+		applied.requirement = Requirement{*definition.requirement, static_cast<double>(value)};
+	}
+	return applied;
+}
+
 std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items,
-											   std::vector<MaterialDefinition> materials) {
+											   std::vector<MaterialDefinition> materials,
+											   std::vector<EnchantmentDefinition> enchantments) {
 	ItemCatalog catalog;
 	for (auto &item : items) {
 		if (!valid_item(item)) {
@@ -209,6 +253,16 @@ std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items
 		}
 		catalog.materials_.emplace(id, std::move(material));
 	}
+	for (auto &enchantment : enchantments) {
+		if (!valid_enchantment(enchantment)) {
+			return std::nullopt;
+		}
+		const EnchantmentId id = enchantment.id;
+		if (catalog.enchantments_.count(id) != 0) {
+			return std::nullopt;
+		}
+		catalog.enchantments_.emplace(id, std::move(enchantment));
+	}
 	return catalog;
 }
 
@@ -218,6 +272,14 @@ const ItemDefinition *ItemCatalog::item(DefinitionId id) const {
 	}
 	const auto found = items_.find(id);
 	return found == items_.end() ? nullptr : &found->second;
+}
+
+const EnchantmentDefinition *ItemCatalog::enchantment(EnchantmentId id) const {
+	if (id == 0) {
+		return nullptr;
+	}
+	const auto found = enchantments_.find(id);
+	return found == enchantments_.end() ? nullptr : &found->second;
 }
 
 const MaterialDefinition *ItemCatalog::material(MaterialId id) const {
