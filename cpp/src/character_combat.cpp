@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <optional>
 
 namespace open {
@@ -142,12 +143,20 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 		defender.is_stunned() ? std::nullopt : weapon_defend_profile(defender);
 	const bool defence_ready = defence.has_value() && defender.defend_cooldown_ <= 0.0f;
 
+	// Draws come from a staged copy of the engine. The real engine learns of this
+	// attempt only at the commit below - the point past which the attempt cannot be
+	// refused - so a refused attempt consumes no random number either, and "no draw
+	// for a blow that never happened" holds for the technique pick exactly as it
+	// already held for the body part. One engine copied per swing is the price, and
+	// determinism is worth a millionth of a second.
+	std::mt19937_64 staged_rng = rng;
+
 	// The technique for this swing is chosen here, once: after everything that could refuse
 	// has refused, and before a single number is priced, because the choice decides the
 	// stamina cost, the damage factors and which clock starts. Nothing is committed by it -
 	// neither the sequence position nor the technique clock moves unless this attempt is
-	// actually performed below - and an NPC's draw is spent exactly once per attempt.
-	const TechniqueSelection choice = select_technique(*this, *attack, techniques_, rng);
+	// actually performed below - and a performed attempt's draw is spent exactly once.
+	const TechniqueSelection choice = select_technique(*this, *attack, techniques_, staged_rng);
 	const TechniqueDefinition *technique = nullptr;
 	if (choice.technique.has_value() && catalog_ != nullptr) {
 		technique = catalog_->technique(*choice.technique);
@@ -201,7 +210,7 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	std::optional<BodyPart> part;
 	DamageComponents armour{0.0, 0.0, 0.0};
 	if (anything_arrives) {
-		part = random_melee_part(rng);
+		part = random_melee_part(staged_rng);
 		armour = armour_for_part(defender, *part);  // stunned means no defence and no armour
 	}
 
@@ -211,9 +220,20 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	if (!resolution.has_value()) {
 		return std::nullopt;
 	}
+	if (!(resolution->total <= static_cast<double>(std::numeric_limits<float>::max()))) {
+		// The body takes its damage as a float, and a valid double can be finite while
+		// having no float at all. A blow the sim could not carry is no blow: refused
+		// whole, staged draws and all, exactly like a bill the bar cannot pay.
+		return std::nullopt;
+	}
 	const bool after_defence_is_empty = !has_any(resolution->after_defense);
 
 	// ---------------------------------------------------------------- effects, once
+
+	// Everything the exchange will do is now priced, finite and representable, and this
+	// is the commit: the engine's draws are spent together with the first effect, and
+	// from here the attempt has happened whatever the blow then achieves.
+	rng = staged_rng;
 
 	// The swing pays its own price, exactly once, in full or not at all.
 	if (paid) {
@@ -244,22 +264,28 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	if (resolution->total > 0.0 && part.has_value()) {
 		// One amount, one part, applied through the sheet so main HP and that part move
 		// together and overkill clamps.
-		defender.damage(*part, static_cast<float>(resolution->total));
-		// Positive damage on a living target trains the weapon used, lethal included,
-		// and there is no second credit for a technique (there is none yet).
-		record_use(attack->job.basic, attack->job.option, true);
-		if (!defender.alive()) {
-			// A kill is credited once, to the title that claims this job, and the corpse
-			// keeps no meter, no stun and no intent.
-			const std::optional<Title> title = kill_title(attack->job.basic);
-			if (title.has_value()) {
-				record_title_progress(*title, true);
+		const bool applied = defender.damage(*part, static_cast<float>(resolution->total));
+		// After the representability check above, a positive hit that was not applied
+		// should be unreachable - but a blow the body did not take trains nobody, kills
+		// nobody and staggers nobody, so nothing on either sheet's books is written until
+		// the receiving answer is in.
+		if (applied) {
+			// Positive damage on a living target trains the weapon used, lethal included,
+			// and there is no second credit for a technique (there is none yet).
+			record_use(attack->job.basic, attack->job.option, true);
+			if (!defender.alive()) {
+				// A kill is credited once, to the title that claims this job, and the corpse
+				// keeps no meter, no stun and no intent.
+				const std::optional<Title> title = kill_title(attack->job.basic);
+				if (title.has_value()) {
+					record_title_progress(*title, true);
+				}
+				defender.clear_stagger();
+			} else {
+				// Stagger is fed by the final blunt and nothing else, overkill included, and
+				// a stunned or killed sheet is not fed at all.
+				add_stagger(defender.stagger_, resolution->final.blunt, defender.stagger_threshold());
 			}
-			defender.clear_stagger();
-		} else {
-			// Stagger is fed by the final blunt and nothing else, overkill included, and
-			// a stunned or killed sheet is not fed at all.
-			add_stagger(defender.stagger_, resolution->final.blunt, defender.stagger_threshold());
 		}
 	}
 

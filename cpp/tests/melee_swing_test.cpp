@@ -389,6 +389,114 @@ void expect_no_attempt(const char *name, open::Character &attacker, open::Charac
 	expect_unchanged("a refused swing changes nothing on the defender", before_defender, defender);
 }
 
+// --- review pass: finite is not one size ---------------------------------------------
+
+// The catalog validates damage factors as positive and finite, and "finite" in double
+// is a far bigger country than the float the sheet actually runs at. A blow that fits
+// the first and not the second is no blow at all: it must be refused the way every
+// other impossible attempt is - nothing spent, nothing trained, no clock started, and
+// no random number consumed on the way out, because a refused attempt never happened.
+
+constexpr open::DefinitionId kShoutDef = 506;
+constexpr open::TechniqueId kShoutLeft = 971;
+constexpr open::TechniqueId kShoutRight = 972;
+
+std::shared_ptr<const open::ItemCatalog> shout_catalogue(double magnitude) {
+	open::ItemDefinition item;
+	item.id = kShoutDef;
+	item.model_key = "Sword";
+	item.allowed_slots.set(static_cast<std::size_t>(open::Slot::LeftHand));
+	item.allowed_slots.set(static_cast<std::size_t>(open::Slot::RightHand));
+	item.hand_use = open::HandUse::OneHanded;
+	open::WeaponDefinition weapon;
+	weapon.job = {open::BasicSkill::OneHandedWeapons, std::nullopt};
+	weapon.stats.damage = open::DamageComponents{8.0, 0.0, 0.0};
+	weapon.stats.min_reach = 0.0;
+	weapon.stats.max_reach = 1.5;
+	weapon.stats.speed = 1.0;
+	weapon.stats.stamina_cost = 8.0;
+	weapon.stats.block_percent = 0.0;
+	weapon.stats.weight = 2.0;
+	weapon.stats.required_trained_rank = 1;
+	weapon.supported_techniques = {kShoutLeft, kShoutRight};
+	item.weapon = weapon;
+
+	// Two techniques of the same magnitude: the pick between two candidates is
+	// itself a draw, and that draw is exactly what a refused attempt must leave
+	// the engine holding.
+	auto shout = [](open::TechniqueId id, double magnitude) {
+		open::TechniqueDefinition made;
+		made.id = id;
+		made.required_rank = 1;
+		made.factors = {magnitude, magnitude, magnitude};
+		made.cooldown = 5.0;
+		return made;
+	};
+
+	open::MaterialDefinition material;
+	material.id = kMaterial;
+	material.max_durability_by_quality = {100, 100, 100, 100, 100, 100, 100};
+
+	const auto built = open::ItemCatalog::create(
+		{item}, {material}, {}, {shout(kShoutLeft, magnitude), shout(kShoutRight, magnitude)});
+	if (!built.has_value()) {
+		++g_failed;
+		std::cerr << "FAIL the shout catalog could not be described\n";
+	}
+	return std::make_shared<open::ItemCatalog>(std::move(built).value());
+}
+
+open::Character shout_sheet(std::uint64_t id, double magnitude) {
+	const std::optional<open::Character> made =
+		open::Character::create(config(id), shout_catalogue(magnitude));
+	expect_true("the shout sheet is created", made.has_value());
+	return *made;
+}
+
+void extremes_stay_atomic() {
+	const open::Vec3 self = at(0.0f, 0.0f, 0.0f);
+	const open::Vec3 other = at(1.0f, 0.0f, 0.0f);
+
+	// Case A: a factor near the top of double. Where the sheet's own fraction leaves
+	// the product, no body-part hit could hold: finite as double perhaps, or not even
+	// that, depending on rank - either way it has no float, and so no swing.
+	{
+		open::Character attacker = shout_sheet(1, 1.0e308);
+		wield(attacker, kShoutDef, 971, open::Slot::RightHand);
+		expect_true("the shout is aimed", attacker.set_attack_target(2));
+		open::Character defender = make_character(2);
+		// A fresh sheet's dodge is worth everything and would answer the shout before
+		// arithmetic could: the bar goes first, so what this measures is the size of
+		// the blow and not a nullified one.
+		exhaust_defence(defender);
+		std::mt19937_64 rng(20261030);
+		std::mt19937_64 control(20261030);
+		expect_true("a swing no float could carry is refused",
+					!attacker.try_melee_swing(defender, self, other, rng).has_value());
+		expect_true("and consumed no random number at all", rng == control);
+	}
+
+	// Case B: finite as double, bigger than any float - a number no body part can
+	// hold. The attempt is refused before anything on either sheet commits.
+	{
+		open::Character attacker = shout_sheet(3, 1.0e300);
+		wield(attacker, kShoutDef, 972, open::Slot::RightHand);
+		expect_true("the shout is aimed", attacker.set_attack_target(4));
+		open::Character defender = make_character(4);
+		exhaust_defence(defender);
+		const Observed before_attacker = observe(attacker);
+		const Observed before_defender = observe(defender);
+		std::mt19937_64 rng(31337);
+		std::mt19937_64 control(31337);
+		expect_true("a swing bigger than any float is refused",
+					!attacker.try_melee_swing(defender, self, other, rng).has_value());
+		expect_unchanged("a swing too big for float changes nothing on the attacker",
+						 before_attacker, attacker);
+		expect_unchanged("nor on the defender", before_defender, defender);
+		expect_true("and spent no draw", rng == control);
+	}
+}
+
 // Brings one part to just under the next hit, with existing damage calls only,
 // so the part and main HP move together exactly as the sheet says they do.
 void leave_part_below_one_hit(open::Character &victim, open::BodyPart part, float hit) {
@@ -1207,6 +1315,8 @@ int main() {
 							attacker.title_count(open::Title::Breaker) == 0u);
 		}
 	}
+
+	extremes_stay_atomic();
 
 	return test_summary();
 }
