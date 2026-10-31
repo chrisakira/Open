@@ -15,17 +15,32 @@ extends Node3D
 # listener that reads cannot be handed the same blow again.
 
 const MODEL_PATH := "res://assets/weapons/quaternius_medieval/%s.obj"
-const MODEL_SCALE := 0.22
 const SLOT_LEFT_HAND := 5
 const SLOT_RIGHT_HAND := 6
 const SOCKET_NAMES := {SLOT_LEFT_HAND: "LeftHandSocket", SLOT_RIGHT_HAND: "RightHandSocket"}
-# Where a held item sits on a body this size. The pose script animates the skeleton and this
-# node follows the body the item is hung from; the exact stance is presentation, and the fact
-# that the item is in the hand the simulation says it is in is not.
-const SOCKET_OFFSETS := {
-	"LeftHandSocket": Vector3(-0.34, 1.06, -0.16),
-	"RightHandSocket": Vector3(0.34, 1.06, -0.16),
+# The bone each socket rides. The skeleton already bends these through idle, walk and
+# swing; an item parented here follows the hand for free, which is the fact the meshes
+# used to fake with body-level offsets.
+const SOCKET_BONES := {"LeftHandSocket": "hand_l", "RightHandSocket": "hand_r"}
+# Per-starter grip: a local transform on the hand bone, so the handle sits in the palm.
+# These numbers are presentation tuning - a desktop pass moves them, and the invariant
+# the suite holds them to is "explicit and finite" - and they touch no combat reach,
+# which stays C++'s. The rotation stands for the scenery's own along-Y model axis:
+# a held one should run along the arm instead.
+const GRIPS := {
+	"Sword": {"offset": Vector3(0.0, 0.06, 0.03),
+			"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22},
+	"Dagger": {"offset": Vector3(0.0, 0.04, 0.02),
+			"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22},
+	"Spear": {"offset": Vector3(0.0, 0.12, 0.0),
+			"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22},
+	"Hammer_Small": {"offset": Vector3(0.0, 0.08, 0.0),
+			"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22},
+	"Shield_Round": {"offset": Vector3(0.0, 0.06, -0.04),
+			"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22},
 }
+const GRIP_FALLBACK := {"offset": Vector3.ZERO,
+		"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22}
 const SWING_ANGLE := -34.0
 const SWING_SECONDS := 0.28
 const LABEL_LIFETIME := 1.1
@@ -136,13 +151,13 @@ func _attach(actor: Node3D, item_id: int, model_key: String, slot: int) -> void:
 	if mesh == null:
 		push_error("CombatFeedback: no model for %s" % model_key)
 		return
+	var grip: Dictionary = GRIPS.get(model_key, GRIP_FALLBACK)
 	var held := MeshInstance3D.new()
 	held.name = "Held_%s" % model_key
 	held.mesh = mesh
-	held.scale = Vector3.ONE * MODEL_SCALE
-	# The scenery's own standing orientation: these models run along Y and a held one should
-	# run along the arm instead.
-	held.rotation_degrees.x = 90.0
+	held.position = grip["offset"]
+	held.rotation_degrees = grip["rotation_degrees"]
+	held.scale = Vector3.ONE * float(grip["scale"])
 	held.set_meta("item_id", item_id)
 	held.set_meta("model_key", model_key)
 	held.set_meta("slot", slot)
@@ -150,6 +165,9 @@ func _attach(actor: Node3D, item_id: int, model_key: String, slot: int) -> void:
 
 
 func _socket(actor: Node3D, slot: int) -> Node3D:
+	# One bone attachment per hand, made on first use and hanging off the Skeleton3D the
+	# pose script animates - the same trick the hair already plays with Head. A body with
+	# no skeleton, or no hand bone, says so rather than floating the item off the Visual.
 	var visual := actor.get_node_or_null("Visual") as Node3D
 	if visual == null:
 		push_error("CombatFeedback: %s has no Visual to hang an item from" % actor.name)
@@ -157,13 +175,22 @@ func _socket(actor: Node3D, slot: int) -> Node3D:
 	var socket_name := String(SOCKET_NAMES.get(slot, ""))
 	if socket_name.is_empty():
 		return null
-	var found := visual.get_node_or_null(socket_name) as Node3D
-	if found != null:
-		return found
-	var socket := Node3D.new()
+	var found: Array = visual.find_children(socket_name, "BoneAttachment3D", true, false)
+	if found.size() >= 1:
+		return found[0] as Node3D
+	var skeletons: Array = visual.find_children("*", "Skeleton3D", true, false)
+	if skeletons.is_empty():
+		push_error("CombatFeedback: %s has no skeleton to hang an item from" % actor.name)
+		return null
+	var skeleton := skeletons[0] as Skeleton3D
+	var bone := String(SOCKET_BONES.get(socket_name, ""))
+	if bone.is_empty() or skeleton.find_bone(bone) < 0:
+		push_error("CombatFeedback: %s has no %s bone" % [actor.name, bone])
+		return null
+	var socket := BoneAttachment3D.new()
 	socket.name = socket_name
-	socket.position = SOCKET_OFFSETS[socket_name]
-	visual.add_child(socket)
+	socket.bone_name = bone
+	skeleton.add_child(socket)
 	return socket
 
 

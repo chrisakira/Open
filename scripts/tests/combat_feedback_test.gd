@@ -129,6 +129,95 @@ func _labels_of(feedback) -> Array:
 	return feedback.find_children("DamageLabel*", "Label3D", true, false)
 
 
+func _socket_bone(mesh) -> String:
+	# The bone the mesh's socket rides, by walking up to the named socket and reading
+	# what kind of node it is. A socket that is not a BoneAttachment3D answers "".
+	var parent: Node = mesh.get_parent()
+	while parent != null and not (parent is Window):
+		if String(parent.name) in ["LeftHandSocket", "RightHandSocket"]:
+			if parent is BoneAttachment3D:
+				return String(parent.bone_name)
+			return ""
+		parent = parent.get_parent()
+	return ""
+
+
+func _meshes_hang_from_the_hand_bones_themselves() -> void:
+	var world: Node = await _world()
+	var feedback = _feedback_of(world)
+	var sheet = _sheet_of(world, "Player")
+	var player: Node = world.get_node("Player")
+	if feedback == null:
+		await _free(world)
+		return
+
+	# Right hand: the mesh's socket is a bone attachment on hand_r, and attaching
+	# touches nothing else about the body.
+	_check(sheet.equip_item(_id_of_model(sheet, "Sword"), SLOT_RIGHT_HAND), "the sword is held")
+	_tick(feedback, 0.1)
+	var sword = _mesh_for(_held_meshes(world), "Sword")
+	_check(sword != null, "the sword is in hand")
+	if sword != null:
+		_check(_socket_bone(sword) == "hand_r",
+				"and it hangs from the hand_r bone, not from a Visual offset")
+	_check(is_zero_approx(player.get_node("Visual").rotation_degrees.x),
+			"attaching left the body itself straight")
+
+	# Left hand: the same bone rule names the other side.
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "the sword comes off")
+	_check(sheet.equip_item(_id_of_model(sheet, "Sword"), SLOT_LEFT_HAND), "the sword goes left")
+	_tick(feedback, 0.1)
+	var moved = _mesh_for(_held_meshes(world), "Sword")
+	if moved != null:
+		_check(_socket_bone(moved) == "hand_l", "the mesh follows onto hand_l")
+	_check(sheet.unequip_item(SLOT_LEFT_HAND), "sword off again")
+
+	# The spear names both hands and stays one mesh on the right.
+	_check(sheet.equip_item(_id_of_model(sheet, "Spear"), SLOT_LEFT_HAND), "the spear goes left")
+	_tick(feedback, 0.1)
+	var spear_meshes: Array = []
+	for mesh in _held_meshes(world):
+		if String(mesh.get_meta("model_key", "")) == "Spear":
+			spear_meshes.append(mesh)
+	_check(spear_meshes.size() == 1, "a two-hander is still one mesh")
+	if spear_meshes.size() == 1:
+		_check(_socket_bone(spear_meshes[0]) == "hand_r",
+				"and the one mesh rides hand_r, whatever slot opened the door")
+	_check(sheet.unequip_item(SLOT_LEFT_HAND), "the spear comes back off")
+
+	# A hand change inside one tick: off and on across the body with no feedback
+	# pass in between, and the mesh still ends up exactly one, on the new bone.
+	_check(sheet.equip_item(_id_of_model(sheet, "Dagger"), SLOT_RIGHT_HAND), "the dagger goes right")
+	_tick(feedback, 0.1)
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "the dagger leaves the right")
+	_check(sheet.equip_item(_id_of_model(sheet, "Dagger"), SLOT_LEFT_HAND),
+			"and lands left before anything draws")
+	_tick(feedback, 0.1)
+	var daggers: Array = []
+	for mesh in _held_meshes(world):
+		if String(mesh.get_meta("model_key", "")) == "Dagger":
+			daggers.append(mesh)
+	_check(daggers.size() == 1, "one dagger mesh, no duplicate behind")
+	if daggers.size() == 1:
+		_check(_socket_bone(daggers[0]) == "hand_l", "and it moved with the hand")
+	# The grip table itself: every starter model has an explicit, finite, positive-scale
+	# entry, because a silent fallback for Sword would be a float that no one chose.
+	for key in ["Sword", "Dagger", "Spear", "Hammer_Small", "Shield_Round"]:
+		var grip: Dictionary = CombatFeedback.GRIPS.get(key, {})
+		_check(not grip.is_empty(), "%s has an explicit grip entry" % key)
+		if grip.is_empty():
+			continue
+		var offset: Vector3 = grip["offset"]
+		var spin: Vector3 = grip["rotation_degrees"]
+		_check(is_finite(offset.x) and is_finite(offset.y) and is_finite(offset.z),
+				"%s grip offset is finite" % key)
+		_check(is_finite(spin.x) and is_finite(spin.y) and is_finite(spin.z),
+				"%s grip rotation is finite" % key)
+		_check(float(grip["scale"]) > 0.0 and is_finite(float(grip["scale"])),
+				"%s grip scale is positive and finite" % key)
+	await _free(world)
+
+
 # --- held models ---------------------------------------------------------------
 
 func _the_world_owns_a_feedback_node() -> void:
@@ -557,6 +646,7 @@ func _two_weapons_of_one_model_hang_in_two_hands() -> void:
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
+	await _meshes_hang_from_the_hand_bones_themselves()
 	await _two_weapons_of_one_model_hang_in_two_hands()
 	await _a_dead_limb_keeps_its_mesh()
 	await _the_dummy_view_needs_no_orders()
