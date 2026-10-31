@@ -1,5 +1,6 @@
 #include "open/items.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <optional>
@@ -12,6 +13,15 @@ namespace open {
 bool valid(WeightClass classification) {
 	const int id = static_cast<int>(classification);
 	return id >= 0 && id < static_cast<int>(WeightClass::Count);
+}
+
+bool valid(BenchType type) {
+	const int id = static_cast<int>(type);
+	return id >= 0 && id < static_cast<int>(BenchType::Count);
+}
+
+bool operator==(const MaterialQuantity &left, const MaterialQuantity &right) {
+	return left.material == right.material && left.quantity == right.quantity;
 }
 
 namespace {
@@ -268,7 +278,8 @@ std::optional<AppliedEnchantment> make_applied_enchantment(const EnchantmentDefi
 std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items,
 											   std::vector<MaterialDefinition> materials,
 											   std::vector<EnchantmentDefinition> enchantments,
-											   std::vector<TechniqueDefinition> techniques) {
+											   std::vector<TechniqueDefinition> techniques,
+											   std::vector<CraftRecipe> recipes) {
 	ItemCatalog catalog;
 	// Techniques first, because a weapon's support list points at them: the link is a
 	// foreign key, and it is checked below once every table exists.
@@ -325,6 +336,62 @@ std::optional<ItemCatalog> ItemCatalog::create(std::vector<ItemDefinition> items
 			}
 		}
 	}
+	// Recipes last: they are foreign keys into everything above. A crafting recipe's output
+	// that is not a weapon would forge a shield from a smithing bench - not a rule the
+	// slice has, so this loop refuses to even hold the option. Repair and enchanting act
+	// on a target the request names, so they name no output and no material at all, and
+	// exactly one of each exists: two repair recipes would make "the repair price" a
+	// question with two answers.
+	RecipeId repair_recipe = 0;
+	RecipeId enchant_recipe = 0;
+	for (auto &recipe : recipes) {
+		if (recipe.id == 0 || !valid(recipe.kind) || !valid(recipe.bench)
+			|| recipe.cost.empty() || catalog.recipes_.count(recipe.id) != 0) {
+			return std::nullopt;
+		}
+		switch (recipe.kind) {
+		case WorkKind::CraftWeapon:
+			if (recipe.bench != BenchType::Smithing
+				|| catalog.item(recipe.output) == nullptr
+				|| !catalog.item(recipe.output)->weapon.has_value()
+				|| catalog.material(recipe.material) == nullptr) {
+				return std::nullopt;
+			}
+			break;
+		case WorkKind::Repair:
+			if (recipe.bench != BenchType::Smithing || recipe.output != 0
+				|| recipe.material != 0) {
+				return std::nullopt;
+			}
+			if (repair_recipe != 0) {
+				return std::nullopt;
+			}
+			repair_recipe = recipe.id;
+			break;
+		case WorkKind::EnchantWeapon:
+			if (recipe.bench != BenchType::Enchanting || recipe.output != 0
+				|| recipe.material != 0) {
+				return std::nullopt;
+			}
+			if (enchant_recipe != 0) {
+				return std::nullopt;
+			}
+			enchant_recipe = recipe.id;
+			break;
+		case WorkKind::Count:
+			return std::nullopt;
+		}
+		std::vector<MaterialId> listed;
+		for (const MaterialQuantity &line : recipe.cost) {
+			if (line.quantity == 0 || catalog.material(line.material) == nullptr
+				|| std::find(listed.begin(), listed.end(), line.material) != listed.end()) {
+				return std::nullopt;
+			}
+			listed.push_back(line.material);
+		}
+		const RecipeId id = recipe.id;
+		catalog.recipes_.emplace(id, std::move(recipe));
+	}
 	return catalog;
 }
 
@@ -360,6 +427,26 @@ const MaterialDefinition *ItemCatalog::material(MaterialId id) const {
 	}
 	const auto found = materials_.find(id);
 	return found == materials_.end() ? nullptr : &found->second;
+}
+
+// A recipe is its own domain of ids, like everything else here: zero names nothing, and
+// no item, material or technique id resolves as one.
+const CraftRecipe *ItemCatalog::recipe(RecipeId id) const {
+	if (id == 0) {
+		return nullptr;
+	}
+	const auto found = recipes_.find(id);
+	return found == recipes_.end() ? nullptr : &found->second;
+}
+
+std::vector<RecipeId> ItemCatalog::recipe_ids() const {
+	std::vector<RecipeId> ids;
+	ids.reserve(recipes_.size());
+	for (const auto &entry : recipes_) {
+		ids.push_back(entry.first);
+	}
+	std::sort(ids.begin(), ids.end());
+	return ids;
 }
 
 }  // namespace open

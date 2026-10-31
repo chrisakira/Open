@@ -76,6 +76,10 @@ private:
 	// besides the workbench actions to come. Reserved before use and never recycled, so an id
 	// the popup is holding cannot belong to a second item later in the same session.
 	open::ItemIdAllocator ids_;
+	// The scene's material purse, owned here so it outlives every sheet and travels with the
+	// setup command and (from Task 17) the workbench operations. Nothing outside this class
+	// adds to it; the starter setup is the only thing that ever has.
+	open::MaterialLedger materials_;
 	// Swings collected from the session on the step that performed them, so that reading them
 	// is a separate decision from fighting.
 	std::vector<open::CombatEvent> events_;

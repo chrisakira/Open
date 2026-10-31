@@ -14,6 +14,7 @@
 #include "open/starter_content.hpp"
 #include "open/techniques.hpp"
 #include "open/weapon_rules.hpp"
+#include "open/work.hpp"
 #include "test_support.hpp"
 
 // Task 15: the starter content, which is production data and a production command - not a
@@ -212,7 +213,12 @@ void the_starter_material_is_the_locked_placeholder() {
 	for (const unsigned tier : material->max_durability_by_quality) {
 		expect_true("and every tier is the placeholder hundred", tier == 100u);
 	}
-	expect_true("an unused material id answers nothing", catalog->material(kMaterial + 1) == nullptr);
+	// Task 16 added one more material to the slice - rune dust, the enchanting cost - so
+	// "unused" now means a number neither of them answers.
+	expect_true("rune dust joined the table at its own id",
+				catalog->material(open::kRuneDustMaterial) != nullptr
+					&& catalog->material(open::kRuneDustMaterial) != material);
+	expect_true("and an unused material id answers nothing", catalog->material(999) == nullptr);
 }
 
 // Three techniques, the locked rows, with nothing granted by a title and no cost of their own
@@ -263,7 +269,8 @@ void setup_gives_one_distinct_owned_instance_of_each() {
 	}
 	open::Character player = sheet(1, catalog);
 	open::ItemIdAllocator allocator;
-	expect_true("the starter inventory is given", open::initialize_starter_inventory(player, allocator));
+	open::MaterialLedger supplies;
+	expect_true("the starter inventory is given", open::initialize_starter_inventory(player, allocator, supplies));
 
 	std::vector<open::ItemId> owned = player.backpack_items();
 	expect_true("five items, no more", owned.size() == kStarterItemCount);
@@ -312,14 +319,15 @@ void setup_twice_adds_nothing() {
 	}
 	open::Character player = sheet(2, catalog);
 	open::ItemIdAllocator allocator;
+	open::MaterialLedger supplies;
 	expect_true("the first call gives the backpack",
-				open::initialize_starter_inventory(player, allocator));
+				open::initialize_starter_inventory(player, allocator, supplies));
 	const std::vector<open::ItemId> before = player.backpack_items();
 	const open::Training sword_before =
 		player.basic(open::BasicSkill::OneHandedWeapons);
 
 	expect_true("and a second call is accepted as having nothing to do",
-				open::initialize_starter_inventory(player, allocator));
+				open::initialize_starter_inventory(player, allocator, supplies));
 	const std::vector<open::ItemId> after = player.backpack_items();
 	expect_true("with exactly the same items, in the same order", before == after);
 	expect_true("and no training or clock moved on the way",
@@ -342,7 +350,7 @@ void setup_twice_adds_nothing() {
 		expect_true("and it can be worn", player.equip(*sword, open::Slot::RightHand));
 		const std::vector<open::ItemId> carried = player.backpack_items();
 		expect_true("a third call still adds nothing",
-					open::initialize_starter_inventory(player, allocator));
+					open::initialize_starter_inventory(player, allocator, supplies));
 		expect_true("with the same records carried and the sword still held",
 					player.backpack_items() == carried &&
 						player.equipped(open::Slot::RightHand) == *sword);
@@ -361,17 +369,20 @@ void setup_refuses_to_finish_when_it_cannot_start() {
 	open::Character fallen = sheet(3, catalog);
 	expect_true("the sheet dies", fallen.damage(open::BodyPart::Torso, 1.0e30f));
 	open::ItemIdAllocator fresh;
+	open::MaterialLedger supplies;
 	expect_true("a dead sheet is refused",
-				!open::initialize_starter_inventory(fallen, fresh));
+				!open::initialize_starter_inventory(fallen, fresh, supplies));
 	expect_true("and owns nothing at all", fallen.backpack_items().empty());
 
 	// An allocator at the end of its range cannot reserve the five ids, and a mint that starts
 	// with an id it cannot give away must not add any of the others either.
 	open::Character last = sheet(4, catalog);
 	open::ItemIdAllocator spent(std::vector<open::ItemId>{std::numeric_limits<open::ItemId>::max()});
+	open::MaterialLedger supplies2;
 	expect_true("an exhausted allocator refuses the setup",
-				!open::initialize_starter_inventory(last, spent));
+				!open::initialize_starter_inventory(last, spent, supplies2));
 	expect_true("with the backpack exactly as it was", last.backpack_items().empty());
+	expect_true("and the purse exactly as it was", supplies2.quantity(4, open::kStarterMaterial) == 0);
 }
 
 // Ids are unique owners: setup adopts what the sheet already holds rather than minting a
@@ -389,8 +400,9 @@ void setup_never_becomes_a_second_owner_of_an_id() {
 	expect_true("the prior instance can be described", prior.has_value());
 	expect_true("and carried", prior.has_value() && player.add_instance(*prior));
 
-	open::ItemIdAllocator allocator;  // does not know about id 1
-	expect_true("setup still succeeds", open::initialize_starter_inventory(player, allocator));
+	open::ItemIdAllocator allocator;
+	open::MaterialLedger supplies;  // does not know about id 1
+	expect_true("setup still succeeds", open::initialize_starter_inventory(player, allocator, supplies));
 	const std::vector<open::ItemId> owned = player.backpack_items();
 	expect_true("five records in total, one of them the prior sword",
 				owned.size() == kStarterItemCount);
@@ -417,7 +429,8 @@ void what_setup_mints_behaves_like_real_equipment() {
 	}
 	open::Character player = sheet(6, catalog);
 	open::ItemIdAllocator allocator;
-	expect_true("the backpack is given", open::initialize_starter_inventory(player, allocator));
+	open::MaterialLedger supplies;
+	expect_true("the backpack is given", open::initialize_starter_inventory(player, allocator, supplies));
 
 	auto of_definition = [&](open::DefinitionId definition) -> open::ItemId {
 		for (const open::ItemId id : player.backpack_items()) {

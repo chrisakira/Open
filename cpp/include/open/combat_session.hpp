@@ -2,6 +2,7 @@
 
 #include "open/combat_rules.hpp"
 #include "open/move_order.hpp"
+#include "open/work.hpp"
 
 #include <cstdint>
 #include <random>
@@ -93,7 +94,63 @@ public:
 	// How many performed swings can wait to be read before the oldest is dropped.
 	static constexpr std::size_t kMaxPendingEvents = 64u;
 
+	// --- workbenches (Task 16) ----------------------------------------------------
+	//
+	// The session's share of bench work is the part a single sheet cannot judge: who is in
+	// combat (which interrupts), whether the walk toward a bench has finished, and the one
+	// place a frame's combat and a frame's settlement may collide. Materials, ranks and
+	// deliveries belong to the sheet and to work_actions; the session only ever calls the
+	// sheet's own work engine with this frame's readings.
+	//
+	// Every one of these takes the caller's current `WorkContext`: the catalog, the id mint,
+	// the material purse, and this frame's bench observations. Observations are read and
+	// never stored, exactly like Combatant positions, so a bench that vanished between calls
+	// is discovered here rather than trusted from last time.
+
+	// The click on a bench with no action chosen: in reach, it succeeds and orders nothing
+	// (the popup it opens is the caller's business); out of reach it issues the approach
+	// walk. It cannot start, queue or pay for work, and an immobile actor is not promised a
+	// bench it cannot reach.
+	bool approach_workbench(std::span<const Combatant> actors, std::uint64_t actor_id,
+							WorkbenchId bench, WorkContext &work);
+
+	// Ask for a job. Refused, touching nothing: bad shape (see work_request_ok), an actor
+	// who is absent, dead or already working, smithing done in combat, an immobile actor
+	// facing a distant bench, or an in-reach start whose materials and ranks cannot cover
+	// it. Accepted in reach as an active job (paid here, now); accepted out of reach as a
+	// queued job with an issued approach and nothing paid - the arrival check runs again on
+	// arrival, against whoever the smith and the purse have become by then.
+	bool request_work(std::span<const Combatant> actors, std::uint64_t actor_id,
+					  const WorkRequest &request, WorkContext &work);
+
+	// Put the job down. A queue clears free; an active job stays paid. Cancelling finished
+	// or unstarted work answers false and keeps whatever result was being kept.
+	bool cancel_work(std::span<const Combatant> actors, std::uint64_t actor_id, WorkContext &work);
+
+	// The session-routed move order. Like the sheet's own set_destination it interrupts
+	// whatever job was on the bench - the interruption lives on the sheet so neither door
+	// can be walked around - and unlike approach_workbench it goes where the caller says.
+	bool issue_move(std::span<const Combatant> actors, std::uint64_t actor_id, const Vec3 &position,
+					WorkContext &work);
+
+	// A frame with a work environment: after the swings have been thrown and the dead
+	// reconciled, every busy sheet is advanced once - engagement checked before settlement,
+	// so combat arriving on the fifteenth second wins that second; queued work starts at
+	// zero only on arrival; a stun freezes the bench like every other clock. The two-
+	// argument step below refuses to tick at all while any sheet is busy, which is what
+	// makes "no silent ticking without the context" true.
+	bool step(float seconds, std::span<const Combatant> actors, WorkContext &work);
+
 private:
+	// The frame, shared by both step doors. `work == nullptr` is the no-environment frame;
+	// callers other than `step` never reach it.
+	bool step_core(float seconds, std::span<const Combatant> actors, WorkContext *work);
+
+	// One frame's bench pass over the roster: every busy sheet gets exactly one reading of
+	// this frame through the sheet's own (private, session-friended) advance_work.
+	static void advance_all_work(std::span<const Combatant> actors, WorkContext &work,
+								 float seconds);
+
 	// Part draws only. The swing, its clocks and its stamina belong to the sheets.
 	std::mt19937_64 rng_;
 	// Presentation's queue, drained by `take_swing_events`. Not part of the fight's state:

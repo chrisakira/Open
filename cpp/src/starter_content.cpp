@@ -86,8 +86,45 @@ std::shared_ptr<const ItemCatalog> build_starter_catalog() {
 	material.id = kStarterMaterial;
 	material.max_durability_by_quality.assign(kQualityTierCount, kStarterDurability);
 
-	const std::optional<ItemCatalog> catalog =
-		ItemCatalog::create(std::move(items), {material}, {}, starter_techniques());
+	// Rune dust is only ever spent, never worn or built from; the durability table it has
+	// to carry to be a material is the same placeholder every starter tier uses.
+	MaterialDefinition dust;
+	dust.id = kRuneDustMaterial;
+	dust.max_durability_by_quality.assign(kQualityTierCount, kStarterDurability);
+
+	// docs/weapons.md, "Starter workbenches and materials": forge any of 101-104 for two
+	// scrap, repair for one scrap, enchant for one rune dust. No shield recipe exists, and
+	// the catalog will not accept one being added to it.
+	std::vector<CraftRecipe> recipes;
+	const std::pair<RecipeId, DefinitionId> forges[] = {
+		{kStarterForgeSword, kStarterSword},   {kStarterForgeDagger, kStarterDagger},
+		{kStarterForgeSpear, kStarterSpear},   {kStarterForgeHammer, kStarterHammer},
+	};
+	for (const auto &[recipe_id, output] : forges) {
+		CraftRecipe recipe;
+		recipe.id = recipe_id;
+		recipe.kind = WorkKind::CraftWeapon;
+		recipe.bench = BenchType::Smithing;
+		recipe.output = output;
+		recipe.material = kStarterMaterial;
+		recipe.cost = {{kStarterMaterial, 2u}};
+		recipes.push_back(recipe);
+	}
+	CraftRecipe repair;
+	repair.id = kStarterRepair;
+	repair.kind = WorkKind::Repair;
+	repair.bench = BenchType::Smithing;
+	repair.cost = {{kStarterMaterial, 1u}};
+	recipes.push_back(repair);
+	CraftRecipe enchant;
+	enchant.id = kStarterEnchant;
+	enchant.kind = WorkKind::EnchantWeapon;
+	enchant.bench = BenchType::Enchanting;
+	enchant.cost = {{kRuneDustMaterial, 1u}};
+	recipes.push_back(enchant);
+
+	const std::optional<ItemCatalog> catalog = ItemCatalog::create(
+		std::move(items), {material, dust}, {}, starter_techniques(), std::move(recipes));
 	if (!catalog.has_value()) {
 		return nullptr;  // the locked table itself would have to be wrong
 	}
@@ -134,7 +171,8 @@ std::shared_ptr<const ItemCatalog> make_starter_catalog() {
 	return catalog;
 }
 
-bool initialize_starter_inventory(Character &character, ItemIdAllocator &allocator) {
+bool initialize_starter_inventory(Character &character, ItemIdAllocator &allocator,
+								  MaterialLedger &materials) {
 	const std::shared_ptr<const ItemCatalog> catalog = character.catalog();
 	if (catalog == nullptr) {
 		return false;  // nothing to describe the items from
@@ -152,8 +190,9 @@ bool initialize_starter_inventory(Character &character, ItemIdAllocator &allocat
 		}
 	}
 	if (missing.empty()) {
-		return true;  // already the starter set: idempotent, and it mints nothing
-	}
+		// already the starter set: idempotent, and it mints nothing - the supply below is
+		// still owed its one look, and the marker is what answers it
+	} else {
 
 	// Reserve every id up front, then describe every instance, and only then add. The two
 	// loops that can fail are both ahead of the one that cannot be undone, which is what makes
@@ -182,10 +221,21 @@ bool initialize_starter_inventory(Character &character, ItemIdAllocator &allocat
 		}
 		made.push_back(*instance);
 	}
-	for (const ItemInstance &instance : made) {
-		if (!character.add_instance(instance)) {
+		for (const ItemInstance &instance : made) {
+			if (!character.add_instance(instance)) {
+				return false;
+			}
+		}
+	}
+
+	// The supply, once. The marker is the memory that it happened, so a spent stack stays
+	// spent through every future setup: this fills a starting kit and never runs a shop.
+	if (!materials.was_granted(character.id())) {
+		if (!materials.grant(character.id(), kStarterMaterial, kStarterScrap)
+			|| !materials.grant(character.id(), kRuneDustMaterial, kStarterRuneDust)) {
 			return false;
 		}
+		materials.mark_granted(character.id());
 	}
 	return true;
 }

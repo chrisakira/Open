@@ -215,9 +215,9 @@ bool OpenCombat::setup_starter_player(int64_t actor_id) {
 	if (who == nullptr) {
 		return false;  // add_character makes this impossible; a sheet with no sim is not a sheet
 	}
-	// All of the work is C++'s: the table, the ids, the tier, the durability and the
-	// all-or-nothing rule. This cannot be asked for anything else.
-	return open::initialize_starter_inventory(*who, ids_);
+	// All of the work is C++'s: the table, the ids, the tier, the durability, the starting
+	// supply and the all-or-nothing rule. This cannot be asked for anything else.
+	return open::initialize_starter_inventory(*who, ids_, materials_);
 }
 
 godot::Array OpenCombat::take_combat_events() {

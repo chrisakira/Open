@@ -223,6 +223,9 @@ bool Character::damage(BodyPart part, float amount) {
 	// Death ends the fight: a corpse keeps no attack intent.
 	if (was_alive && !alive()) {
 		attack_target_.reset();
+		// And it ends the bench too, paid or not: the dead cannot finish a repair, and no
+		// resurrection of the schedule is on offer.
+		interrupt_work(WorkFailure::Dead);
 	}
 	return true;
 }
@@ -268,10 +271,23 @@ bool Character::equip(ItemId id, Slot slot) {
 	if (!alive()) {
 		return false;
 	}
+	// A thing under the tool cannot be moved: while a paid job is repairing or enchanting
+	// this very item, equipping it - to this slot or any other - is refused. The refusal is
+	// not an interruption; the job carries on as if nothing was asked. Queued work has paid
+	// nothing and locks nothing.
+	if (work_locks(id)) {
+		return false;
+	}
 	return equipment_.equip(id, slot, vitals_.one_hand(), vitals_.two_hands());
 }
 
 bool Character::unequip(Slot slot) {
+	// Taking the target off the anvil is moving it, and moving it mid-repair is exactly what
+	// the lock is for. The player finishes or cancels first.
+	if (const std::optional<ItemId> worn = equipment_.equipped(slot);
+		worn.has_value() && work_locks(*worn)) {
+		return false;
+	}
 	return equipment_.unequip(slot);
 }
 
@@ -325,12 +341,16 @@ bool Character::set_destination(float x, float y, float z) {
 		return false;
 	}
 	attack_target_.reset();
+	// A walk is a changed mind about the bench, wherever the new destination is - even the
+	// square the smith is already standing on.
+	interrupt_work(WorkFailure::Movement);
 	return true;
 }
 
 void Character::clear_order() {
 	order_.clear();
 	attack_target_.reset();
+	interrupt_work(WorkFailure::Movement);
 }
 
 std::optional<Vec3> Character::destination() const {
@@ -355,9 +375,11 @@ bool Character::set_attack_target(std::uint64_t target_id) {
 	if (target_id == 0 || target_id == id_) {
 		return false;
 	}
-	// An accepted attack owns the actor's intent, so the walk goes with it.
+	// An accepted attack owns the actor's intent, so the walk goes with it - and so does the
+	// bench, paid or not: swinging is not hammering.
 	attack_target_ = target_id;
 	order_.clear();
+	interrupt_work(WorkFailure::Combat);
 	return true;
 }
 

@@ -10,6 +10,7 @@
 #include "open/stagger.hpp"
 #include "open/techniques.hpp"
 #include "open/vitals.hpp"
+#include "open/work.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -189,6 +190,15 @@ bool can_move() const;
 	bool set_player_controlled(bool player_controlled);
 	TechniqueState technique_state() const;
 
+	// --- work -------------------------------------------------------------------
+	//
+	// One bench job at a time, as a copy: who is walking, who is paying the fifteen seconds,
+	// what was ranked and sampled at the start, and what the last finished job became. The
+	// schedule itself is private - the session advances it while it holds the frame, and the
+	// order setters interrupt it as a side effect of doing their own job - because a work
+	// queue you can push from the outside is a work queue with a cheat in it.
+	WorkStatus work_status() const;
+
 private:
 	Character() = default;
 
@@ -230,6 +240,27 @@ private:
 	void apply_ran_technique_clocks(std::vector<double> ran);
 	float attack_cooldown_ = 0.0f;
 	float defend_cooldown_ = 0.0f;
+
+	// The sheet's one bench job, with everything the start sampled. Private because a work
+	// schedule is an order and a transaction at once: only the session that holds the frame
+	// advances it, and only this sheet's own order setters interrupt it.
+	WorkRuntime work_;
+
+	// The work engine, kept behind the sheet: `begin_work` and `queue_work` park an already
+	// validated request (started now, or on arrival), `advance_work` is the whole per-step
+	// life of the job - arrival start, the combat reading of this frame, time, settle, and
+	// the stun that freezes it like every other clock - and `interrupt_work` ends a busy
+	// job for a reason, free while queued and paid-for while active. All four are the
+	// session's to call; `work_status()` above is everybody else's to read.
+	bool begin_work(const WorkRequest &request, const Vec3 &self_position, WorkContext &env);
+	bool queue_work(const WorkRequest &request);
+	bool advance_work(float seconds, const Vec3 &self_position, WorkContext &env, bool engaged);
+	bool interrupt_work(WorkFailure reason);
+	// True while this id is the item a paid job is working on: the lock the equip path
+	// consults so a thing under the tool cannot be worn elsewhere or taken away mid-repair.
+	bool work_locks(ItemId id) const;
+
+	friend class CombatSession;
 };
 
 }  // namespace open

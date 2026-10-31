@@ -21,6 +21,8 @@ using DefinitionId = std::uint64_t;
 using EnchantmentId = std::uint64_t;
 using MaterialId = std::uint64_t;
 using TechniqueId = std::uint64_t;
+using RecipeId = std::uint64_t;
+using WorkbenchId = std::uint64_t;
 
 // The identity of one owned thing, which is not a definition id: two swords made
 // from one definition are two items, and either can wear out alone.
@@ -193,6 +195,59 @@ struct MaterialDefinition {
 	std::vector<unsigned> max_durability_by_quality;  // exactly seven, each positive
 };
 
+// The two workbenches the starter slice builds: the Smithing bench forges and repairs,
+// the Enchanting bench fixes enchantments. A bench type is a rule about which work may
+// happen at it, so it is a domain, not a position: where a bench stands is an observation
+// the caller feeds the session, never a fact the catalog holds.
+enum class BenchType {
+	Smithing,
+	Enchanting,
+	Count,
+};
+
+bool valid(BenchType type);
+
+// The three bench actions the slice delivers, declared alongside the recipe that carries
+// one: what a recipe *is* and what work it *does* are the same fact in two tables' worth
+// of distance, so they live in the same header. There is no "other" and no extension
+// point: anything a caller cannot name here is not work.
+enum class WorkKind {
+	CraftWeapon,
+	Repair,
+	EnchantWeapon,
+	Count,
+};
+
+bool valid(WorkKind kind);
+
+// One material holding of a recipe's cost: an id from the material domain and a strictly
+// positive amount. Recipes list costs with these, the ledger pays with these, and the
+// single type is what keeps a cost spelled the same way on both sides.
+struct MaterialQuantity {
+	MaterialId material = 0;
+	std::uint64_t quantity = 0;
+};
+
+// Costs are declared data; comparing two of them is a table check, so the line gets an
+// equality and the vectors of them inherit it.
+bool operator==(const MaterialQuantity &left, const MaterialQuantity &right);
+
+// One immutable bench recipe: which action it performs, which bench it belongs to, what
+// it produces, and what it costs to start. Nothing here can say "sometimes free", "any
+// bench", or "work without materials". A crafting recipe names the weapon definition it
+// outputs and the material it is made of; the repair and enchanting kinds output nothing
+// themselves - they act on a target the request names - so they carry no output, and the
+// catalog holds at most one of each. The starter slice's table is exactly: forge each of
+// weapon definitions 101-104 for 2 Scrap, repair for 1 Scrap, enchant for 1 Rune Dust.
+struct CraftRecipe {
+	RecipeId id = 0;
+	WorkKind kind = WorkKind::CraftWeapon;
+	BenchType bench = BenchType::Smithing;
+	DefinitionId output = 0;   // craft: a weapon definition in the same catalog; else 0
+	MaterialId material = 0;   // craft: what the output instance is made of; else 0
+	std::vector<MaterialQuantity> cost;  // non-empty, known materials, positive amounts
+};
+
 // The validated set of definitions. Build it once, keep it alive as long as any
 // character holds pointers into it.
 class ItemCatalog {
@@ -202,10 +257,14 @@ public:
 	// Techniques are validated before the items, because a weapon's support list is a
 	// foreign key into them: an id that names no technique is a broken definition and
 	// rejects the whole catalog rather than becoming a technique nobody can perform.
+	// Recipes are validated last, because they are foreign keys into all of it: an
+	// output that names no weapon, a material nobody declared, or a bench that is not
+	// a bench rejects the whole catalog.
 	static std::optional<ItemCatalog> create(std::vector<ItemDefinition> items,
 											 std::vector<MaterialDefinition> materials,
 											 std::vector<EnchantmentDefinition> enchantments = {},
-											 std::vector<TechniqueDefinition> techniques = {});
+											 std::vector<TechniqueDefinition> techniques = {},
+											 std::vector<CraftRecipe> recipes = {});
 
 	// Non-owning lookups, stable for the catalog's lifetime. Zero and unknown ids
 	// answer nullptr, and the two id domains never resolve as each other.
@@ -213,12 +272,18 @@ public:
 	const MaterialDefinition *material(MaterialId id) const;
 	const EnchantmentDefinition *enchantment(EnchantmentId id) const;
 	const TechniqueDefinition *technique(TechniqueId id) const;
+	const CraftRecipe *recipe(RecipeId id) const;
+
+	// Every recipe id, sorted: the popup enumerates what a bench can make without
+	// guessing at ids, and a test can insist it enumerated all of them.
+	std::vector<RecipeId> recipe_ids() const;
 
 private:
 	std::unordered_map<DefinitionId, ItemDefinition> items_;
 	std::unordered_map<MaterialId, MaterialDefinition> materials_;
 	std::unordered_map<EnchantmentId, EnchantmentDefinition> enchantments_;
 	std::unordered_map<TechniqueId, TechniqueDefinition> techniques_;
+	std::unordered_map<RecipeId, CraftRecipe> recipes_;
 };
 
 }  // namespace open

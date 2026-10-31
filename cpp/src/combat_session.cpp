@@ -1,5 +1,7 @@
 #include "open/combat_session.hpp"
 
+#include "open/work_actions.hpp"
+
 #include "open/character.hpp"
 #include "open/combat_rules.hpp"
 #include "open/weapon_rules.hpp"
@@ -113,9 +115,26 @@ void drop_dead_orders(std::span<const Combatant> actors) {
 	}
 }
 
+// One frame's bench pass: every busy sheet gets exactly one reading of this frame -
+// engaged or free, bench standing or gone, arrived or still walking, finished or not -
+// through the sheet's own advance_work. Zero seconds interrupts but never starts, ticks
+// or completes, which is advance_work's rule, not a loop condition here. The pass runs
+// after the swings and the dead-order reconciliation, so "combat arrives first" is the
+// step's order of operations rather than a rule anybody has to remember.
 }  // namespace
 
 CombatSession::CombatSession(std::uint64_t seed) : rng_(seed) {}
+
+void CombatSession::advance_all_work(std::span<const Combatant> actors, WorkContext &work,
+									 float seconds) {
+	for (const Combatant &actor : actors) {
+		if (!actor.character->work_status().busy()) {
+			continue;
+		}
+		const bool engaged = is_engaged(actor, actors);
+		actor.character->advance_work(seconds, actor.position, work, engaged);
+	}
+}
 
 bool CombatSession::issue_attack(std::span<const Combatant> actors, std::uint64_t actor_id,
 								 std::uint64_t target_id) {
@@ -142,9 +161,38 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
 	if (!usable_roster(actors)) {
 		return false;
 	}
+	// Work without a work environment is the silent-ticking bug with a frame around it:
+	// while any sheet is busy at a bench, this door refuses the whole step rather than
+	// pretending the frame held no schedule. Terminal results are not live work; the old
+	// frame runs again once nothing is walking or paid.
+	for (const Combatant &actor : actors) {
+		if (actor.character->work_status().busy()) {
+			return false;
+		}
+	}
+	return step_core(seconds, actors, nullptr);
+}
 
+bool CombatSession::step(float seconds, std::span<const Combatant> actors, WorkContext &work) {
+	if (!std::isfinite(seconds) || seconds < 0.0f) {
+		return false;
+	}
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	return step_core(seconds, actors, &work);
+}
+
+bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
+							  WorkContext *work) {
 	drop_dead_orders(actors);
 	if (seconds == 0.0f) {
+		// The reconciliation frame still notices a bench that is gone or a fight that
+		// started - interrupting is reconciliation, not progress - but it never starts,
+		// ticks or completes a job.
+		if (work != nullptr) {
+			advance_all_work(actors, *work, false);
+		}
 		return true;
 	}
 
@@ -179,6 +227,12 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
 	// its combat state, and a fighter who just lost its target does not get a
 	// replacement.
 	drop_dead_orders(actors);
+	// The bench gets this frame after the fight has had all of it: engagement and death are
+	// already on the sheets, so work that "finishes" now knows combat arrived first, which
+	// is the fifteenth-second rule stated as an order of operations.
+	if (work != nullptr) {
+		advance_all_work(actors, *work, seconds);
+	}
 	for (const Combatant &actor : actors) {
 		if (!actor.character->alive()) {
 			continue;
@@ -186,6 +240,97 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
 		actor.character->regenerate(seconds, is_engaged(actor, actors));
 	}
 	return true;
+}
+
+bool CombatSession::approach_workbench(std::span<const Combatant> actors, std::uint64_t actor_id,
+									   WorkbenchId bench, WorkContext &work) {
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	if (actor == nullptr || !actor->character->alive()) {
+		return false;
+	}
+	const WorkbenchObservation *observed = work.bench(bench);
+	if (observed == nullptr || !std::isfinite(observed->position.x)
+		|| !std::isfinite(observed->position.z)) {
+		return false;
+	}
+	if (in_bench_reach(actor->position, observed->position)) {
+		return true;  // already standing at it: the click opens, and orders nothing
+	}
+	if (!actor->character->can_walk()) {
+		return false;  // no legs, no bench
+	}
+	return actor->character->set_destination(observed->position.x, observed->position.y,
+											 observed->position.z);
+}
+
+bool CombatSession::request_work(std::span<const Combatant> actors, std::uint64_t actor_id,
+								 const WorkRequest &request, WorkContext &work) {
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	if (actor == nullptr || !actor->character->alive()) {
+		return false;
+	}
+	// One job at a time, and a terminal result is kept only until this call's next accepted
+	// job, so a busy sheet is refused before anything is read.
+	if (actor->character->work_status().busy()) {
+		return false;
+	}
+	if (!work_request_ok(*actor->character, request, work)) {
+		return false;
+	}
+	// A bench is not a refuge: everything about smithing says outside combat, and
+	// `in_combat` is the session's own word for inside it - pursuit included, both ways.
+	if (is_engaged(*actor, actors)) {
+		return false;
+	}
+	const WorkbenchObservation *observed = work.bench(request.bench);
+	if (in_bench_reach(actor->position, observed->position)) {
+		// The immediate start is the strict door: materials, cap and target are checked now,
+		// and a refusal leaves no job, no reason, no spent anything.
+		return actor->character->begin_work(request, actor->position, work);
+	}
+	if (!actor->character->can_walk()) {
+		return false;  // out of reach and going nowhere: no magic bench
+	}
+	// Command order, deliberately: walk first, queue second. set_destination interrupts any
+	// prior job (there is none - the busy check above), and queueing after it means the
+	// approach this request itself issues cannot be the interruption that clears the queue.
+	if (!actor->character->set_destination(observed->position.x, observed->position.y,
+										   observed->position.z)) {
+		return false;
+	}
+	return actor->character->queue_work(request);
+}
+
+bool CombatSession::cancel_work(std::span<const Combatant> actors, std::uint64_t actor_id,
+								WorkContext &work) {
+	(void)work;  // the purse is never touched: nothing returns, that is what "paid" means
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	if (actor == nullptr) {
+		return false;
+	}
+	return actor->character->interrupt_work(WorkFailure::Cancelled);
+}
+
+bool CombatSession::issue_move(std::span<const Combatant> actors, std::uint64_t actor_id,
+							   const Vec3 &position, WorkContext &work) {
+	(void)work;  // the interruption lives on the sheet's own setter, so neither door dodges it
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	if (actor == nullptr) {
+		return false;
+	}
+	return actor->character->set_destination(position.x, position.y, position.z);
 }
 
 bool CombatSession::in_combat(std::uint64_t id, std::span<const Combatant> actors) const {

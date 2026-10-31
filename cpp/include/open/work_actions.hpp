@@ -2,8 +2,10 @@
 
 #include "open/character.hpp"
 #include "open/items.hpp"
+#include "open/work.hpp"
 
 #include <optional>
+#include <vector>
 
 namespace open {
 
@@ -35,5 +37,41 @@ unsigned max_weapon_quality(const Character &character);
 // durability point and capped at that maximum. Repair never raises the maximum and
 // never changes quality, so it cannot upgrade anything.
 unsigned repair_points(unsigned max_durability, unsigned trained);
+
+// --- the workbench queue (Task 16) ---------------------------------------------
+//
+// The three questions every bench action asks, in order: may this request exist, may
+// this start be paid for, and what does finishing produce. The sheet owns the schedule
+// and the session owns the frame; what they consult for the rules is here, so neither
+// grows a private idea of what a recipe costs.
+
+// Horizontal reach to a bench, inclusive, Y ignored - the reading every 1.5 in this
+// project shares.
+bool in_bench_reach(const Vec3 &self, const Vec3 &bench);
+
+// The shape a request must have before anyone walks anywhere: a named kind, a recipe in
+// this catalog whose kind and bench agree with the observation the caller means, a bench
+// that exists where finite numbers do, and target/quality/enchantment fields used
+// exactly as the kind requires. No rank, material or position is consulted here: a shape
+// refusal says the request could never be legal, which is the only thing a caller may
+// learn without paying for it.
+bool work_request_ok(const Character &who, const WorkRequest &request, const WorkContext &env);
+
+// The transaction, in the order the rules require it: every start-time requirement first
+// (alive, carrying, rank and cap, the target still worth the action, the bench type),
+// then the output id reserved, then the materials consumed. All the cost or none of it:
+// an allocator with nothing left consumes nothing, and a refusal mints and spends
+// nothing. The caller stands where the reach was already checked; `work_begin` does not
+// move anybody.
+std::optional<WorkStart> work_begin(const Character &who, const WorkRequest &request,
+									WorkContext &env);
+
+// Settlement, run once when the elapsed time reaches the duration: the crafted instance
+// minted from the reserved id into the backpack, the repaired durability, or the captured
+// enchantment attached - then exactly 1 XP on the sampled job, and one Hammerhand mark
+// for a craft that delivered, and nothing else. False means the delivery failed after it
+// was paid for, which stays a spent failure: a bench minute that ended never buys a
+// do-over.
+bool work_settle(Character &who, const WorkStart &start, WorkContext &env);
 
 }  // namespace open
