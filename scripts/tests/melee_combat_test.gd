@@ -952,6 +952,33 @@ func _the_hud_chat_hears_the_worlds_first_swing() -> void:
 	await _free_world(world)
 
 
+# The chat is a report, not a window: it must never be drawn over a panel the player opened, and
+# it grows downward-facing into exactly the corner the popups sit in. Inside one CanvasLayer the
+# later sibling is the one on top, so the chat has to be the earlier one.
+func _the_chat_is_drawn_under_the_popups() -> void:
+	var world := await _new_world()
+	var chat := _chat_of(world)
+	if chat == null:
+		await _free_world(world)
+		return
+	var layer: Node = chat.get_parent()
+	var siblings: Array = layer.get_children()
+	var chat_index := siblings.find(chat)
+	_check(chat_index >= 0, "the chat lives on the hud layer with the panels")
+	for panel_name in ["CharacterPopup", "EquipmentPopup", "TechniquePopup", "WorkbenchPopup",
+			"WeaponPopup", "AttackPopup"]:
+		var found: Array = world.find_children(panel_name, "", true, false)
+		if found.size() != 1:
+			continue
+		var popup := found[0] as Control
+		if popup.get_parent() != layer:
+			continue
+		_check(siblings.find(chat) < siblings.find(popup),
+				"the chat is behind %s, not over it: %d against %d" % [panel_name, chat_index,
+						siblings.find(popup)])
+	await _free_world(world)
+
+
 func _run() -> void:
 	# Read the viewport the tests actually run in, so a project window-size change
 	# moves the edge cases with it instead of stranding them off screen. In headless
@@ -971,6 +998,7 @@ func _run() -> void:
 	await _every_actor_uses_the_coordinator()
 	await _scene_uses_combat_regen_once()
 	await _a_click_on_the_chat_still_walks_the_player()
+	await _the_chat_is_drawn_under_the_popups()
 	await _the_hud_chat_hears_the_worlds_first_swing()
 
 	if failures == 0:

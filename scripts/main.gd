@@ -487,6 +487,20 @@ func _build_hud() -> void:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(label)
 
+	# The action chat is another view of the same fight: it is told about each event the feedback
+	# node drained, so it never reads the coordinator's queue itself. It is wired here, while the
+	# scene is still being built, because the world ticks at WORLD_PRIORITY and the feedback polls
+	# on the frame after - a chat connected later would quietly miss the first swing. It goes on
+	# the layer before every panel, because the later sibling in a CanvasLayer is the one drawn on
+	# top, and a growing report must never sit over a panel the player opened. It is not in
+	# `_popup_covers`, and it ignores the mouse, so a click on a line is a click on the world.
+	_log = CombatLog.new()
+	_log.name = "CombatLog"
+	layer.add_child(_log)
+	_log.bind_actors(_actors)
+	if _feedback != null and not _feedback.swing_reported.is_connected(_log.append_swing):
+		_feedback.swing_reported.connect(_log.append_swing)
+
 	_popup = CharacterPopup.new()
 	_popup.name = "CharacterPopup"
 	_popup.visible = false
@@ -531,18 +545,6 @@ func _build_hud() -> void:
 	_weapon_popup.name = "WeaponPopup"
 	_weapon_popup.visible = false
 	layer.add_child(_weapon_popup)
-
-	# The action chat is another view of the same fight: it is told about each event the feedback
-	# node drained, so it never reads the coordinator's queue itself. It is wired here, while the
-	# scene is still being built, because the world ticks at WORLD_PRIORITY and the feedback polls
-	# on the frame after - a chat connected later would quietly miss the first swing. It is not in
-	# `_popup_covers`, and it ignores the mouse, so a click on a line is a click on the world.
-	_log = CombatLog.new()
-	_log.name = "CombatLog"
-	layer.add_child(_log)
-	_log.bind_actors(_actors)
-	if _feedback != null and not _feedback.swing_reported.is_connected(_log.append_swing):
-		_feedback.swing_reported.connect(_log.append_swing)
 
 
 func _grid_shader() -> Shader:
