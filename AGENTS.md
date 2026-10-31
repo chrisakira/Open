@@ -4,7 +4,7 @@ This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; chara
 
 This repo is **not** `Project_OPEN`. Do not copy that architecture, docs, or code unless the human asks.
 
-The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. Skills, titles, spend, and equipment exist in sim/tests; the Godot scene currently walks, takes damage, and regens.
+The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. The player owns the five starter items (C++ setup command), and the scene walks, fights with the typed model, performs techniques, shows held models, swing motion and damage numbers, and carries the character, equipment, technique and workbench panels. Crafting, repair and enchanting run through the coordinator's queue; the scene places the two benches.
 
 ## Language split
 

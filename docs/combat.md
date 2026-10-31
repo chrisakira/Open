@@ -58,11 +58,11 @@ Attacking the same faction is allowed. The popup is how you choose to do it.
 
 ## 2. Range — locked
 
-Melee range comes from the weapon. Until the item catalog exists, use one generic constant, separate from `MoveOrder::kArriveRadius` (0.4). Walking uses walk speed and that arrive radius toward a point beside the target, not inside them.
+Melee range comes from the weapon. The built rule resolves the attacker's reach from what the sheet actually holds (the held weapon's maximum reach, horizontal, Y ignored); bare hands fall back to 1.5, still separate from `MoveOrder::kArriveRadius` (0.4). Walking uses walk speed and that arrive radius toward a point beside the target, not inside them.
 
-Placeholder range: `1.5` horizontal. Height ignored, same as walking. Out of range → walk. In range → stop walking and swing.
+Fallback range, bare hands: `1.5` horizontal. Height ignored, same as walking. Out of range → walk. In range → stop walking and swing.
 
-When a weapon has a reach value, that value replaces the placeholder for that swing — **locked target, not built**: `weapons.md` owns per-weapon maximum reach and the minimum-reach penalty, both measured horizontally with Y ignored, and pursuit keeps the existing arrive radius. Until that switch lands, the 1.5 placeholder is the built rule in both `Character::attack_velocity_at` and the session's order reconciliation, and those two must change together. Ranged: section 10.
+A weapon's own reach replaces that fallback for each swing — **built**: per-weapon maximum reach and the strict minimum-reach penalty run in both `Character::attack_velocity_at` and the session's order reconciliation, measured horizontally with Y ignored, and pursuit keeps the existing arrive radius. Ranged: section 10.
 
 ## 3. The swing — locked
 
@@ -118,7 +118,7 @@ The scalar formula below is **retired**, kept only as a record of what the typed
 
 Damage must not be `k × effective Strength`. Level multiplies attributes, not HP. Toughness in this formula is the **base**, not effective, for the same reason — and it is the **defender's** base Toughness. The attacker is never asked to soak its own blow.
 
-Same weapon-skill pick as attack speed. Placeholders until the item catalog exists: `weapon = 8`, `armour = 0`, `shield = 0` (no shield). A weapon-block uses that weapon’s block value (placeholder = its `weapon` value). Unarmed dodge has `shield = 0`.
+Same weapon-skill pick as attack speed. These were the placeholders of the scalar era, kept only inside the retired formula's record: `weapon = 8`, `armour = 0`, `shield = 0` (no shield). The typed model that replaced the formula reads all three from the resolved attack and defence profiles.
 
 `attack_skill = weapon trained / 200`  
 `defend_skill = Blocking or Dodging trained / 200` (section 6)  
