@@ -532,19 +532,32 @@ func _a_reported_event_comes_through_untouched() -> void:
 	log.free()
 
 
-func _run() -> void:
-	await _every_outcome_is_one_true_sentence()
-	await _a_defence_worth_nothing_is_still_named()
-	await _a_zero_without_a_defence_refuses_to_invent_one()
-	await _names_come_from_the_scene_and_stay_plain_text()
-	await _the_amount_is_the_number_the_float_prints()
-	await _the_chat_keeps_the_last_eight_lines()
-	await _the_panel_never_eats_a_click_and_never_leaves_the_screen()
-	await _the_panel_regrows_when_the_entries_wrap()
-	await _the_chat_holds_no_second_drain_of_its_own()
-	await _a_reported_event_comes_through_untouched()
+# A runtime error inside a case prints an engine error and abandons that function, so "no FAIL
+# lines" cannot tell a passing case from one that never finished. Every case is run through this,
+# and each has to make a minimum number of checks of its own to count as having run.
+func _case(what: String, minimum: int, callable: Callable) -> void:
+	var before := checks
+	await callable.call()
+	var made := checks - before
+	_check(made >= minimum, "%s ran its own checks: %d against a floor of %d" % [what, made,
+			minimum])
 
-	_check(checks > 40, "the suite ran its full set of checks (ran %d)" % checks)
+
+func _run() -> void:
+	await _case("the six sentences", 12, _every_outcome_is_one_true_sentence)
+	await _case("a defence worth nothing", 7, _a_defence_worth_nothing_is_still_named)
+	await _case("a zero without a defence", 7, _a_zero_without_a_defence_refuses_to_invent_one)
+	await _case("names from the scene", 5, _names_come_from_the_scene_and_stay_plain_text)
+	await _case("the shared amount", 25, _the_amount_is_the_number_the_float_prints)
+	await _case("the last eight lines", 9, _the_chat_keeps_the_last_eight_lines)
+	await _case("click-through and bounds", 45,
+			_the_panel_never_eats_a_click_and_never_leaves_the_screen)
+	await _case("entries wrap and the panel regrows", 6,
+			_the_panel_regrows_when_the_entries_wrap)
+	await _case("no second drain", 12, _the_chat_holds_no_second_drain_of_its_own)
+	await _case("an event comes through untouched", 4, _a_reported_event_comes_through_untouched)
+
+	_check(checks > 170, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Combat log: all checks passed")
 	quit(1 if failures else 0)

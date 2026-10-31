@@ -40,6 +40,7 @@ constexpr open::DefinitionId kPlate = 107;     // 100% of everything, on the che
 constexpr open::DefinitionId kCrusher = 108;   // a heavy blunt fixture, to reach a stun
 constexpr open::DefinitionId kBrandscale = 109;  // a chest that eats most blunt and no cut
 constexpr open::DefinitionId kKite = 110;        // a 30% shield, for the wear boundary
+constexpr open::DefinitionId kWisp = 111;        // the smallest positive damage there is
 constexpr open::MaterialId kMaterial = 11;
 constexpr std::uint64_t kAttackerId = 1;
 constexpr std::uint64_t kDefenderId = 2;
@@ -132,6 +133,15 @@ const std::shared_ptr<const open::ItemCatalog> &catalogue() {
 		items.push_back(brandscale);
 
 		items.push_back(shield_definition(kKite, "Kite_Fixture", 30.0));
+
+		// The smallest positive damage a definition can hold. It is a legal weapon - the
+		// catalog asks only that some component be positive - and once the rank-1 trained
+		// fraction is multiplied in it underflows to nothing at all, which is the only way
+		// the rules can produce a swing with no offense behind it.
+		items.push_back(weapon_definition(kWisp, "Wisp_Fixture", open::HandUse::OneHanded,
+										 parts(std::numeric_limits<double>::denorm_min(), 0.0, 0.0),
+										 0.0, 1.5, 25.0, open::BasicSkill::OneHandedWeapons,
+										 open::AdvancedSkill::Sword));
 
 		open::ItemDefinition plate;
 		plate.id = kPlate;
@@ -625,6 +635,54 @@ void a_worthless_defence_is_attempted_paid_and_unrewarded() {
 	expect_true("the attacker still landed and trained",
 				hit->damage > 0.0f &&
 					attacker.basic(open::BasicSkill::OneHandedWeapons).xp > weapon_before.xp);
+}
+
+// A swing with nothing in it. The wisp's damage is positive to the catalog and nothing to the
+// arithmetic - the rank-1 trained fraction multiplies the smallest positive double there is down
+// to zero - so the blow draws no part, prevents nothing, nullifies nothing and arrives as nothing.
+// Every one of those numbers is also what a cooling defence produces, and that is the whole
+// reason the answer has to travel in the report: a defence really was attempted here, and it was
+// a dodge.
+void a_swing_with_nothing_in_it_still_meets_a_real_defence() {
+	open::Character attacker = sheet(kAttackerId, open::Attribute::Strength);
+	open::Character defender = sheet(kDefenderId);
+	wear(attacker, kWisp, 420, open::Slot::RightHand);
+	attacker.set_attack_target(kDefenderId);
+	std::mt19937_64 rng(15);
+
+	const double defence_stamina = stamina(defender);
+	const std::optional<open::SwingResult> nothing = swing(attacker, defender, rng);
+	expect_true("the blow was still performed", nothing.has_value());
+	if (!nothing) {
+		return;
+	}
+	// The numbers a listener might be tempted to read an answer out of - all of them empty.
+	expect_close("it arrives as nothing", nothing->damage, 0.0f, 1e-9);
+	expect_true("it prevents nothing", nothing->prevented == 0.0);
+	expect_true("it nullifies nothing, because there was nothing to nullify", !nothing->nullified);
+	expect_true("and it draws no body part", !nothing->part.has_value());
+	// And none of that was the defence's doing. The defender answered, paid for it and started
+	// its clock, so the answer it made is a fact the exchange has to carry.
+	expect_true("the ready defence is reported as the dodge it was",
+				nothing->defense_action.has_value() &&
+					*nothing->defense_action == open::DefendAction::Dodge);
+	expect_close("and it paid its own price", defence_stamina - stamina(defender), kDefenseCost,
+				 1e-3);
+	expect_true("and started its clock", defender.defend_cooldown_remaining() > 0.0f);
+
+	// The pair, so the pairing is proved rather than asserted: the same empty numbers with no
+	// defence running at all. One was a dodge and one was nothing, and no amount of staring at
+	// the four figures above can tell them apart.
+	attacker.advance_combat_clocks(600.0f);
+	const std::optional<open::SwingResult> cooling = swing(attacker, defender, rng);
+	expect_true("the next wisp blow is performed", cooling.has_value());
+	if (cooling) {
+		expect_close("just as empty", cooling->damage, 0.0f, 1e-9);
+		expect_true("just as nothing prevented", cooling->prevented == 0.0);
+		expect_true("and not nullified", !cooling->nullified);
+		expect_true("and no part", !cooling->part.has_value());
+		expect_true("but with no defence to report", !cooling->defense_action.has_value());
+	}
 }
 
 // ------------------------------------------------------------------- routing
@@ -1172,6 +1230,7 @@ int main() {
 	items_wear_when_they_are_used_and_not_otherwise();
 	a_defence_costs_a_defence_and_shares_one_clock();
 	a_worthless_defence_is_attempted_paid_and_unrewarded();
+	a_swing_with_nothing_in_it_still_meets_a_real_defence();
 	a_part_is_drawn_only_when_something_arrives();
 	blunt_feeds_the_meter_and_a_fall_clears_it();
 	a_blunt_killing_blow_stuns_nobody();
