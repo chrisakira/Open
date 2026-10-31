@@ -539,14 +539,17 @@ func _tiny_and_technique_events_stay_legible() -> void:
 	var small := {
 		"actor_id": 1, "target_id": 3, "part": 1, "damage": 0.001, "prevented": 0.0,
 		"nullified": false, "technique_id": 201, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5,
 	}
 	var nothing := {
 		"actor_id": 1, "target_id": 3, "part": 0, "damage": 0.0, "prevented": 0.0,
 		"nullified": true, "technique_id": 202, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5,
 	}
 	var big := {
 		"actor_id": 2, "target_id": 3, "part": 1, "damage": 900.0, "prevented": 0.0,
 		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 2.0,
 	}
 	feedback.call("_play_reports", [small])
 	var labels := _labels_of(feedback)
@@ -577,6 +580,7 @@ func _tiny_and_technique_events_stay_legible() -> void:
 	var chip := {
 		"actor_id": 1, "target_id": 3, "part": 1, "damage": 0.00000001, "prevented": 0.0,
 		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5,
 	}
 	feedback.call("_play_reports", [chip])
 	labels = _labels_of(feedback)
@@ -643,6 +647,84 @@ func _two_weapons_of_one_model_hang_in_two_hands() -> void:
 	await _free(world)
 
 
+func _the_swing_plays_the_clip_c_asks_for() -> void:
+	var world: Node = await _world()
+	var feedback = _feedback_of(world)
+	var sheet = _sheet_of(world, "Player")
+	var player_node: Node = world.get_node("Player")
+	if feedback == null:
+		await _free(world)
+		return
+	world.set_physics_process(false)
+	var players: Array = player_node.find_children("CharacterAnimationPlayer", "AnimationPlayer",
+			true, false)
+	_check(players.size() == 1, "the player model has one animation player")
+	if players.size() != 1:
+		world.set_physics_process(true)
+		await _free(world)
+		return
+	var anim: AnimationPlayer = players[0]
+
+	# The stance follows the held, usable thing.
+	var sword := _id_of_model(sheet, "Sword")
+	_check(sheet.equip_item(sword, SLOT_RIGHT_HAND), "the sword is held")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Sword_Idle", "a usable weapon stands the armed way")
+	_check(is_zero_approx(player_node.get_node("Visual").rotation_degrees.x),
+			"and the body itself no longer tilts to swing")
+
+	# A heavy event on this actor starts the heavy clip at the event's own duration.
+	var heavy := {"actor_id": 1, "target_id": 3, "part": 1, "damage": 0.5, "prevented": 0.0,
+			"nullified": false, "technique_id": 3, "attacker_item": sword, "defender_item": 0,
+			"attack_cooldown": 2.0}
+	feedback.call("_play_reports", [heavy])
+	_check(anim.current_animation == &"Sword_Heavy_Combo", "the heavy event plays the heavy clip")
+	var clip_length: float = anim.get_animation(&"Sword_Heavy_Combo").length
+	_check(absf(anim.speed_scale - clip_length / 2.0) < 0.0001, "at the event's own two seconds")
+	_check(int(feedback.swing_motion_count(1)) == 1, "and that is exactly one motion")
+
+	# What swings is the event's attacker_item, not whatever the equipment says now.
+	var bare: Dictionary = heavy.duplicate()
+	bare["attacker_item"] = 0
+	bare["technique_id"] = 0
+	feedback.call("_play_reports", [bare])
+	_check(anim.current_animation == &"Punch_Jab", "an unarmed event jabs with the sword still held")
+	_check(int(feedback.swing_motion_count(1)) == 2, "the second event is the second motion")
+
+	# Let the jab finish - stances are only rewritten between attacks.
+	for step in range(100):
+		if anim.current_animation != &"Punch_Jab":
+			break
+		anim.advance(0.2)
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "sword off")
+	_check(sheet.equip_item(_id_of_model(sheet, "Shield_Round"), SLOT_LEFT_HAND), "shield up")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Idle_Shield", "shield-only stands the shielded way")
+	_check(sheet.equip_item(sword, SLOT_RIGHT_HAND), "the sword goes back up")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Sword_Idle", "a usable weapon wins the stance")
+
+	# Nothing held: the exported idle. The two-hander with one dead arm falls back to it
+	# too - and keeps its mesh, which is a limb fact, not an inventory one.
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "sword off again")
+	_check(sheet.unequip_item(SLOT_LEFT_HAND), "shield off too")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Idle_FoldArms", "nothing held stands down")
+	_check(sheet.equip_item(_id_of_model(sheet, "Spear"), SLOT_LEFT_HAND), "the spear is gripped")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Sword_Idle", "the two-hander counts as a weapon held")
+	_check(sheet.apply_damage(2, 1.0e30), "the left arm falls")
+	feedback.call("_physics_process", 0.1)
+	_check(anim.current_animation == &"Idle_FoldArms", "the unusable two-hander falls back down")
+	var spears := 0
+	for mesh in _held_meshes(world):
+		if String(mesh.get_meta("model_key", "")) == "Spear":
+			spears += 1
+	_check(spears == 1, "and the disabled arm keeps the spear's mesh")
+	world.set_physics_process(true)
+	await _free(world)
+
+
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
@@ -651,6 +733,7 @@ func _run() -> void:
 	await _a_dead_limb_keeps_its_mesh()
 	await _the_dummy_view_needs_no_orders()
 	await _one_performed_swing_one_motion()
+	await _the_swing_plays_the_clip_c_asks_for()
 	await _landed_damage_shows_the_number_that_arrived()
 	await _tiny_and_technique_events_stay_legible()
 	_check(checks > 50, "the suite ran its full set of checks (ran %d)" % checks)

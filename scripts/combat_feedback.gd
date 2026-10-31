@@ -41,8 +41,6 @@ const GRIPS := {
 }
 const GRIP_FALLBACK := {"offset": Vector3.ZERO,
 		"rotation_degrees": Vector3(90.0, 0.0, 0.0), "scale": 0.22}
-const SWING_ANGLE := -34.0
-const SWING_SECONDS := 0.28
 const LABEL_LIFETIME := 1.1
 const LABEL_HEIGHT := 2.35
 const MIN_FONT_SIZE := 22
@@ -57,7 +55,6 @@ var _signatures := {}
 # "one motion per performed swing, none for a refused one" is a fact worth checking and a
 # tween's mid-flight angle is not a stable thing to assert. Nothing in the fight reads it.
 var swing_motions := {}
-var _tweens := {}
 var _label_count := 0
 
 
@@ -96,6 +93,11 @@ func _report_held_items() -> void:
 			continue
 		var actor_id: int = sheet.get_character_id()
 		var rows: Array = sheet.get_equipment_snapshot()
+		# The stance is asked every tick, signature or no: an arm can fall, or a weapon
+		# become unusable, without one item moving between hands or slots.
+		var pose = _pose_of(actor)
+		if pose != null:
+			pose.set_armed_idle(_stance_of(rows))
 		var wanted := {}
 		var signature := ""
 		for row in rows:
@@ -141,6 +143,31 @@ func _sync_attachments(actor: Node3D, wanted: Dictionary) -> void:
 
 func _holder_key(item_id: int, slot: int) -> String:
 	return "%d:%d" % [item_id, slot]
+
+
+func _stance_of(rows: Array) -> StringName:
+	# The C++ row answers what is held and whether the body works that grip; this only
+	# ranks the answers: a usable weapon arms the stance, else an equipped shield shields
+	# it, else the body stands down. Nothing is inferred past what the rows say.
+	var shield_up := false
+	for row in rows:
+		if bool(row["is_weapon"]) and bool(row["held_usable"]):
+			return &"weapon"
+		if bool(row["is_shield"]) and not (row["slots"] as Array).is_empty():
+			shield_up = true
+	return &"shield" if shield_up else &"unarmed"
+
+
+func _pose_of(actor: Node3D):
+	# The model script lives under Visual, not on the wrapper: the same node player.gd
+	# and standing_dummy.gd drive with update_walk.
+	var visual := actor.get_node_or_null("Visual") as Node3D
+	if visual == null:
+		return null
+	for child in visual.get_children():
+		if child.has_method("set_armed_idle") and child.has_method("play_attack"):
+			return child
+	return null
 
 
 func _attach(actor: Node3D, item_id: int, model_key: String, slot: int) -> void:
@@ -212,7 +239,7 @@ func _play_reports(events: Array) -> void:
 	for event in events:
 		var actor := _actor_for(int(event["actor_id"]))
 		if actor != null:
-			_play_swing(actor, int(event["actor_id"]))
+			_play_swing(actor, int(event["actor_id"]), event)
 		var damage := float(event["damage"])
 		if damage > 0.0:
 			_show_damage(int(event["target_id"]), damage)
@@ -230,21 +257,17 @@ func _actor_for(actor_id: int) -> Node3D:
 	return null
 
 
-func _play_swing(actor: Node3D, actor_id: int) -> void:
-	var visual := actor.get_node_or_null("Visual") as Node3D
-	if visual == null:
-		return
+func _play_swing(actor: Node3D, actor_id: int, event: Dictionary) -> void:
+	# One performed event, one skeletal clip: the technique the event names, the duration
+	# that swing's own attack clock got, and the unarmed answer from the item the event
+	# was swung with - not from whatever the equipment says since. A refused attempt was
+	# never reported, so it never reaches here; a missing clip is warned by the pose and
+	# still counted, because the swing happened whatever the library holds.
 	swing_motions[actor_id] = swing_motion_count(actor_id) + 1
-	var running = _tweens.get(actor_id)
-	if running is Tween and running.is_valid():
-		running.kill()
-	# A lunge, not an animation: the point is that the sheet visibly did something on the frame
-	# C++ says it swung, and that it returns to where it was standing.
-	visual.rotation_degrees.x = 0.0
-	var tween := create_tween()
-	_tweens[actor_id] = tween
-	tween.tween_property(visual, "rotation_degrees:x", SWING_ANGLE, SWING_SECONDS * 0.35)
-	tween.tween_property(visual, "rotation_degrees:x", 0.0, SWING_SECONDS * 0.65)
+	var pose = _pose_of(actor)
+	if pose != null:
+		pose.play_attack(int(event["technique_id"]), float(event["attack_cooldown"]),
+				int(event["attacker_item"]) == 0)
 
 
 func _show_damage(target_id: int, damage: float) -> void:

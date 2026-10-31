@@ -35,6 +35,71 @@ func _run() -> void:
 			_check(absf(first.dot(skeleton.get_bone_pose_rotation(leg))) < 0.9999, path + " animates the model's leg")
 			model.update_walk(0.1, 0.0)
 			_check(player.current_animation == idle, path + " returns to idle")
+			# The combat set: the clips exist, armed idles choose, walk yields to a swing,
+			# and playback wears the duration C++ named for that very swing.
+			for clip in ["Sword_Idle", "Idle_Shield", "Sword_Regular_A", "Sword_Regular_B",
+					"Sword_Heavy_Combo", "Punch_Jab"]:
+				_check(player.has_animation(clip), path + " carries " + clip)
+			_check(player.get_animation(&"Sword_Idle").loop_mode == Animation.LOOP_LINEAR,
+					path + " loops the sword idle without touching the asset")
+			_check(player.get_animation(&"Sword_Regular_A").loop_mode == Animation.LOOP_NONE,
+					path + " leaves its attack clips one-shot")
+
+			model.set_armed_idle(&"weapon")
+			_check(player.current_animation == &"Sword_Idle", path + " stands the armed way")
+			model.set_armed_idle(&"shield")
+			_check(player.current_animation == &"Idle_Shield", path + " stands the shielded way")
+			model.set_armed_idle(&"unarmed")
+			_check(player.current_animation == idle, path + " stands down to its exported idle")
+
+			model.play_attack(1, 2.0, false)
+			_check(player.current_animation == &"Sword_Regular_A",
+					path + " swings regular A for a slash")
+			var clip_length: float = player.get_animation(&"Sword_Regular_A").length
+			_check(absf(player.speed_scale - clip_length / 2.0) < 0.0001,
+					path + " scales the clip to the two seconds C++ gave it")
+			model.update_walk(0.1, 1.0)
+			_check(player.current_animation == &"Sword_Regular_A",
+					path + " lets the walk pass through a swing")
+			_check(absf(player.speed_scale - clip_length / 2.0) < 0.0001,
+					path + " keeps the swing's own speed through that walk call")
+
+			# A repeat of the same clip starts at zero, not where it was left.
+			player.advance(0.4)
+			model.play_attack(1, 2.0, false)
+			_check(absf(player.get_current_animation_position()) < 0.001,
+					path + " restarts a repeated clip at time zero")
+
+			# Finishing hands the body back to the latest walk and its speed.
+			model.update_walk(0.1, 0.6)
+			for step in range(200):
+				if player.current_animation != &"Sword_Regular_A":
+					break
+				player.advance(0.1)
+			await process_frame
+			_check(player.current_animation == &"Walk", path + " resumes walking after the swing")
+			_check(absf(player.speed_scale - 0.6) < 0.0001,
+					path + " restores the latest locomotion speed")
+
+			# The map, and the duration guards.
+			model.play_attack(0, 1.0, false)
+			_check(player.current_animation == &"Sword_Regular_A", path + " basic is regular A")
+			model.play_attack(2, 1.0, false)
+			_check(player.current_animation == &"Sword_Regular_B", path + " thrust is regular B")
+			model.play_attack(3, 1.0, false)
+			_check(player.current_animation == &"Sword_Heavy_Combo",
+					path + " heavy strike is the combo")
+			model.play_attack(0, 1.0, true)
+			_check(player.current_animation == &"Punch_Jab", path + " bare hands jab")
+			model.play_attack(42, 1.0, false)
+			_check(player.current_animation == &"Sword_Regular_A",
+					path + " an unknown id falls back to basic")
+			model.play_attack(1, 0.0, false)
+			_check(absf(player.speed_scale - 1.0) < 0.0001,
+					path + " a zero duration plays at speed one")
+			model.play_attack(1, INF, false)
+			_check(absf(player.speed_scale - 1.0) < 0.0001,
+					path + " an infinite duration plays at speed one")
 			var attachments := model.find_children("*", "BoneAttachment3D", true, false)
 			_check(not attachments.is_empty() and attachments[0].get_bone_name() == "Head", path + " attaches hair to the head bone")
 			if not attachments.is_empty():
