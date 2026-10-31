@@ -302,6 +302,13 @@ void typed_damage_replaces_the_placeholder() {
 				dodged->attack_item.has_value() && *dodged->attack_item == 401);
 	expect_true("a dodge was named as the defence, with nothing held in it",
 				!dodged->defense_item.has_value());
+	// The report says *which* answer ran, from the decision the exchange made, so a
+	// listener never has to infer it: a nullified zero here and an armour-zero blow with
+	// no defence at all (`a_part_is_drawn_only_when_something_arrives`) look identical
+	// through damage, prevention and nullification.
+	expect_true("and the report names that answer as a dodge",
+				dodged->defense_action.has_value() &&
+					*dodged->defense_action == open::DefendAction::Dodge);
 
 	// 2. While that clock runs the defender answers with nothing at all: the same
 	// blow arrives whole, and nothing is spent on it or charged for it.
@@ -319,6 +326,11 @@ void typed_damage_replaces_the_placeholder() {
 					 static_cast<double>(whole->damage), 1e-3);
 		expect_close("nothing was spent on a defence", stamina(defender), cooling_stamina, 1e-3);
 		expect_true("and exactly one named part took it", whole->part.has_value());
+		// A defence still cooling answered nothing, so the report carries no answer - even
+		// though this blow has a part, damage and prevention that all read as "a real
+		// exchange happened". Only the swing itself can say the defence did not run.
+		expect_true("a cooling defence reports no defence at all",
+					!whole->defense_action.has_value());
 	}
 
 	// 3. A defence that cannot pay for itself is still performed, at half, and still
@@ -336,6 +348,11 @@ void typed_damage_replaces_the_placeholder() {
 					 static_cast<double>(half->damage), 1e-3);
 		expect_close("an unpaid defence paid nothing", stamina(defender), 0.0, 1e-6);
 		expect_true("and still started its clock", defender.defend_cooldown_remaining() > 0.0f);
+		// Half a dodge is still the dodge that ran: the report is the attempted answer,
+		// not a measure of what it was worth.
+		expect_true("an exhausted dodge is reported as a dodge",
+					half->defense_action.has_value() &&
+						*half->defense_action == open::DefendAction::Dodge);
 	}
 }
 
@@ -423,8 +440,14 @@ void items_wear_when_they_are_used_and_not_otherwise() {
 	expect_true("a performed attempt wears the weapon", swing(attacker, defender, rng).has_value());
 	expect_true("by exactly one point", attacker.instance(406)->durability == 99u);
 
-	// Refused attempts wear nothing, for every reason a refusal has.
+	// Refused attempts wear nothing, for every reason a refusal has. A refusal is not an
+	// attempt either, so it also spends nothing else: no stamina on either sheet, and not
+	// one draw from the engine that decides the body part.
 	const unsigned after_one = attacker.instance(406)->durability;
+	const double attacker_stamina = stamina(attacker);
+	const double defender_stamina = stamina(defender);
+	std::mt19937_64 probe(rng);
+	const std::uint64_t next_draw = probe();
 	expect_true("a cooling clock refuses", !swing(attacker, defender, rng).has_value() &&
 											   attacker.instance(406)->durability == after_one);
 	attacker.advance_combat_clocks(600.0f);
@@ -436,10 +459,16 @@ void items_wear_when_they_are_used_and_not_otherwise() {
 	expect_true("an order on someone else refuses",
 				!swing(attacker, defender, rng).has_value() &&
 					attacker.instance(406)->durability == after_one);
+	expect_close("a refused swing spent no stamina on its own sheet", stamina(attacker),
+				 attacker_stamina, 1e-6);
+	expect_close("nor on the sheet it never met", stamina(defender), defender_stamina, 1e-6);
 	attacker.set_attack_target(kDefenderId);
 	defender.damage(open::BodyPart::Torso, 1.0e30f);
 	expect_true("a dead target refuses", !swing(attacker, defender, rng).has_value() &&
 											 attacker.instance(406)->durability == after_one);
+	// Every refusal above, checked against the engine position the first of them would
+	// have advanced: a swing that never happened draws no part.
+	expect_true("and none of them drew a body part", rng() == next_draw);
 	(void)outsider;
 
 	// A blow a shield partly turns aside still wore the sword, and wore the shield too:
@@ -460,6 +489,11 @@ void items_wear_when_they_are_used_and_not_otherwise() {
 					!turned->nullified && turned->prevented > 0.0 && turned->damage > 0.0f);
 		expect_true("and named itself as the defence",
 					turned->defense_item.has_value() && *turned->defense_item == 408);
+		// Partly prevented and partly landed: the block is in the report on its own
+		// right, so a listener needs neither the item nor the prevention figure to see it.
+		expect_true("and the report names the 60% answer as a block",
+					turned->defense_action.has_value() &&
+						*turned->defense_action == open::DefendAction::Block);
 	}
 	expect_true("the sword wore", rider.instance(407)->durability == 99u);
 	expect_true("and so did the shield", guarded.instance(408)->durability == 99u);
@@ -515,6 +549,9 @@ void a_defence_costs_a_defence_and_shares_one_clock() {
 	expect_true("the defence answered", first.has_value() && first->nullified);
 	expect_close("and paid its own cost", before - stamina(defender), kDefenseCost, 1e-3);
 	expect_true("the shared defence clock is running", defender.defend_cooldown_remaining() > 0.0f);
+	expect_true("and the answer that started it is in the report",
+				first.has_value() && first->defense_action.has_value() &&
+					*first->defense_action == open::DefendAction::Dodge);
 	expect_close("the attacker paid its weapon cost", stamina(attacker), 92.0, 1e-3);
 
 	// While the clock runs, nothing is defended and nothing is charged for it.
@@ -523,6 +560,8 @@ void a_defence_costs_a_defence_and_shares_one_clock() {
 	const std::optional<open::SwingResult> second = swing(attacker, defender, rng);
 	expect_true("nothing was defended", second.has_value() && !second->nullified);
 	expect_close("so nothing was paid for a defence", stamina(defender), between, 1e-3);
+	expect_true("because the shared clock left the target with no defence to report",
+				second.has_value() && !second->defense_action.has_value());
 
 	// An unpaid defence is still performed, at half, and still starts its clock.
 	settle(attacker, defender);
@@ -568,6 +607,12 @@ void a_worthless_defence_is_attempted_paid_and_unrewarded() {
 	expect_close("and all four points arrive", hit->damage, 0.04f / 1.05f, 1e-4);
 	expect_true("the buckler was named as the defence",
 				hit->defense_item.has_value() && *hit->defense_item == 412);
+	// The pair that makes the report necessary rather than readable: this blow prevented
+	// nothing, so "prevented == 0" cannot mean "nobody defended", and the cooling swing in
+	// `typed_damage_replaces_the_placeholder` has the same zero prevention with no defence.
+	expect_true("a block that prevented nothing is still reported as a block",
+				hit->defense_action.has_value() &&
+					*hit->defense_action == open::DefendAction::Block);
 	expect_close("its owner paid for the attempt", stamina_before - stamina(defender), kDefenseCost,
 				 1e-3);
 	expect_true("and started its clock", defender.defend_cooldown_remaining() > 0.0f);
@@ -637,6 +682,10 @@ void a_part_is_drawn_only_when_something_arrives() {
 	// a gamble, and every blow that arrives is checked as it lands.
 	bool saw_torso = false;
 	bool saw_elsewhere = false;
+	// The zero the presentation must never read as a defence: a blow the plate soaked to
+	// nothing while the buckler sat cooling. It has no damage, no prevention and no
+	// nullification, which is every number a phantom "blocked" would be guessed from.
+	bool saw_armour_zero_undefended = false;
 	for (int attempt = 0; attempt < 400 && !(saw_torso && saw_elsewhere); ++attempt) {
 		const std::optional<open::SwingResult> one = swing(hitter, target, sweep);
 		if (!one.has_value()) {
@@ -644,6 +693,14 @@ void a_part_is_drawn_only_when_something_arrives() {
 			return;
 		}
 		expect_true("the 0% buckler prevents nothing", one->prevented == 0.0);
+		if (attempt == 0) {
+			expect_true("the opening blow met the ready buckler, and says block",
+						one->defense_action.has_value() &&
+							*one->defense_action == open::DefendAction::Block);
+		} else {
+			expect_true("every later blow met a cooling buckler, and says nothing",
+						!one->defense_action.has_value());
+		}
 		hitter.advance_combat_clocks(600.0f);  // the buckler stays cooling throughout
 		if (!one->part.has_value()) {
 			expect_true("an arriving blow names the part it took", false);
@@ -655,6 +712,9 @@ void a_part_is_drawn_only_when_something_arrives() {
 			// armour result of zero does not un-aim the swing that was aimed at it.
 			expect_true("the armoured torso pays nothing", one->damage == 0.0f);
 			expect_true("while still being named as the part", one->part.has_value());
+			if (!one->defense_action.has_value()) {
+				saw_armour_zero_undefended = true;
+			}
 		} else {
 			saw_elsewhere = true;
 			expect_true("and the same blow lands anywhere else", one->damage > 0.0f);
@@ -662,6 +722,8 @@ void a_part_is_drawn_only_when_something_arrives() {
 	}
 	expect_true("the sweep took the armoured torso", saw_torso);
 	expect_true("and somewhere unarmoured", saw_elsewhere);
+	expect_true("including an armour-zero blow that had no defence to report",
+				saw_armour_zero_undefended);
 }
 
 // ---------------------------------------------------------------------- stun

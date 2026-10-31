@@ -370,6 +370,9 @@ void a_technique_is_performed_even_when_it_does_not_hurt() {
 	expect_true("and was nullified", turned->nullified);
 	expect_true("it was the technique all the same",
 				turned->technique == std::optional<open::TechniqueId>(kSlash));
+	expect_true("and the answer that turned it aside was a dodge",
+				turned->defense_action.has_value() &&
+					*turned->defense_action == open::DefendAction::Dodge);
 	expect_close("the technique is still spent, cooldown and all",
 				 cooldown_of(attacker, kSlash), 6.0, 1e-9);
 	expect_close("the weapon wore exactly once for the attempt",
@@ -393,6 +396,9 @@ void a_technique_is_performed_even_when_it_does_not_hurt() {
 	expect_true("the blow was answered by the held buckler", blocked->defense_item.has_value());
 	expect_true("which prevented nothing, and is not a nullify",
 				blocked->prevented == 0.0f && !blocked->nullified);
+	expect_true("yet the report still calls it the block it was",
+				blocked->defense_action.has_value() &&
+					*blocked->defense_action == open::DefendAction::Block);
 	expect_true("and arrived as the technique",
 				blocked->technique == std::optional<open::TechniqueId>(kSlash));
 	expect_close("with its clock started", cooldown_of(swordsman, kSlash), 6.0, 1e-9);
@@ -425,6 +431,11 @@ void a_technique_is_performed_even_when_it_does_not_hurt() {
 			expect_true("an armour-zero blow still performed its technique",
 						one->technique == std::optional<open::TechniqueId>(kSlash) &&
 							cooldown_of(hitter, kSlash) > 0.0);
+			// The half-paid dodge is what this answer was, and the report says so even
+			// though the armour, not the defence, is why the total came to nothing.
+			expect_true("and it reports the dodge that ran behind the armour",
+						one->defense_action.has_value() &&
+							*one->defense_action == open::DefendAction::Dodge);
 			expect_true("and it earned no weapon XP for a hit that did no damage",
 						hitter.basic(open::BasicSkill::OneHandedWeapons).xp == xp_now);
 		}

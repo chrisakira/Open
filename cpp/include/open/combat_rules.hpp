@@ -44,6 +44,13 @@ struct SwingResult {
 	// and the item a block was made with. A dodge names neither.
 	std::optional<ItemId> attack_item;
 	std::optional<ItemId> defense_item;
+	// Which answer the defender actually attempted, written from the decision this swing
+	// made and from nothing else: `Block` or `Dodge` when a ready defence met the blow, and
+	// no value when there was no defence to attempt - cooling, stunned, or holding nothing
+	// that defends. A block that prevented nothing is still a block, and a dodge that was
+	// only half paid for is still a dodge; no damage, prevention or nullification figure
+	// can be read back into this, because each of those zeros has several causes.
+	std::optional<DefendAction> defense_action = std::nullopt;
 	// The technique this swing performed, when it performed one. A basic attack reports
 	// none, which is a different fact from a technique that did no damage.
 	std::optional<TechniqueId> technique;

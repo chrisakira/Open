@@ -874,6 +874,9 @@ int main() {
 		// whole - and it still spends the defence that won.
 		expect_true("a ready defence turns the first swing aside", first.has_value() && first->nullified);
 		expect_close("a nullified blow does no damage", first->damage, 0.0f, 1e-6);
+	expect_true("and the report says a dodge ran, not that nothing did",
+				first.has_value() && first->defense_action.has_value() &&
+					*first->defense_action == open::DefendAction::Dodge);
 		expect_one_hp_charge(target, before_target, 0.0f, "a nullified swing charges main HP once");
 		expect_close("a winning defence still spends its clock", target.defend_cooldown_remaining(),
 					 kRank1Cooldown);
@@ -887,6 +890,8 @@ int main() {
 
 		const std::optional<open::SwingResult> second = attacker.try_melee_swing(target, self, other, rng);
 		expect_true("a cooling defence cannot stop the next swing", second.has_value() && !second->nullified);
+		expect_true("and cannot report a defence either", second.has_value() &&
+															  !second->defense_action.has_value());
 		expect_close("the cooling defence lets the hit land in full", second.has_value() ? second->damage : 0.0f,
 					 kRank100Damage / kUnpaidDefenceDivisor, 0.001f);
 		expect_close("only the landed hit is charged to main HP",
@@ -921,6 +926,11 @@ int main() {
 																			   at(1.5f, 0.0f, 0.0f), rng);
 		expect_true("the swing against a shield is still an attempt", swing.has_value());
 		expect_true("the shield nullifies it", swing.has_value() && swing->nullified);
+		// A block worth everything, so a nullified zero names the block rather than
+		// leaving presentation to work it out from the fact that nothing arrived.
+		expect_true("a shield that stopped everything reports a block",
+					swing.has_value() && swing->defense_action.has_value() &&
+						*swing->defense_action == open::DefendAction::Block);
 		expect_close("a nullified swing does no damage", swing.has_value() ? swing->damage : -1.0f, 0.0f);
 		expect_true("a nullified swing names no part", swing.has_value() && !swing->part.has_value());
 		// The shield's owner pays the defence and nothing else: no wound, no pool
@@ -969,6 +979,9 @@ int main() {
 																			   at(1.5f, 0.0f, 0.0f), rng);
 		expect_true("the swing at a trained dodger is an attempt", dodged.has_value());
 		expect_true("a trained dodge nullifies a rank-1 punch", dodged.has_value() && dodged->nullified);
+		expect_true("and reports the dodge, not the punch it stopped",
+					dodged.has_value() && dodged->defense_action.has_value() &&
+						*dodged->defense_action == open::DefendAction::Dodge);
 		expect_close("the dodged swing does no damage", dodged.has_value() ? dodged->damage : -1.0f, 0.0f);
 
 		expect_true("a dodger gains no attack order", !kicker.attack_target().has_value());

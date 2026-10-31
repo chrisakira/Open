@@ -1020,13 +1020,46 @@ int main() {
 		int stunned_frames = 0;
 		double health_at_expiry = down.pool(open::PoolKind::Hp).current;
 		double health_before_stun_window = health_at_expiry;
+		// Blows the stun took without an answer, counted so the claim below is about a
+		// swing that really happened rather than about an empty queue.
+		int stunned_blows = 0;
+		// The same sheet in the frames before the freeze: it answered there, on the very
+		// clocks the stun now holds. That is what makes the window's silence the stun's own
+		// doing rather than a queue with nothing in it - a value can only come from a
+		// defence that was ready and made, and none is reported once the sheet is down.
+		int free_answers = 0;
+		for (const open::CombatEvent &event : session.take_swing_events()) {
+			if (event.target == down.id() && event.swing.defense_action.has_value()) {
+				++free_answers;
+			}
+		}
+		expect_true("the sheet the stun is about to hold had been answering", free_answers > 0);
 		while (down.is_stunned() && stunned_frames < 60) {
 			const double stun_before = down.stun_remaining();
 			const double hp_before = down.pool(open::PoolKind::Hp).current;
 			exhaust_defence(left);
 			exhaust_defence(right);
+			// Drain first: the queue is the session's, and a frame can only be read
+			// unambiguously once everything older than it has been taken out.
+			session.take_swing_events();
 			expect_true("a tenth of a second passes", session.step(0.1f, world));
 			++stunned_frames;
+			// A frame that spent the stun whole is the only kind this claim is about: past
+			// the expiry the sheet is free to answer again, and this fixture counts that
+			// resumption separately.
+			if (stun_before > 0.1) {
+				const std::vector<open::CombatEvent> frame = session.take_swing_events();
+				for (const open::CombatEvent &event : frame) {
+					if (event.target == down.id()) {
+						++stunned_blows;
+						// A stunned sheet defends with nothing, so the report has nothing
+						// to name - the swing was performed, and the answer was not.
+						expect_true("a swing at a stunned sheet reports no defence",
+									!event.swing.defense_action.has_value());
+					}
+				}
+				expect_true("and that frame was read once", session.take_swing_events().empty());
+			}
 			// A frame that runs out of the stun is not a frozen frame: the clocks of the
 			// unstunned remainder run, and so may the swing, which is the resumption
 			// asserted below.
@@ -1056,6 +1089,9 @@ int main() {
 					stunned_frames >= 19 && stunned_frames <= 21);
 		expect_true("blows kept landing on a stunned sheet: a stun is not a shield",
 					health_at_expiry < health_before_stun_window);
+		// The claim above is only interesting if there were swings to read, and the queue
+		// was not simply empty all the way through the freeze.
+		expect_true("and the frozen window held swings worth reporting", stunned_blows > 0);
 
 		// And the freeze was the whole of it: the moment the stun is gone, the clocks the
 		// stun held start running again, and so does the sheet.
@@ -1224,6 +1260,12 @@ int main() {
 						first[0].swing.part.has_value());
 			expect_true("with the technique it performed, which here is none",
 						!first[0].swing.technique.has_value());
+			// Both bars were drained, so the answer this blow met was a real but unpaid
+			// dodge - and the event carries it, which is the whole reason the field is
+			// copied with the swing rather than rebuilt downstream.
+			expect_true("and with the defence it really met: the unpaid dodge",
+						first[0].swing.defense_action.has_value() &&
+							*first[0].swing.defense_action == open::DefendAction::Dodge);
 			// The clock the swing started, carried whole: both bars were drained, so this
 			// is the rank-1 exhausted doubling clamped to the band's top - presentation
 			// scales its clip to this, not to whatever the clock reads at drain.
@@ -1268,6 +1310,12 @@ int main() {
 		if (!turned.empty()) {
 			expect_true("reported as nullified, with no damage to show",
 						turned[0].swing.nullified && turned[0].swing.damage == 0.0f);
+			// The zero has a reason, and the event says which: this target was fresh, paid
+			// for its answer, and the answer was a dodge. Nothing here can be guessed from
+			// the damage figure, which is zero for a dozen other reasons too.
+			expect_true("and as the dodge that turned it aside",
+						turned[0].swing.defense_action.has_value() &&
+							*turned[0].swing.defense_action == open::DefendAction::Dodge);
 			// What a dodge worth everything prevents is the whole offensive - before the
 			// Toughness soak a blow that arrives would have paid, which it now does not.
 			// `weapon_combat` pins this same equality on a bigger blow.
@@ -1305,7 +1353,18 @@ int main() {
 			expect_true("in roster order", pair[0].actor == 7u && pair[1].actor == 8u);
 			expect_true("both against the sheet they were ordered at",
 						pair[0].target == 9u && pair[1].target == 9u);
+			// One defence clock, shared, spent by the first blow: the frame's two events
+			// differ in exactly the one way the clocks say they should, in the order the
+			// roster was given. A downstream listener that inferred the answer from damage
+			// would have to know this to tell them apart.
+			expect_true("the first met the defence that was ready",
+						pair[0].swing.defense_action.has_value() &&
+							*pair[0].swing.defense_action == open::DefendAction::Dodge);
+			expect_true("and the second met the same defence cooling",
+						!pair[1].swing.defense_action.has_value());
 		}
+		expect_true("a frame reported once: the pair is not queued twice",
+					crowded.take_swing_events().empty());
 
 		// A dead sheet is not swung at, so a kill cannot keep generating events afterwards.
 		open::Character killer = make_character(10);

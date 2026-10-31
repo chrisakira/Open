@@ -322,6 +322,16 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	result.final = resolution->final;
 	result.attack_item = attack->item;
 	result.defense_item = defence_ready ? defence->item : std::nullopt;
+	// Which answer this swing met, written from the one decision that knows: `defence_ready`
+	// is what the mitigation, the prevention and the defender's clock were all priced with,
+	// so the report can never disagree with the exchange it describes, and nothing here has
+	// to re-read equipment or clocks that later frames have already moved. A ready defence
+	// is named whatever it was worth - a block that prevented nothing is a block, a dodge
+	// that could not pay is a dodge - and a stunned or cooling defender made no answer to
+	// name. The default stays empty, which is the whole of the negative case.
+	if (defence_ready) {
+		result.defense_action = defence->action;
+	}
 	// The clock this very attempt set, whole: the report carries the duration, not a
 	// later reading of a clock that frames have already been ticking down.
 	result.attack_cooldown = attack_cooldown_;
