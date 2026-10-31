@@ -1,6 +1,13 @@
 class_name CombatFeedback
 extends Node3D
 
+# One report per performed swing, carrying the very dictionary the drain produced. The clip, the
+# floating number and the action chat are three views of one event, and this is how the third
+# learns of an event without reaching into the queue: a second `take_combat_events()` would leave
+# one of the three blind, and a second reading of the same blow would animate a swing the
+# simulation never performed twice.
+signal swing_reported(event: Dictionary)
+
 # What the simulation did, shown: what each sheet is holding, the swing it performed, and the
 # damage that arrived. The world's coordinator owns the fight; this node reads its reports.
 #
@@ -241,6 +248,9 @@ func _find_held(actor: Node3D, item_id: int, slot: int) -> MeshInstance3D:
 
 func _play_reports(events: Array) -> void:
 	for event in events:
+		# One event, reported onward exactly once, and the same dictionary the clip below is
+		# played from and the number is drawn from - in the order the swings happened.
+		swing_reported.emit(event)
 		var actor := _actor_for(int(event["actor_id"]))
 		if actor != null:
 			_play_swing(actor, int(event["actor_id"]), event)

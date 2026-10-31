@@ -851,6 +851,107 @@ func _every_actor_uses_the_coordinator() -> void:
 	await _free_world(world)
 
 
+# --- the action chat ---------------------------------------------------------------
+
+func _chat_of(world) -> Control:
+	var found: Array = world.find_children("CombatLog", "", true, false)
+	_check(found.size() == 1, "the world carries exactly one action chat")
+	if found.size() != 1:
+		return null
+	var chat = found[0]
+	_check(chat is Control, "the chat is a hud control, not a body in the 3D world")
+	for method in ["bind_actors", "append_swing"]:
+		_check(chat.has_method(method), "and the world could wire %s()" % method)
+	return chat as Control
+
+
+func _chat_lines(chat) -> PackedStringArray:
+	var found := PackedStringArray()
+	for label in chat.find_children("*", "Label", true, false):
+		found.append(String(label.text))
+	return found
+
+
+# The panel is drawn over floor the player clicks on, so a click that lands on it has to arrive
+# downstairs. This is the real pick rather than a `mouse_filter` inspection: the world's own ray
+# is asked whether that point is ground, and only then is the click pressed there.
+func _a_click_on_the_chat_still_walks_the_player() -> void:
+	var world := await _new_world()
+	var camera: Camera3D = world.get("_camera")
+	var marker: Node = world.get("_marker")
+	var combat = _combat_of(world)
+	var chat := _chat_of(world)
+	if camera == null or marker == null or combat == null or chat == null:
+		await _free_world(world)
+		return
+	var rect: Rect2 = chat.get_global_rect()
+	_check(rect.size.x > 0.0 and rect.size.y > 0.0, "the chat has a panel on screen: %s" % str(rect))
+	var point := Vector2.INF
+	for attempt in range(9):
+		var candidate := Vector2(rect.position.x + rect.size.x * (0.15 + 0.08 * float(attempt)),
+				rect.position.y + rect.size.y * (0.3 + 0.2 * float(attempt % 3)))
+		if not rect.has_point(candidate):
+			continue
+		if _nearest_is_floor(world, camera, candidate):
+			point = candidate
+			break
+	_check(point != Vector2.INF, "a point inside the chat panel is a floor point: %s" % str(point))
+	if point == Vector2.INF:
+		await _free_world(world)
+		return
+	_check(not bool(world.call("_popup_covers", point)),
+			"the chat is not one of the panels that swallow a click")
+	var walked: Vector3 = world.get_node("Player").global_position
+	_click_at(point)
+	_check(bool(marker.visible), "a click on top of the chat still showed the movement marker")
+	for frame in range(40):
+		await physics_frame
+	_check(world.get_node("Player").global_position.distance_to(walked) > 0.5,
+			"and the player really walked to where the chat is drawn")
+	await _free_world(world)
+
+
+# The chat has to hear the world's first swing through the scene's own wiring, on the frame the
+# world performed it - not through a listener this test attached, and not by reading the queue the
+# feedback node drains.
+func _the_hud_chat_hears_the_worlds_first_swing() -> void:
+	var world := await _new_world()
+	var combat = _combat_of(world)
+	var chat := _chat_of(world)
+	var feedbacks: Array = world.find_children("CombatFeedback", "", true, false)
+	_check(feedbacks.size() == 1, "the world drains the fight through one feedback node")
+	if combat == null or chat == null or feedbacks.size() != 1:
+		await _free_world(world)
+		return
+	var feedback = feedbacks[0]
+	_check(feedback.get_signal_connection_list("swing_reported").size() == 1,
+			"and the chat is connected to that single drain exactly once, got %d"
+			% feedback.get_signal_connection_list("swing_reported").size())
+	_check(_chat_lines(chat).is_empty(), "a fresh world has nothing to report yet")
+
+	var camera: Camera3D = world.get("_camera")
+	_click_at(_dummy_screen(camera, world.get_node("Enemy")))
+	var popup := _attack_popup_of(world)
+	if popup == null:
+		await _free_world(world)
+		return
+	_check(popup.visible, "clicking the Enemy opened its action")
+	_click_at(popup.get_global_rect().get_center())
+	var guard := 0
+	while guard < 240 and _chat_lines(chat).is_empty():
+		await physics_frame
+		guard += 1
+	var lines := _chat_lines(chat)
+	_check(guard < 240 and lines.size() >= 1,
+			"the first performed swing reached the chat through the scene, got %s" % str(lines))
+	_check(combat.take_combat_events().is_empty(),
+			"and reading the chat never emptied the queue the feedback owns")
+	if lines.size() >= 1:
+		_check(String(lines[0]).contains(" attacks"),
+				"and the line is a sentence about a swing: %s" % String(lines[0]))
+	await _free_world(world)
+
+
 func _run() -> void:
 	# Read the viewport the tests actually run in, so a project window-size change
 	# moves the edge cases with it instead of stranding them off screen. In headless
@@ -869,6 +970,8 @@ func _run() -> void:
 	await _marker_follows_attack_acceptance()
 	await _every_actor_uses_the_coordinator()
 	await _scene_uses_combat_regen_once()
+	await _a_click_on_the_chat_still_walks_the_player()
+	await _the_hud_chat_hears_the_worlds_first_swing()
 
 	if failures == 0:
 		print("Melee combat: all checks passed")

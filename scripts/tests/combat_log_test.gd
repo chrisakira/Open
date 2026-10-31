@@ -504,6 +504,34 @@ func _assert_entries_whole(log, where: String) -> void:
 				"the whole of a line is inside the panel %s: %s in %s" % [where, str(rect), str(panel)])
 
 
+# The chat is handed the very dictionary the clip and the floating number are drawn from, so it
+# may read it and nothing else: an edit dressed as formatting - a normalised name, a tidied key -
+# would reach the next view as though C++ had said it.
+func _a_reported_event_comes_through_untouched() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var player := _actor("Player", 1)
+	var enemy := _actor("Enemy", 2)
+	log.bind_actors([player, enemy])
+	var event := _event(1, 2, "block", 2.5)
+	var before := event.duplicate(true)
+	log.append_swing(event)
+	_check(event == before,
+			"printing an event left every key and value alone: %s against %s" % [str(event), str(before)])
+	_check(event.size() == before.size(), "and added no key of its own: %d against %d" % [
+			event.size(), before.size()])
+	var lines := _lines_of(log)
+	_check(lines.size() == 1, "one event, one line")
+	log.append_swing(event)
+	var twice := _lines_of(log)
+	_check(twice.size() == 2 and String(twice[0]) == String(twice[1]),
+			"the same dictionary a second time says the same thing: %s" % str(twice))
+	player.free()
+	enemy.free()
+	log.free()
+
+
 func _run() -> void:
 	await _every_outcome_is_one_true_sentence()
 	await _a_defence_worth_nothing_is_still_named()
@@ -514,6 +542,7 @@ func _run() -> void:
 	await _the_panel_never_eats_a_click_and_never_leaves_the_screen()
 	await _the_panel_regrows_when_the_entries_wrap()
 	await _the_chat_holds_no_second_drain_of_its_own()
+	await _a_reported_event_comes_through_untouched()
 
 	_check(checks > 40, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:

@@ -800,6 +800,248 @@ func _the_damage_format_is_pinned_before_it_moves() -> void:
 	feedback.free()
 
 
+# --- the one drain, and who else hears about it ---------------------------------
+
+# The chat is wired here exactly as the scene wires it: bound to the world's own actors and
+# connected to the feedback's report of each event it drained. Nothing in these cases reads the
+# coordinator's queue - a test that drained it would empty it for the node under test and prove
+# the opposite of what it set out to.
+func _wire_chat(world, feedback, captured: Array):
+	var script: Script = load("res://scripts/combat_log.gd")
+	if script == null:
+		_check(false, "the action chat exists to be wired")
+		return null
+	var chat = script.new()
+	chat.name = "CombatLog"
+	var layer := CanvasLayer.new()
+	world.add_child(layer)
+	layer.add_child(chat)
+	chat.bind_actors(world.get("_actors"))
+	if not feedback.has_signal("swing_reported"):
+		_check(false, "the feedback reports each event it drained on one signal")
+		return chat
+	feedback.connect("swing_reported", chat.append_swing)
+	feedback.connect("swing_reported", func(event: Dictionary) -> void: captured.append(event))
+	return chat
+
+
+func _chat_lines(chat) -> PackedStringArray:
+	var found := PackedStringArray()
+	for label in chat.find_children("*", "Label", true, false):
+		found.append(String(label.text))
+	return found
+
+
+func _park_at(world, who: String, next_to: String) -> void:
+	# Standing next to somebody is the scene's business, not a debug setter: the coordinator is
+	# told where the bodies are every frame, so moving the body is the only way in.
+	var mover: Node3D = world.get_node(who)
+	var anchor: Node3D = world.get_node(next_to)
+	mover.global_position = anchor.global_position + Vector3(1.0, 0.0, 0.0)
+
+
+# The first real swing of a fresh fight is turned aside by the defender's paid dodge. It was still
+# performed, so it has to be seen twice: once as the clip, once as the line - and not at all as a
+# number, because nothing arrived.
+func _a_performed_swing_is_reported_once_to_every_view() -> void:
+	var world = await _world()
+	var feedback = _feedback_of(world)
+	if feedback == null:
+		await _free(world)
+		return
+	var captured: Array = []
+	var chat = _wire_chat(world, feedback, captured)
+	var combat = world.get("_combat")
+	var player_id := int(_sheet_of(world, "Player").get_character_id())
+	var enemy_id := int(_sheet_of(world, "Enemy").get_character_id())
+	world.set_physics_process(false)
+	_park_at(world, "Enemy", "Player")
+	_check(combat.issue_attack(player_id, enemy_id), "the player is ordered at the enemy")
+	_tick(world, 0.05)
+	_tick(feedback, 0.05)
+
+	_check(captured.size() == 1, "one performed swing is reported onward once, got %d"
+			% captured.size())
+	if captured.size() == 1:
+		_check(String(captured[0]["defense_action"]) == "dodge",
+				"and it is the same event the drain produced: %s" % str(captured[0]))
+	_check(int(feedback.call("swing_motion_count", player_id)) == 1, "the clip played once")
+	_check(_labels_of(feedback).is_empty(), "a defence worth everything has no number to show")
+	if chat != null:
+		var lines := _chat_lines(chat)
+		_check(lines.size() == 1, "and the chat shows that one swing, got %s" % str(lines))
+		if lines.size() == 1:
+			_check(String(lines[0]) == "Player attacks but Enemy dodges",
+					"the line names the dodge the event named: got [%s]" % String(lines[0]))
+	# An empty poll afterwards reports nothing, to anybody.
+	_tick(world, 0.05)
+	_tick(feedback, 0.05)
+	_check(captured.size() == 1, "an empty poll adds no line, got %d" % captured.size())
+	_check(int(feedback.call("swing_motion_count", player_id)) == 1, "nor a second motion")
+	if chat != null:
+		_check(_chat_lines(chat).size() == 1, "nor a second entry")
+	_check(combat.take_combat_events().is_empty(),
+			"and the queue is still the feedback's to drain: nothing was left and nothing twice")
+	await _free(world)
+
+
+# A blow that gets through has to reach all three views at once, with the same amount in two of
+# them. Two attackers on one target in one frame is how the existing cases reach a defence that
+# has already been spent: the first swing is answered, the second is not.
+func _a_blow_that_lands_reaches_the_clip_the_number_and_the_line() -> void:
+	var world = await _world()
+	var feedback = _feedback_of(world)
+	if feedback == null:
+		await _free(world)
+		return
+	var captured: Array = []
+	var chat = _wire_chat(world, feedback, captured)
+	var combat = world.get("_combat")
+	var player_id := int(_sheet_of(world, "Player").get_character_id())
+	var ally_id := int(_sheet_of(world, "Friendly").get_character_id())
+	var enemy_id := int(_sheet_of(world, "Enemy").get_character_id())
+	world.set_physics_process(false)
+	_park_at(world, "Enemy", "Player")
+	_park_at(world, "Friendly", "Player")
+	_check(combat.issue_attack(player_id, enemy_id), "the player is ordered at the enemy")
+	_check(combat.issue_attack(ally_id, enemy_id), "and so is the ally")
+	_tick(world, 0.05)
+	_tick(feedback, 0.05)
+
+	_check(captured.size() == 2, "two performed swings are two reports, got %d" % captured.size())
+	if captured.size() != 2:
+		await _free(world)
+		return
+	_check(String(captured[0]["defense_action"]) == "dodge"
+			and String(captured[1]["defense_action"]) == "none",
+			"the frame's two events differ only in the defence the clock left: %s then %s" % [
+					String(captured[0]["defense_action"]), String(captured[1]["defense_action"])])
+	_check(float(captured[1]["damage"]) > 0.0, "and the second of them arrived")
+	_check(int(feedback.call("swing_motion_count", player_id)) == 1
+			and int(feedback.call("swing_motion_count", ally_id)) == 1,
+			"one motion each, no more")
+	var labels := _labels_of(feedback)
+	_check(labels.size() == 1, "one number, for the one blow that landed: %d" % labels.size())
+	if chat == null or labels.is_empty():
+		await _free(world)
+		return
+	var lines := _chat_lines(chat)
+	_check(lines.size() == 2, "two swings are two lines, got %s" % str(lines))
+	if lines.size() != 2:
+		await _free(world)
+		return
+	_check(String(lines[0]) == "Player attacks but Enemy dodges", "the answered swing reads true")
+	# The number over the body and the number in the sentence are the same reported amount,
+	# formatted the same way: two views of one event, not two arithmetic.
+	var amount := String(labels[0].text)
+	_check(String(lines[1]) == "Friendly attacks Enemy and deals %s damage" % amount,
+			"the line carries the very figure the label shows: [%s] against [%s]" % [
+					String(lines[1]), amount])
+	await _free(world)
+
+
+# A swing the simulation refused was never reported, so it must reach neither view. This is the
+# check that keeps the chat honest about the difference between "nothing happened" and "nobody
+# told me", which is the whole reason it is fed by events rather than by watching the world.
+func _a_refused_swing_reaches_nothing_at_all() -> void:
+	var world = await _world()
+	var feedback = _feedback_of(world)
+	if feedback == null:
+		await _free(world)
+		return
+	var captured: Array = []
+	var chat = _wire_chat(world, feedback, captured)
+	var combat = world.get("_combat")
+	var player_id := int(_sheet_of(world, "Player").get_character_id())
+	var enemy_id := int(_sheet_of(world, "Enemy").get_character_id())
+	world.set_physics_process(false)
+	# Far away, so the order is real and the swing is not: pursuit, and nothing performed.
+	_check(combat.issue_attack(player_id, enemy_id), "the order is given across the field")
+	for frame in range(3):
+		_tick(world, 0.05)
+		_tick(feedback, 0.05)
+	_check(captured.is_empty(), "an out-of-range order reports no swing, got %d" % captured.size())
+	_check(int(feedback.call("swing_motion_count", player_id)) == 0, "and plays no motion")
+	if chat != null:
+		_check(_chat_lines(chat).is_empty(), "and writes no line: %s" % str(_chat_lines(chat)))
+
+	# The same again with the clock, not the distance, refusing: one performed swing, then a
+	# frame inside its own cooldown.
+	_park_at(world, "Enemy", "Player")
+	_tick(world, 0.05)
+	_tick(feedback, 0.05)
+	_check(captured.size() == 1, "in reach, the swing happens and is reported once")
+	var performed := int(feedback.call("swing_motion_count", player_id))
+	_tick(world, 0.01)
+	_tick(feedback, 0.01)
+	_check(captured.size() == 1, "cooling, it is not reported twice, got %d" % captured.size())
+	_check(int(feedback.call("swing_motion_count", player_id)) == performed, "nor played twice")
+	if chat != null:
+		_check(_chat_lines(chat).size() == 1, "and the chat did not invent a second line")
+	await _free(world)
+
+
+# `_play_reports` is a supported door: C++ can be asked for a technique blow or an armour-zero
+# blow on demand only in the simulation, so the shapes it can produce are handed through here.
+# These dictionaries are presentation fixtures - including one that predates the defense_action
+# field, which must read as no defence rather than as a guess.
+func _reports_of_every_shape_the_bridge_sends() -> void:
+	var world = await _world()
+	var feedback = _feedback_of(world)
+	if feedback == null:
+		await _free(world)
+		return
+	var captured: Array = []
+	var chat = _wire_chat(world, feedback, captured)
+	var player_id := int(_sheet_of(world, "Player").get_character_id())
+	var enemy_id := int(_sheet_of(world, "Enemy").get_character_id())
+	var block := {
+		"actor_id": player_id, "target_id": enemy_id, "part": 1, "damage": 1.5, "prevented": 2.0,
+		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5, "defense_action": "block",
+	}
+	var dodge_zero := {
+		"actor_id": player_id, "target_id": enemy_id, "part": 0, "damage": 0.0, "prevented": 4.0,
+		"nullified": true, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5, "defense_action": "dodge",
+	}
+	var unanswered := {
+		"actor_id": player_id, "target_id": enemy_id, "part": 1, "damage": 0.04, "prevented": 0.0,
+		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5, "defense_action": "none",
+	}
+	var legacy := {
+		"actor_id": player_id, "target_id": enemy_id, "part": 1, "damage": 2.0, "prevented": 0.0,
+		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+		"attack_cooldown": 0.5,
+	}
+	feedback.call("_play_reports", [block, dodge_zero, unanswered, legacy])
+
+	# The clip and the number still behave exactly as they did before the chat existed.
+	_check(int(feedback.call("swing_motion_count", player_id)) == 4,
+			"four events, four motions, got %d" % int(feedback.call("swing_motion_count", player_id)))
+	var labels := _labels_of(feedback)
+	_check(labels.size() == 3, "three of them carry a number, got %d" % labels.size())
+	if chat == null:
+		await _free(world)
+		return
+	var lines := _chat_lines(chat)
+	_check(lines.size() == 4, "and four lines in the order they happened, got %s" % str(lines))
+	if lines.size() != 4:
+		await _free(world)
+		return
+	_check(String(lines[0]) == "Player attacks but Enemy blocks and receives 1.5 damage",
+			"a block that let some through: got [%s]" % String(lines[0]))
+	_check(String(lines[1]) == "Player attacks but Enemy dodges",
+			"a dodge that let none through: got [%s]" % String(lines[1]))
+	_check(String(lines[2]) == "Player attacks Enemy and deals 0.04 damage",
+			"an unanswered chip keeps its decimals: got [%s]" % String(lines[2]))
+	_check(String(lines[3]) == "Player attacks Enemy and deals 2 damage",
+			"a dictionary from before the field existed reads as no defence: got [%s]"
+			% String(lines[3]))
+	await _free(world)
+
+
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
@@ -812,6 +1054,10 @@ func _run() -> void:
 	await _a_real_event_warps_its_clip_to_its_own_clock()
 	await _landed_damage_shows_the_number_that_arrived()
 	await _tiny_and_technique_events_stay_legible()
+	await _a_performed_swing_is_reported_once_to_every_view()
+	await _a_blow_that_lands_reaches_the_clip_the_number_and_the_line()
+	await _a_refused_swing_reaches_nothing_at_all()
+	await _reports_of_every_shape_the_bridge_sends()
 	_the_damage_format_is_pinned_before_it_moves()
 	_check(checks > 50, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:

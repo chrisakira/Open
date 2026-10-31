@@ -33,6 +33,7 @@ var _equipment_popup: EquipmentPopup
 var _workbench_popup: WorkbenchPopup
 var _combat: OpenCombat
 var _feedback: CombatFeedback
+var _log: CombatLog
 
 # The two benches the starter scene places, per docs/weapons.md: one clearly visible
 # Smithing Workbench and one clearly visible Enchanting Workbench. Ids and types are the
@@ -530,6 +531,18 @@ func _build_hud() -> void:
 	_weapon_popup.name = "WeaponPopup"
 	_weapon_popup.visible = false
 	layer.add_child(_weapon_popup)
+
+	# The action chat is another view of the same fight: it is told about each event the feedback
+	# node drained, so it never reads the coordinator's queue itself. It is wired here, while the
+	# scene is still being built, because the world ticks at WORLD_PRIORITY and the feedback polls
+	# on the frame after - a chat connected later would quietly miss the first swing. It is not in
+	# `_popup_covers`, and it ignores the mouse, so a click on a line is a click on the world.
+	_log = CombatLog.new()
+	_log.name = "CombatLog"
+	layer.add_child(_log)
+	_log.bind_actors(_actors)
+	if _feedback != null and not _feedback.swing_reported.is_connected(_log.append_swing):
+		_feedback.swing_reported.connect(_log.append_swing)
 
 
 func _grid_shader() -> Shader:
