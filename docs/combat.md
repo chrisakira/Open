@@ -6,7 +6,7 @@ Player and NPC use the same rules. The player is the character you currently iss
 
 - **Current** — true in `cpp/` today.
 - **Locked** — decided for this file. It is built only where the same text is also marked Current.
-- **Locked target** — decided, not built. The typed exchange is built: an attack and a defence resolve from the item actually held, damage is cut/pierce/blunt resisted by armour, a defence mitigates a percentage and pays its own stamina, a swung weapon and a blocking item wear, and final blunt feeds a stagger meter that can stun. What is still **Locked target** here is techniques (their cost, selection and cooldown) and the workbench actions; `weapons.md` owns both. Where a section below still recites the scalar slice the switch replaced, it says the model is retired rather than current.
+- **Locked target** — decided, not built. The typed exchange is built: an attack and a defence resolve from the item actually held, damage is cut/pierce/blunt resisted by armour, a defence mitigates a percentage and pays its own stamina, a swung weapon and a blocking item wear, and final blunt feeds a stagger meter that can stun. Techniques — their cost, selection and cooldown — and the workbench actions have since landed too: the three rank-1 starter techniques perform inside the one attack pipeline, and craft, repair and enchant work runs through the coordinator's queue; `weapons.md` owns both. Where a section below still recites the scalar slice the switch replaced, it says the model is retired rather than current.
 - **Proposed** — written so we can lock it. Not a build order.
 - **Open** — do not implement until the human locks it.
 
@@ -35,7 +35,7 @@ Clicking the floor sets a `MoveOrder`. Left-clicking a living character (Friendl
 
 Skill XP goes through the existing `record_use`; Duelist/Breaker kills and Wall blocks through `record_title_progress`. `OpenCharacter` exposes the target id, `OpenCombat` is the bridge's coordinator handle. `effective_skill`, `target_multiplier`, `held_usable`, `record_use`, and limb weapon gates exist in C++ and tests, and combat reads trained ranks through them rather than effective attributes.
 
-Not built: ranged and magic, squads and multiple-attacker systems, auto-retaliate, bleed, KO vs death, the item catalog, and per-item damage/armour/reach values. Crits (Luck) remain Open.
+Not built: ranged and magic, squads and multiple-attacker systems, auto-retaliate, bleed, KO vs death. Crits (Luck) remain Open.
 
 ## 1. Orders — locked
 
@@ -80,7 +80,7 @@ A swing that does not land is still a swing: stamina is spent if it was paid, co
 
 Half speed / half damage is per swing while stamina is too low to pay 8. It is not a lasting debuff after stamina comes back.
 
-**Current.** The cost is the weapon's own stamina scaled by `(2 − overall effectiveness)`, or the locked unarmed fallback's 8 when nothing is held, and an attempt that cannot pay the whole cost spends nothing and is still performed exhausted. Step 3 is percentage mitigation, not the all-or-nothing test: a defence that is ready is always attempted, its owner pays 8 for the attempt, and paying is what keeps its mitigation whole — an unpaid answer is performed at half. **Locked target:** the technique cost that overrides the weapon cost when a technique is specified. Steps 1, 4 and 5 — eligibility, applying the hit once, and the attack clock living on the character — did not change in the switch.
+**Current.** The cost is the weapon's own stamina scaled by `(2 − overall effectiveness)`, or the locked unarmed fallback's 8 when nothing is held, and an attempt that cannot pay the whole cost spends nothing and is still performed exhausted. Step 3 is percentage mitigation, not the all-or-nothing test: a defence that is ready is always attempted, its owner pays 8 for the attempt, and paying is what keeps its mitigation whole — an unpaid answer is performed at half. Built since: a technique that names its own cost replaces the weapon's — and only then is the cost adjusted for effectiveness, so a cost override is not a discount. Steps 1, 4 and 5 — eligibility, applying the hit once, and the attack clock living on the character — did not change in the switch.
 
 ## 4. Attack speed — locked
 
@@ -110,7 +110,7 @@ then clamp to `[1/3, 5]`, then apply empty-stamina double and clamp again.
 | 100 | 1.60/s | 0.625 s |
 | 200 | 3.00/s | 0.333 s |
 
-3/s only at advanced 200. Weapon-specific speed is **locked target, not built**: `weapons.md` multiplies this rate by the weapon's speed multiplier (0.1–2 inclusive, 1 for every starter) and by overall weapon effectiveness, then clamps to the same `[1/3, 5]` band; zero effectiveness takes the slowest permitted cooldown rather than dividing by zero, and exhaustion still doubles and reclamps. The table above is unchanged and is what runs today. Speeds for weapons beyond the starter slice remain Open.
+3/s only at advanced 200. Weapon-specific speed is **built**: `weapons.md` multiplies this rate by the weapon's speed multiplier (0.1–2 inclusive, 1 for every starter) and by overall weapon effectiveness, then clamps to the same `[1/3, 5]` band; zero effectiveness takes the slowest permitted cooldown rather than dividing by zero, and exhaustion still doubles and reclamps. The table above is the bare-hands base rate the weapon's own terms scale. Speeds for weapons beyond the starter slice remain Open.
 
 ## 5. Damage — locked current slice; typed damage target
 
@@ -166,7 +166,7 @@ Each land that still does damage names one part: Head, Torso, Left arm, Right ar
 
 Pick uniformly at random among the six (1/6 each). Aimed attacks: Open.
 
-**Locked target, not built:** the part is drawn after defense and before armour, and only once the attack still has positive offense after defense — a fully prevented or zero-offense attempt selects no part and consumes no draw, while a part whose armour absorbs all the damage stays the attack's selected part. One armour piece is read per hit (Head → Head, Torso → Chest, either arm → Hands, either leg → Legs; Feet mitigates nothing until a foot location exists). `weapons.md` owns the routing.
+**Built:** the part is drawn after defense and before armour, and only once the attack still has positive offense after defense — a fully prevented or zero-offense attempt selects no part and consumes no draw, while a part whose armour absorbs all the damage stays the attack's selected part. One armour piece is read per hit (Head → Head, Torso → Chest, either arm → Hands, either leg → Legs; Feet mitigates nothing until a foot location exists). `weapons.md` owns the routing.
 
 ## 8. Combat state — locked
 
@@ -176,7 +176,7 @@ Cancel: new move order, or the target dies. If the target dies, stop swinging; d
 
 A dead character does not swing, spend, or regen (already locked on the sheet).
 
-**Locked target, not built:** the stagger-triggered stun is transient and does not cancel the character's order, which resumes when the stun expires. While stunned, the character cannot move, attack or defend, armour mitigation is 0, and the attack, defense and technique cooldowns plus the stagger meter freeze instead of counting down. `weapons.md` Stagger owns it.
+**Built:** the stagger-triggered stun is transient and does not cancel the character's order, which resumes when the stun expires. While stunned, the character cannot move, attack or defend, armour mitigation is 0, and the attack, defense and technique cooldowns plus the stagger meter freeze instead of counting down. `weapons.md` Stagger owns it.
 
 ## 9. XP from fighting — locked
 
@@ -188,7 +188,7 @@ A successful defend is a nullify (clock ready and the section 5 test won). That 
 
 Title progress stays as on the sheet: Duelist / Breaker on kills with that weapon class, Wall on successful blocks. Dragons do not exist yet.
 
-**Locked target, not built** (`weapons.md` owns it): attack XP follows positive final damage against a living target, lethal hits included, and a hit on an already-dead target earns nothing. Defense XP follows what the defense actually prevented before armour, so a partial block or partial dodge earns its 1 XP even when armour would have absorbed the remainder, and a defense that prevents nothing earns none. Damage that got through rewards the attacker on its own terms. Amounts stay 1, and combat remains skill XP only.
+**Built** (`weapons.md` owns it): attack XP follows positive final damage against a living target, lethal hits included, and a hit on an already-dead target earns nothing. Defense XP follows what the defense actually prevented before armour, so a partial block or partial dodge earns its 1 XP even when armour would have absorbed the remainder, and a defense that prevents nothing earns none. Damage that got through rewards the attacker on its own terms. Amounts stay 1, and combat remains skill XP only.
 
 ## 10. Later — open
 
