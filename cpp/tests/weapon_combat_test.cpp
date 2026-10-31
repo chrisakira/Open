@@ -1031,6 +1031,78 @@ void a_blocking_item_wears_before_it_is_discounted() {
 
 }  // namespace
 
+// --------------------------------------------------------------------- reported clock
+
+// A presentation that scales an attack clip needs this swing's cooldown, and the only
+// honest source is the performed attempt itself: the full duration it started, doubled
+// when unpaid and clamped by the band when the doubling overflowed - read after frames
+// have ticked the clock down, and it is no longer that fact.
+void the_reported_swing_carries_its_own_clock() {
+	open::Character attacker = sheet(1);
+	open::Character target = sheet(2);
+	train_to_100(attacker, open::BasicSkill::UnarmedCombat);
+	attacker.set_attack_target(2);
+	std::mt19937_64 rng(131);
+
+	// Paid, rank 100, unit speed and effectiveness: 1/1.6 = 0.625 s, from the same
+	// arithmetic the sheet's own clock runs on.
+	exhaust_defence_of(target);
+	const std::optional<open::SwingResult> paid = swing(attacker, target, rng);
+	expect_true("a paid rank-100 blow is performed", paid.has_value());
+	if (paid.has_value()) {
+		expect_close("and reports the 0.625 seconds it started", paid->attack_cooldown, 0.625f, 1e-6f);
+		expect_close("the very number the sheet's clock now holds",
+					 paid->attack_cooldown, attacker.attack_cooldown_remaining(), 1e-6f);
+	}
+
+	// Unpaid: the exhausted doubling belongs to the report too.
+	settle(attacker, target);
+	exhaust_defence_of(target);
+	exhaust(attacker);
+	const std::optional<open::SwingResult> unpaid = swing(attacker, target, rng);
+	expect_true("an unpaid rank-100 blow is still performed", unpaid.has_value());
+	if (unpaid.has_value()) {
+		expect_close("and reports the doubled 1.25 seconds, not the base",
+					 unpaid->attack_cooldown, 1.25f, 1e-6f);
+		expect_close("matching the sheet's clock exactly",
+					 unpaid->attack_cooldown, attacker.attack_cooldown_remaining(), 1e-6f);
+	}
+
+	// Rank 1 exhausted doubles five into a band that tops out at five: what the attempt
+	// reports is the clamped number, because that is the number the swing really gets.
+	// Asserted on its own, not inferred from the pair above.
+	open::Character rookie = sheet(3);
+	open::Character rookie_target = sheet(4);
+	rookie.set_attack_target(4);
+	exhaust(rookie);
+	const std::optional<open::SwingResult> capped = swing(rookie, rookie_target, rng);
+	expect_true("the rookie's exhausted blow is performed", capped.has_value());
+	if (capped.has_value()) {
+		expect_close("reported at the clamped five, not the doubled ten",
+					 capped->attack_cooldown, 5.0f, 1e-6f);
+		expect_close("and the sheet agrees", capped->attack_cooldown,
+					 rookie.attack_cooldown_remaining(), 1e-6f);
+	}
+
+	// A wholly turned-aside blow was still performed, and its clock started in full.
+	open::Character veteran = sheet(5);
+	open::Character guarded = sheet(6);
+	train_to_100(veteran, open::BasicSkill::UnarmedCombat);
+	veteran.set_attack_target(6);
+	const std::optional<open::SwingResult> turned = swing(veteran, guarded, rng);
+	expect_true("the veteran's opening blow is performed", turned.has_value());
+	if (turned.has_value()) {
+		expect_true("turned aside, and worth no damage",
+					turned->nullified && turned->damage == 0.0f);
+		expect_close("and still carrying its full 0.625 seconds",
+					 turned->attack_cooldown, 0.625f, 1e-6f);
+	}
+
+	// And a cooling attempt reports nothing at all, because it performed nothing.
+	expect_true("the cooling attempt is refused whole",
+				!swing(veteran, guarded, rng).has_value());
+}
+
 int main() {
 	typed_damage_replaces_the_placeholder();
 	quality_tier_moves_the_damage();
@@ -1045,6 +1117,7 @@ int main() {
 	a_shield_prevents_pays_wears_and_trains();
 	a_blocking_item_wears_before_it_is_discounted();
 	an_undefined_record_fights_unarmed();
+	the_reported_swing_carries_its_own_clock();
 	refusals_still_refuse_cleanly();
 	return test_summary();
 }

@@ -47,6 +47,10 @@ struct SwingResult {
 	// The technique this swing performed, when it performed one. A basic attack reports
 	// none, which is a different fact from a technique that did no damage.
 	std::optional<TechniqueId> technique;
+	// The full attack cooldown this performed attempt started, seconds: presentation
+	// scales one clip to this duration. Zero means no report was written, and a refused
+	// attempt never reaches the caller who would read it.
+	float attack_cooldown = 0.0f;
 };
 
 // The part a landed hit takes: uniform over the six parts a sheet has, with the

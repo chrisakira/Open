@@ -1224,6 +1224,11 @@ int main() {
 						first[0].swing.part.has_value());
 			expect_true("with the technique it performed, which here is none",
 						!first[0].swing.technique.has_value());
+			// The clock the swing started, carried whole: both bars were drained, so this
+			// is the rank-1 exhausted doubling clamped to the band's top - presentation
+			// scales its clip to this, not to whatever the clock reads at drain.
+			expect_close("and the full five seconds its own clock was set to",
+						 first[0].swing.attack_cooldown, 5.0f, 1e-6f);
 		}
 		expect_true("and asking again reports nothing: a drained queue is not a replay",
 					session.take_swing_events().empty());
@@ -1268,6 +1273,14 @@ int main() {
 			// `weapon_combat` pins this same equality on a bigger blow.
 			expect_close("and the defence the other sheet paid for prevented the whole swing",
 						 turned[0].swing.prevented, kRank1Damage, 1e-6f);
+			// Nullified is not unperformed: the paid clock started in full, and a
+			// zero-damage event still carries the duration the swing spent cooling. The
+			// number itself is this sheet's own (its effectiveness is not exactly 1), so
+			// the oracle is the clock the swing set, same frame, untouched since.
+			expect_true("the turned-aside blow reports a positive duration",
+						turned[0].swing.attack_cooldown > 0.0f);
+			expect_close("and it is exactly the clock that swing started",
+						 turned[0].swing.attack_cooldown, blocker.attack_cooldown_remaining(), 1e-6f);
 		}
 
 		// Two attackers on one target: two events, in the order the roster was given, because

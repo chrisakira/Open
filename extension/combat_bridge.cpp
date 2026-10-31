@@ -266,6 +266,10 @@ godot::Array OpenCombat::take_combat_events() {
 		entry["part"] = swing.part.has_value() ? static_cast<std::int64_t>(*swing.part) : 0;
 		entry["damage"] = swing.damage;
 		entry["prevented"] = swing.prevented;
+		// The full duration the performed attempt started its attack clock with, seconds:
+		// presentation scales one clip to it. Copied from the report, never re-read from
+		// the sheet, whose clock the frames since have already been wearing down.
+		entry["attack_cooldown"] = swing.attack_cooldown;
 		entry["nullified"] = swing.nullified;
 		// 0 means no technique: the attack was the weapon's own. A technique that did no
 		// damage is still named, which is the difference presentation has to keep.

@@ -337,9 +337,50 @@ func _swing_parts(swing_count: int) -> Array:
 	return drawn
 
 
+func _swings_carry_their_clock() -> void:
+	var combat = _combat()
+	var hitter := _sheet(1, "Hitter")
+	var foe := _sheet(2, "Foe")
+	_check(combat.add_character(hitter, Vector3.ZERO), "the hitter registers")
+	_check(combat.add_character(foe, Vector3(1.0, 0.0, 0.0)), "the foe registers in reach")
+	_check(combat.issue_attack(1, 2), "the fight is on")
+	# The swing happens on the first frame; the clock keeps ticking for frames after it;
+	# the drain comes last. What the event carries is the duration the attempt started,
+	# never the partially elapsed remainder - a clip scaled to that would run late.
+	# Nothing may read the live clock (the bridge keeps no cooldown getter, by design),
+	# so the oracle is an identical second fight drained the frame it swung: equal
+	# durations prove the late report was not wearing down with the clock.
+	combat.step(0.1)
+	combat.step(0.4)
+	var events: Array = combat.take_combat_events()
+	_check(events.size() == 1, "one performed swing waits in the queue")
+	if events.size() != 1:
+		return
+	_check(events[0].has("attack_cooldown"), "and the event carries its own clock")
+	var late: float = float(events[0]["attack_cooldown"])
+	_check(late > 0.0 && is_finite(late), "a positive finite duration: %s" % str(late))
+	_check(combat.take_combat_events().is_empty(), "a drained queue is not a replay")
+
+	var fresh = _combat()
+	var hitter_b := _sheet(1, "Hitter")
+	var foe_b := _sheet(2, "Foe")
+	fresh.add_character(hitter_b, Vector3.ZERO)
+	fresh.add_character(foe_b, Vector3(1.0, 0.0, 0.0))
+	_check(fresh.issue_attack(1, 2), "the oracle fight is on")
+	fresh.step(0.1)
+	var now: Array = fresh.take_combat_events()
+	_check(now.size() == 1, "the oracle swing is reported at once")
+	if now.size() == 1:
+		var same_clock := _close(late, float(now[0]["attack_cooldown"]), 0.0001)
+		var note := "the late drain reports the whole duration, not the four and a half "
+		note += "seconds left: %s against %s" % [str(late), str(float(now[0]["attack_cooldown"]))]
+		_check(same_clock, note)
+
+
 func _run() -> void:
 	_registration_and_safe_defaults()
 	_end_to_end_fight()
+	_swings_carry_their_clock()
 	_lifetime_and_safety()
 	_seeding_varies_per_session()
 

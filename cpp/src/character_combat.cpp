@@ -322,6 +322,9 @@ std::optional<SwingResult> Character::try_melee_swing(Character &defender, const
 	result.final = resolution->final;
 	result.attack_item = attack->item;
 	result.defense_item = defence_ready ? defence->item : std::nullopt;
+	// The clock this very attempt set, whole: the report carries the duration, not a
+	// later reading of a clock that frames have already been ticking down.
+	result.attack_cooldown = attack_cooldown_;
 	// What was performed, so presentation can show the move and a test can tell a technique
 	// from a basic attack that happens to do the same damage.
 	result.technique = technique != nullptr ? choice.technique : std::nullopt;
