@@ -463,6 +463,47 @@ func _the_chat_holds_no_second_drain_of_its_own() -> void:
 	_unstage(layer)
 
 
+# The panel measures its entries, so it has to be able to measure them again: narrow the window
+# until every line wraps, and the same two swings need twice the room to say the same things.
+func _the_panel_regrows_when_the_entries_wrap() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var player := _actor("Player", 1)
+	var enemy := _actor("Enemy", 2)
+	log.bind_actors([player, enemy])
+	log.append_swing(_event(1, 2, "none", 3.8))
+	log.append_swing(_event(1, 2, "block", 1.5))
+	var view := _stage(log, Vector2i(1280, 720))
+	await process_frame
+	await process_frame
+	var before: Rect2 = log.get_global_rect()
+	_assert_entries_whole(log, "before the window narrows")
+	view.size = Vector2i(760, 720)
+	await process_frame
+	await process_frame
+	var after: Rect2 = log.get_global_rect()
+	_check(after.size.y > before.size.y,
+			"a narrower window wraps the entries and the panel answers by growing: %s -> %s" % [
+					str(before.size), str(after.size)])
+	_assert_entries_whole(log, "after the entries wrapped")
+	_unstage(view)
+	player.free()
+	enemy.free()
+
+
+# Entries that would fit must not be clipped: the panel is allowed to clip only what genuinely
+# has no room in it.
+func _assert_entries_whole(log, where: String) -> void:
+	var panel: Rect2 = log.get_global_rect()
+	var labels: Array = log.find_children("*", "Label", true, false)
+	_check(labels.size() == 2, "both swings are on the panel %s: %d lines" % [where, labels.size()])
+	for label in labels:
+		var rect: Rect2 = (label as Control).get_global_rect()
+		_check(panel.grow(0.5).encloses(rect),
+				"the whole of a line is inside the panel %s: %s in %s" % [where, str(rect), str(panel)])
+
+
 func _run() -> void:
 	await _every_outcome_is_one_true_sentence()
 	await _a_defence_worth_nothing_is_still_named()
@@ -471,6 +512,7 @@ func _run() -> void:
 	await _the_amount_is_the_number_the_float_prints()
 	await _the_chat_keeps_the_last_eight_lines()
 	await _the_panel_never_eats_a_click_and_never_leaves_the_screen()
+	await _the_panel_regrows_when_the_entries_wrap()
 	await _the_chat_holds_no_second_drain_of_its_own()
 
 	_check(checks > 40, "the suite ran its full set of checks (ran %d)" % checks)

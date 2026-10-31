@@ -164,8 +164,9 @@ func _build() -> void:
 	_lines.add_theme_constant_override("separation", int(LINE_SPACING))
 	add_child(_lines)
 	# The entries know their own wrapped height before this node does, so when their box changes
-	# size the panel is measured again.
-	_lines.size_changed.connect(_layout)
+	# size the panel is measured again. (`Control.resized`, not `size_changed`: that one belongs
+	# to a Window, and asking a container for it is a runtime error rather than a connection.)
+	_lines.resized.connect(_layout)
 
 
 func _rebuild() -> void:
@@ -206,13 +207,14 @@ func _layout() -> void:
 	if limits.x <= 0.0 or limits.y <= 0.0:
 		return
 	var cap := maxf(limits.y * HEIGHT_FRACTION - 2.0 * SCREEN_MARGIN, _single_line_height())
-	# Once the entries know their width they measure themselves, and the box they are in reports
-	# that back; until then the same font says how tall they will be.
-	var entries := _lines.get_combined_minimum_size().y
-	if entries <= 0.0:
-		var inner_width := maxf(limits.x * WIDTH_FRACTION - 2.0 * (SCREEN_MARGIN + INNER_PADDING),
-				16.0)
-		entries = _measured_entries_height(inner_width)
+	var inner_width := maxf(limits.x * WIDTH_FRACTION - 2.0 * (SCREEN_MARGIN + INNER_PADDING), 16.0)
+	# The same font says how tall the entries will be at this width, which is the only answer
+	# available before they have been laid out. Once their box has a real width it is the better
+	# measure of its own contents, so the panel follows it from then on.
+	var entries := _measured_entries_height(inner_width)
+	var laid_out := _lines.get_combined_minimum_size().y
+	if _lines.size.x > 1.0 and laid_out > 0.0:
+		entries = laid_out
 	var height := clampf(entries + 2.0 * INNER_PADDING,
 			_single_line_height() + 2.0 * INNER_PADDING, cap)
 	offset_top = -SCREEN_MARGIN - height
