@@ -46,6 +46,10 @@ inline constexpr RecipeId kStarterForgeHammer = 104;
 inline constexpr RecipeId kStarterRepair = 105;
 inline constexpr RecipeId kStarterEnchant = 106;
 
+// Blunt Edge: the slice's one enchantment, offered by the Enchanting bench for one rune
+// dust - rank x 0.01 fixed blunt, plus ceil(rank / 20) Intelligence to wield.
+inline constexpr EnchantmentId kBluntEdge = 1;
+
 // The starting supply, per owner: twenty scrap and five rune dust, once.
 inline constexpr std::uint64_t kStarterScrap = 20u;
 inline constexpr std::uint64_t kStarterRuneDust = 5u;

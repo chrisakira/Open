@@ -123,8 +123,18 @@ std::shared_ptr<const ItemCatalog> build_starter_catalog() {
 	enchant.cost = {{kRuneDustMaterial, 1u}};
 	recipes.push_back(enchant);
 
+	// Blunt Edge, the slice's one enchantment: rank x 0.01 fixed blunt and ceil(rank / 20)
+	// Intelligence, both frozen at application. docs/weapons.md "Starter workbenches and
+	// materials" owns these two numbers.
+	EnchantmentDefinition blunt;
+	blunt.id = kBluntEdge;
+	blunt.model_key = "Enchant_Blunt_Edge";
+	blunt.blunt_per_trained_rank = 0.01;
+	blunt.requirement = Attribute::Intelligence;
+	blunt.requirement_divisor = 20u;
+
 	const std::optional<ItemCatalog> catalog = ItemCatalog::create(
-		std::move(items), {material, dust}, {}, starter_techniques(), std::move(recipes));
+		std::move(items), {material, dust}, {blunt}, starter_techniques(), std::move(recipes));
 	if (!catalog.has_value()) {
 		return nullptr;  // the locked table itself would have to be wrong
 	}

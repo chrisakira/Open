@@ -237,7 +237,13 @@ std::optional<WorkStart> work_begin(const Character &who, const WorkRequest &req
 			|| target->enchantments.size() >= static_cast<std::size_t>(target->enchantment_slots)) {
 			return std::nullopt;  // no room: a full bench slot is refused before it is paid
 		}
-		start.job = SkillJob{BasicSkill::Enchanting, who.chosen(BasicSkill::Enchanting)};
+		// Only the weapon track raises weapon enchanting. An Armoursmith - or an
+		// ArmourEnchant - is the frozen parent for this bench exactly as an Armoursmith is
+		// for the forge, so the chosen track is consulted, not assumed.
+		const std::optional<AdvancedSkill> chosen = who.chosen(BasicSkill::Enchanting);
+		start.job = chosen.has_value() && *chosen == AdvancedSkill::WeaponEnchant
+						? SkillJob{BasicSkill::Enchanting, *chosen}
+						: SkillJob{BasicSkill::Enchanting, std::nullopt};
 		start.trained = who.resolve_skill(start.job.basic, start.job.option).rank;
 		const std::optional<AppliedEnchantment> applied =
 			make_applied_enchantment(*env.catalog.enchantment(*request.enchantment), start.trained);

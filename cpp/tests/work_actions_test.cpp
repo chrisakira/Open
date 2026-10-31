@@ -15,6 +15,7 @@
 #include "open/items.hpp"
 #include "open/move_order.hpp"
 #include "open/starter_content.hpp"
+#include "open/weapon_rules.hpp"
 #include "open/work.hpp"
 #include "test_support.hpp"
 
@@ -163,12 +164,14 @@ open::Vec3 at(double x, double z, double y = 0.0) {
 	return open::Vec3{static_cast<float>(x), static_cast<float>(y), static_cast<float>(z)};
 }
 
-// One workbench standing at the origin, and the context around it.
+// Two workbenches, both near the fixtures' standing ground: the forge at the origin and
+// the enchanting table a step aside, so "in reach of the bench a request names" is about
+// the bench's kind, not about geometry. Cases that want a far bench move the actor.
 struct World {
 	explicit World(std::shared_ptr<const open::ItemCatalog> cat = fixture_catalog())
 		: catalog(std::move(cat)), env(*catalog, ids, ledger) {
 		env.benches = {{kForge, open::BenchType::Smithing, at(0.0, 0.0)},
-					   {kEnchantBench, open::BenchType::Enchanting, at(50.0, 0.0)}};
+					   {kEnchantBench, open::BenchType::Enchanting, at(1.4, 0.0)}};
 	}
 	std::shared_ptr<const open::ItemCatalog> catalog;
 	open::ItemIdAllocator ids;
@@ -214,13 +217,14 @@ open::WorkRequest repair_request(open::ItemId target, open::WorkbenchId bench = 
 	return r;
 }
 
-open::WorkRequest enchant_request(open::ItemId target, open::WorkbenchId bench = kEnchantBench) {
+open::WorkRequest enchant_request(open::ItemId target, open::WorkbenchId bench = kEnchantBench,
+								  open::EnchantmentId enchantment = kEdge) {
 	open::WorkRequest r;
 	r.kind = open::WorkKind::EnchantWeapon;
 	r.recipe = kEnchantRecipe;
 	r.bench = bench;
 	r.target = target;
-	r.enchantment = kEdge;
+	r.enchantment = enchantment;
 	return r;
 }
 
@@ -425,6 +429,13 @@ void starter_work_table() {
 					&& enchant->bench == open::BenchType::Enchanting
 					&& enchant->cost == std::vector<open::MaterialQuantity>{{open::kRuneDustMaterial, 1}});
 	expect_true("and rune dust is a declared material", catalog->material(open::kRuneDustMaterial) != nullptr);
+	const auto *blunt = catalog->enchantment(open::kBluntEdge);
+	expect_true("Blunt Edge ships with its locked numbers",
+				blunt != nullptr && blunt->id == open::kBluntEdge
+					&& close(static_cast<float>(blunt->blunt_per_trained_rank), 0.01f, 1e-9f)
+					&& blunt->requirement.has_value()
+					&& *blunt->requirement == open::Attribute::Intelligence
+					&& blunt->requirement_divisor == 20u);
 }
 
 void starter_setup_supplies_materials_once() {
@@ -1125,6 +1136,50 @@ void work_locks_the_target() {
 					&& stock(world, who.id(), kScrap) == 4);
 }
 
+
+// Technique support lives on the immutable definition, and 16c's rule is that an
+// enchantment never extends it: a starter sword enchanted at the bench still offers
+// exactly Slash and Thrust.
+void enchanting_never_grows_technique_support() {
+
+	World world(open::make_starter_catalog());
+	open::Character who = sheet(1, world.catalog);
+	open::CombatSession session(0);
+	auto roster = roster_of(who, at(1.0, 0.0));
+	expect_true("the starter setup runs",
+				open::initialize_starter_inventory(who, world.ids, world.ledger));
+	open::ItemId sword = 0, edge_target = 0;
+	for (const open::ItemId id : who.backpack_items()) {
+		const auto made = who.instance(id);
+		if (made.has_value() && made->definition == open::kStarterSword) {
+			sword = id;
+		}
+	}
+	expect_true("the sword is worn", who.equip(sword, open::Slot::RightHand));
+	const auto before = open::weapon_attack_profile(who);
+	expect_true("and its profile names the two starter moves",
+				before.has_value() && before->techniques
+					== std::vector<open::TechniqueId>{open::TechniqueId(1), open::TechniqueId(2)});
+	edge_target = sword;
+	expect_true("the bench takes the worn sword",
+				session.request_work(roster, who.id(),
+									 enchant_request(edge_target, kEnchantBench, open::kBluntEdge),
+									 world.env));
+	for (int i = 0; i < 15; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_true("it is enchanted",
+				who.instance(edge_target)->enchantments.size() == 1u);
+	const auto after = open::weapon_attack_profile(who);
+	expect_true("and it offers the same two moves as before - no third technique appeared",
+				after.has_value() && after->techniques == before->techniques);
+}
+
+void repair_settlement();
+void repair_matrix();
+void enchant_settlement();
+void enchanting_never_grows_technique_support();
+
 int main() {
 	ledger_transactions();
 	catalog_recipe_validation();
@@ -1138,5 +1193,486 @@ int main() {
 	bench_clicks_and_frames();
 	frame_discipline();
 	work_locks_the_target();
+	repair_settlement();
+	repair_matrix();
+	enchant_settlement();
+	enchanting_never_grows_technique_support();
 	return test_summary();
+}
+
+// ==================================================================================
+// Task 16b: repair settlement. The seam is 16a's; what these cases own is what one
+// fifteen-second mending costs, delivers, pays, and refuses - for the two kinds of
+// thing the slice mends, a weapon and a shield, worn or carried, and never anything
+// else: armour and legacy records are not "equipment repair", they are outside it.
+// ==================================================================================
+
+// A worn item at a known durability, owned by the smith (stored or worn).
+open::ItemId worn_blade(open::Character &who, open::ItemId id, unsigned durability,
+						unsigned quality = 1u) {
+	const open::ItemId made = give(who, *who.catalog(), kBladeA, id, quality);
+	(void)made;
+	const unsigned missing = 100u - durability;
+	expect_true("the fixture dent is applied", who.apply_wear(id, missing));
+	return id;
+}
+
+void repair_settlement() {
+	World world;
+	open::Character who = sheet(1, world.catalog);
+	open::CombatSession session(0);
+	auto roster = roster_of(who, at(1.0, 0.0));
+	grant_kit(world, who.id(), 5);
+
+	// A carried, dented blade at rank 1: one scrap to start, one point at fifteen.
+	const open::ItemId blade = worn_blade(who, 70, 70);
+	const auto training_before = who.resolve_skill(open::BasicSkill::Smithing, std::nullopt);
+	expect_true("a stored, damaged blade is repairable",
+				session.request_work(roster, who.id(), repair_request(blade), world.env));
+	expect_true("one scrap, at the start", stock(world, who.id(), kScrap) == 4);
+	expect_true("and the request was repair-kind with the repair recipe",
+				who.work_status().request.kind == open::WorkKind::Repair);
+	for (int i = 0; i < 14; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_true("fourteen seconds mend nothing", who.instance(blade)->durability == 70u);
+	session.step(1.0, roster, world.env);
+	expect_true("the fifteenth delivers one point - a rank-1 mending is small, not zero",
+				who.instance(blade)->durability == 71u);
+	expect_true("paid once", stock(world, who.id(), kScrap) == 4);
+	expect_true("one Smithing XP for a mending that restored something",
+				who.resolve_skill(open::BasicSkill::Smithing, std::nullopt).xp
+					- training_before.xp
+				== 1u);
+	expect_true("no Hammerhand from mending", who.title_count(open::Title::Hammerhand) == 0u);
+
+	// The cap is the original maximum: a near-whole blade comes back whole and no whiter.
+	const open::ItemId near = worn_blade(who, 71, 99);
+	expect_true("the equality repair is accepted",
+				session.request_work(roster, who.id(), repair_request(near), world.env));
+	for (int i = 0; i < 20; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_true("capped at the maximum, not past it",
+				who.instance(near)->durability == 100u && who.instance(near)->max_durability == 100u);
+
+	// Higher trained rank, bigger mending, same cap: rank 50 restores half the maximum,
+	// and a very hurt blade still cannot exceed whole.
+	for (unsigned guard = 0; smithing_rank(who) < 50u && guard < 100000u; ++guard) {
+		who.record_use(open::BasicSkill::Smithing, std::nullopt, true);
+	}
+	expect_true("the smith grew", smithing_rank(who) >= 50u);
+	const open::ItemId hurt = worn_blade(who, 72, 10);
+	expect_true("a rank-50 repair starts",
+				session.request_work(roster, who.id(), repair_request(hurt), world.env));
+	for (int i = 0; i < 20; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_true("fifty percent of the maximum, rounded up where a point demands it",
+				who.instance(hurt)->durability == 60u);
+
+	// Repair never upgrades: quality and every fixed enchantment survive untouched.
+	World keeps;
+	open::Character keeper = sheet(2, keeps.catalog);
+	open::CombatSession keeps_session(0);
+	auto keeper_roster = roster_of(keeper, at(1.0, 0.0));
+	grant_kit(keeps, keeper.id(), 5);
+	const open::ItemId blessed = give(keeper, *keeps.catalog, kBladeA, 73, 3u);
+	const open::AppliedEnchantment fixed =
+		*make_applied_enchantment(*keeps.catalog->enchantment(kEdge), 40u);
+	expect_true("a tier-3 blade arrives enchanted",
+				keeper.attach_enchantment(blessed, fixed)
+					&& keeper.instance(blessed)->enchantments.size() == 1u
+					&& keeper.instance(blessed)->quality == 3u);
+	expect_true("dented on purpose", keeper.apply_wear(blessed, 50u));
+	expect_true("repaired",
+				keeps_session.request_work(keeper_roster, keeper.id(), repair_request(blessed),
+										   keeps.env));
+	for (int i = 0; i < 20; ++i) {
+		keeps_session.step(1.0, keeper_roster, keeps.env);
+	}
+	expect_true("the mending kept the quality", keeper.instance(blessed)->quality == 3u);
+	expect_true("and the enchantment, value and all",
+				keeper.instance(blessed)->enchantments.size() == 1u
+					&& keeper.instance(blessed)->enchantments[0].added_blunt
+						   == fixed.added_blunt);
+	// A rank-1 mending is one point: 50 becomes 51, on a maximum of 100 that the tier-3
+	// item has always had.
+	expect_true("and it mended on the tier-3 maximum it already had",
+				keeper.instance(blessed)->durability == 51u
+					&& keeper.instance(blessed)->max_durability == 100u);
+
+	// A whole item is refused before anything starts, and full-when-it-arrives is a free
+	// failure: the maximum is a fact, and a bench does not charge for admiring it.
+	{
+		World whole;
+		open::Character neat = sheet(3, whole.catalog);
+		open::CombatSession neat_session(0);
+		auto neat_roster = roster_of(neat, at(1.0, 0.0));
+		grant_kit(whole, neat.id(), 5);
+		const open::ItemId clean = give(neat, *whole.catalog, kBladeA, 74);
+		expect_true("a whole blade in reach is refused outright",
+					!neat_session.request_work(neat_roster, neat.id(), repair_request(clean),
+											   whole.env)
+						&& !neat.work_status().busy() && stock(whole, neat.id(), kScrap) == 5);
+		slot_at(neat_roster, neat.id()).position = at(9.0, 0.0);
+		expect_true("but from far away the queue cannot know yet",
+					neat_session.request_work(neat_roster, neat.id(), repair_request(clean),
+											  whole.env)
+						&& neat.work_status().queued());
+		slot_at(neat_roster, neat.id()).position = at(0.5, 0.0);
+		neat_session.step(0.1, neat_roster, whole.env);
+		expect_failed("an arrival that found it whole fails free", neat.work_status(),
+					  open::WorkFailure::RequirementsUnmet);
+		expect_true("nothing was paid", stock(whole, neat.id(), kScrap) == 5);
+	}
+
+	// A shield mends too - on the player's smithy, at the shield's own job.
+	{
+		World board;
+		open::Character carrier = sheet(4, board.catalog);
+		open::CombatSession board_session(0);
+		auto board_roster = roster_of(carrier, at(1.0, 0.0));
+		grant_kit(board, carrier.id(), 5);
+		const open::ItemId shield = give(carrier, *board.catalog, kBoard, 75);
+		const auto shield_training = carrier.resolve_skill(open::BasicSkill::Smithing, std::nullopt);
+		expect_true("the shield has durability to lose", carrier.apply_wear(shield, 40u));
+		expect_true("a worn shield in hand is repairable",
+					carrier.equip(shield, open::Slot::LeftHand)
+						&& board_session.request_work(board_roster, carrier.id(),
+													  repair_request(shield), board.env));
+		for (int i = 0; i < 20; ++i) {
+			board_session.step(1.0, board_roster, board.env);
+		}
+		expect_true("and mended", carrier.instance(shield)->durability > 60u);
+		expect_true("paid on basic Smithing",
+					carrier.resolve_skill(open::BasicSkill::Smithing, std::nullopt).xp
+							- shield_training.xp
+						== 1u
+						&& carrier.title_count(open::Title::Hammerhand) == 0u);
+	}
+
+	// An Armoursmith mending a shield still pays basic Smithing, and a Weaponsmith
+	// mending a shield does too: the shield has no advanced track to pay.
+	{
+		World smithy;
+		open::Character smith = sheet(5, smithy.catalog);
+		open::CombatSession smith_session(0);
+		auto smith_roster = roster_of(smith, at(1.0, 0.0));
+		grant_kit(smithy, smith.id(), 5);
+		for (unsigned guard = 0;
+			 smithing_rank(smith) < open::kBasicRankCap && guard < 100000u; ++guard) {
+			smith.record_use(open::BasicSkill::Smithing, std::nullopt, true);
+		}
+		expect_true("weaponsmithing chosen", smith.advance(open::AdvancedSkill::Weaponsmith));
+		const auto advanced_before = smith.advanced(open::AdvancedSkill::Weaponsmith);
+		const open::ItemId shield = give(smith, *smithy.catalog, kBoard, 76);
+		expect_true("shield dented", smith.apply_wear(shield, 30u));
+		expect_true("a Weaponsmith mends the shield",
+					smith_session.request_work(smith_roster, smith.id(), repair_request(shield),
+											   smithy.env));
+		for (int i = 0; i < 20; ++i) {
+			smith_session.step(1.0, smith_roster, smithy.env);
+		}
+		expect_true("and the advanced track earned nothing from it",
+					smith.advanced(open::AdvancedSkill::Weaponsmith)->xp == advanced_before->xp);
+		// A weapon, same smith, does pay the advanced track.
+		const open::ItemId blade = worn_blade(smith, 77, 80);
+		expect_true("the blade is mended by the specialist",
+					smith_session.request_work(smith_roster, smith.id(), repair_request(blade),
+											   smithy.env));
+		for (int i = 0; i < 20; ++i) {
+			smith_session.step(1.0, smith_roster, smithy.env);
+		}
+		expect_true("and the Weaponsmith earned the point",
+					smith.advanced(open::AdvancedSkill::Weaponsmith)->xp == advanced_before->xp + 1u);
+	}
+
+	// Targets outside the slice: a legacy record and (shape-level) anything not a weapon
+	// or a shield. The fixture catalog carries no armour record on purpose: an armour
+	// target has no definition to name, and the unknown id is the same refusal.
+	{
+		World outside;
+		open::Character wanderer = sheet(6, outside.catalog);
+		open::CombatSession outside_session(0);
+		auto wanderer_roster = roster_of(wanderer, at(1.0, 0.0));
+		grant_kit(outside, wanderer.id(), 5);
+		expect_true("a shield cannot be enchanted",
+					!outside_session.request_work(
+						wanderer_roster, wanderer.id(),
+						enchant_request(give(wanderer, *outside.catalog, kBoard, 78)),
+						outside.env));
+		expect_true("an id nobody owns cannot be repaired",
+					!outside_session.request_work(wanderer_roster, wanderer.id(),
+												  repair_request(12345), outside.env));
+	}
+}
+
+void repair_matrix() {
+	// The shared active matrix, run again against a repair: the interruption and payment
+	// rules are one seam for all three kinds, and this is where that is proven twice.
+	{
+		World world;
+		open::Character who = sheet(1, world.catalog);
+		open::CombatSession session(0);
+		auto roster = roster_of(who, at(1.0, 0.0));
+		grant_kit(world, who.id(), 5);
+		const open::ItemId blade = worn_blade(who, 80, 60);
+		expect_true("a repair starts",
+					session.request_work(roster, who.id(), repair_request(blade), world.env));
+		session.step(7.0, roster, world.env);
+		expect_true("seven seconds in, cancel takes it off the bench",
+					session.cancel_work(roster, who.id(), world.env));
+		expect_failed("spent, as craft's is", who.work_status(), open::WorkFailure::Cancelled);
+		expect_true("the scrap stays spent", stock(world, who.id(), kScrap) == 4);
+		expect_true("and delivered no mending", who.instance(blade)->durability == 60u);
+		for (int i = 0; i < 30; ++i) {
+			session.step(1.0, roster, world.env);
+		}
+		expect_true("never late", who.instance(blade)->durability == 60u);
+	}
+	{
+		World world;
+		open::Character who = sheet(1, world.catalog);
+		open::CombatSession session(0);
+		auto roster = roster_of(who, at(1.0, 0.0));
+		grant_kit(world, who.id(), 5);
+		const open::ItemId blade = worn_blade(who, 81, 60);
+		expect_true("a repair starts",
+					session.request_work(roster, who.id(), repair_request(blade), world.env));
+		open::Character raider = sheet(2, world.catalog, "Raider");
+		roster.push_back(open::Combatant{&raider, at(1.2, 2.0)});
+		expect_true("an incoming order arrives at eight seconds",
+					session.step(8.0, roster, world.env) && session.issue_attack(roster, raider.id(), who.id()));
+		session.step(0.1, roster, world.env);
+		expect_failed("and interrupts the way combat does", who.work_status(),
+					  open::WorkFailure::Combat);
+		expect_true("paid, undelivered",
+					stock(world, who.id(), kScrap) == 4 && who.instance(blade)->durability == 60u);
+	}
+	{
+		// Queued repairs clear free under a new move, exactly as queues do.
+		World world;
+		open::Character who = sheet(1, world.catalog);
+		open::CombatSession session(0);
+		auto roster = roster_of(who, at(9.0, 0.0));
+		grant_kit(world, who.id(), 5);
+		const open::ItemId blade = worn_blade(who, 82, 60);
+		expect_true("a far repair queues",
+					session.request_work(roster, who.id(), repair_request(blade), world.env));
+		expect_true("a new move clears it", session.issue_move(roster, who.id(), at(4.0, 4.0), world.env));
+		expect_failed("free", who.work_status(), open::WorkFailure::Movement);
+		expect_true("with the whole purse", stock(world, who.id(), kScrap) == 5);
+	}
+}
+
+// ==================================================================================
+// Task 16c: enchantment settlement. One rune dust, one fixed start-rank effect, one
+// slot, fifteen seconds - and every failure mode leaves the weapon exactly as whole
+// and the purse exactly as full as it was not.
+// ==================================================================================
+
+void enchant_settlement() {
+	World world;
+	open::Character who = sheet(1, world.catalog);
+	open::CombatSession session(0);
+	auto roster = roster_of(who, at(1.0, 0.0));
+	grant_kit(world, who.id(), 5, 5);
+	const open::ItemId blade = give(who, *world.catalog, kBladeA, 90, 1u);
+	const auto enchant_training = who.resolve_skill(open::BasicSkill::Enchanting, std::nullopt);
+
+	expect_true("the enchantment starts",
+				session.request_work(roster, who.id(), enchant_request(blade), world.env));
+	const auto midbench = who.work_status();
+	expect_phase("active", midbench, open::WorkPhase::Active);
+	expect_true("one rune dust paid at the start", stock(world, who.id(), kRuneDust) == 4);
+	expect_true("and no slot taken yet", who.instance(blade)->enchantments.empty());
+
+	// Rank changes mid-work do not move the captured application: train to 60 on the
+	// bench's clock and the delivery is still the rank-1 effect.
+	for (unsigned guard = 0;
+		 who.resolve_skill(open::BasicSkill::Enchanting, std::nullopt).rank < 60u
+			 && guard < 100000u;
+		 ++guard) {
+		who.record_use(open::BasicSkill::Enchanting, std::nullopt, true);
+	}
+	for (int i = 0; i < 15; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_phase("fifteen seconds fix it", who.work_status(), open::WorkPhase::Completed);
+	const auto enchanted = who.instance(blade);
+	expect_true("exactly one enchantment, at the starting rank: 1 x 0.01",
+				enchanted->enchantments.size() == 1u
+					&& close(static_cast<float>(enchanted->enchantments[0].added_blunt), 0.01f,
+							 1e-9f)
+					&& enchanted->enchantments[0].definition == kEdge);
+	expect_true("with the rank-1 requirement, not the rank-60 one: ceil(1/20) = 1 Intelligence",
+				enchanted->enchantments[0].requirement.has_value()
+					&& enchanted->enchantments[0].requirement->value == 1.0);
+	expect_true("one slot now used of one", enchanted->enchantment_slots == 1u);
+	expect_true("one Enchanting XP for the finished bench",
+				who.resolve_skill(open::BasicSkill::Enchanting, std::nullopt).xp
+						- enchant_training.xp
+					== 1u);
+	expect_true("no Hammerhand from enchanting", who.title_count(open::Title::Hammerhand) == 0u);
+	expect_true("paid once across the settle", stock(world, who.id(), kRuneDust) == 4);
+	for (int i = 0; i < 30; ++i) {
+		session.step(1.0, roster, world.env);
+	}
+	expect_true("and never twice", who.instance(blade)->enchantments.size() == 1u
+									  && stock(world, who.id(), kRuneDust) == 4);
+
+	// Full slots: a tier-1 weapon takes one enchantment, and a second request is refused
+	// before it is paid for. A tier-3 weapon has room for a second.
+	{
+		World full;
+		open::Character enchanter = sheet(2, full.catalog);
+		open::CombatSession full_session(0);
+		auto enchanter_roster = roster_of(enchanter, at(1.0, 0.0));
+		grant_kit(full, enchanter.id(), 5, 5);
+		const open::ItemId single = give(enchanter, *full.catalog, kBladeA, 91, 1u);
+		expect_true("the first enchantment lands",
+					full_session.request_work(enchanter_roster, enchanter.id(),
+											  enchant_request(single), full.env)
+						&& [&] {
+							   for (int i = 0; i < 15; ++i) {
+								   full_session.step(1.0, enchanter_roster, full.env);
+							   }
+							   return enchanter.instance(single)->enchantments.size() == 1u;
+						   }());
+		expect_true("a tier-1 weapon has no second slot, and nothing is charged for asking",
+					!full_session.request_work(enchanter_roster, enchanter.id(),
+											   enchant_request(single), full.env)
+						&& stock(full, enchanter.id(), kRuneDust) == 4);
+		const open::ItemId triple = give(enchanter, *full.catalog, kBladeA, 92, 3u);
+		expect_true("a tier-3 weapon takes it",
+					full_session.request_work(enchanter_roster, enchanter.id(),
+											  enchant_request(triple), full.env));
+		for (int i = 0; i < 15; ++i) {
+			full_session.step(1.0, enchanter_roster, full.env);
+		}
+		expect_true("and keeps it", enchanter.instance(triple)->enchantments.size() == 1u
+										&& stock(full, enchanter.id(), kRuneDust) == 3);
+	}
+
+	// A zero-durability weapon is still enchantable: durability gates damage, not benches,
+	// and the enchantment stays attached and active there.
+	{
+		World wrecked;
+		open::Character tinker = sheet(3, wrecked.catalog);
+		open::CombatSession wrecked_session(0);
+		auto tinker_roster = roster_of(tinker, at(1.0, 0.0));
+		grant_kit(wrecked, tinker.id(), 5, 5);
+		const open::ItemId broken = give(tinker, *wrecked.catalog, kBladeA, 93);
+		expect_true("the blade grinds to zero", tinker.apply_wear(broken, 100u)
+													&& tinker.instance(broken)->durability == 0u);
+		expect_true("and the bench still takes it",
+					wrecked_session.request_work(tinker_roster, tinker.id(),
+												 enchant_request(broken), wrecked.env));
+		for (int i = 0; i < 15; ++i) {
+			wrecked_session.step(1.0, tinker_roster, wrecked.env);
+		}
+		expect_true("fixed to a zero-durability weapon, active and whole",
+					tinker.instance(broken)->enchantments.size() == 1u
+						&& tinker.instance(broken)->durability == 0u);
+	}
+
+	// Interruption: no attachment, no slot, no XP - and no second charge either.
+	{
+		World world2;
+		open::Character enchanter = sheet(4, world2.catalog);
+		open::CombatSession session2(0);
+		auto roster2 = roster_of(enchanter, at(1.0, 0.0));
+		grant_kit(world2, enchanter.id(), 5, 5);
+		const open::ItemId blade2 = give(enchanter, *world2.catalog, kBladeA, 94);
+		const auto training2 = enchanter.resolve_skill(open::BasicSkill::Enchanting, std::nullopt);
+		expect_true("it starts", session2.request_work(roster2, enchanter.id(),
+													   enchant_request(blade2), world2.env));
+		session2.step(14.0, roster2, world2.env);
+		expect_true("cancel", session2.cancel_work(roster2, enchanter.id(), world2.env));
+		expect_true("nothing attached, nothing trained",
+					enchanter.instance(blade2)->enchantments.empty()
+						&& enchanter.resolve_skill(open::BasicSkill::Enchanting, std::nullopt).xp
+							   == training2.xp);
+		expect_true("and the one dust stays spent - no second charge, no refund",
+					stock(world2, enchanter.id(), kRuneDust) == 4);
+		for (int i = 0; i < 30; ++i) {
+			session2.step(1.0, roster2, world2.env);
+		}
+		expect_true("never delivered late",
+					enchanter.instance(blade2)->enchantments.empty()
+						&& stock(world2, enchanter.id(), kRuneDust) == 4);
+	}
+
+	// An enchanter who chose Weapon enchant pays that track.
+	{
+		World specialise;
+		open::Character caster = sheet(5, specialise.catalog);
+		open::CombatSession specialise_session(0);
+		auto caster_roster = roster_of(caster, at(1.0, 0.0));
+		grant_kit(specialise, caster.id(), 5, 5);
+		for (unsigned guard = 0;
+			 caster.resolve_skill(open::BasicSkill::Enchanting, std::nullopt).rank
+					 < open::kBasicRankCap
+			 && guard < 100000u;
+			 ++guard) {
+			caster.record_use(open::BasicSkill::Enchanting, std::nullopt, true);
+		}
+		expect_true("the weapon track chosen", caster.advance(open::AdvancedSkill::WeaponEnchant));
+		const auto advanced_before = caster.advanced(open::AdvancedSkill::WeaponEnchant);
+		const open::ItemId blade3 = give(caster, *specialise.catalog, kBladeA, 95);
+		expect_true("the bench starts", specialise_session.request_work(
+											caster_roster, caster.id(), enchant_request(blade3),
+											specialise.env));
+		for (int i = 0; i < 15; ++i) {
+			specialise_session.step(1.0, caster_roster, specialise.env);
+		}
+		expect_true("and pays it",
+					caster.advanced(open::AdvancedSkill::WeaponEnchant)->xp > advanced_before->xp);
+	}
+
+	// The enchanting requirement joins the wielder's workload the moment it lands: the
+	// weapon now asks its own Dexterity plus 1 Intelligence. (Technique support is
+	// untouched by construction - it lives on the immutable definition, and an
+	// enchantment adds to an item, never to what it is - and the starter version of that
+	// claim has its own case below.)
+	{
+		const auto after = who.instance(blade);
+		const std::vector<open::Requirement> added = enchantment_requirements(*after);
+		expect_true("the enchantment's Intelligence joins the weapon's demands",
+					added.size() == 1u && added[0].attribute == open::Attribute::Intelligence
+						&& added[0].value == 1.0);
+	}
+
+	// An enchanter who chose the armour track pays frozen basic Enchanting for a weapon:
+	// the specialisation never leaks, and the advanced armour track earns nothing.
+	{
+		World armourer;
+		open::Character caster = sheet(6, armourer.catalog);
+		open::CombatSession armourer_session(0);
+		auto caster_roster = roster_of(caster, at(1.0, 0.0));
+		grant_kit(armourer, caster.id(), 5, 5);
+		for (unsigned guard = 0;
+			 caster.resolve_skill(open::BasicSkill::Enchanting, std::nullopt).rank
+					 < open::kBasicRankCap
+			 && guard < 100000u;
+			 ++guard) {
+			caster.record_use(open::BasicSkill::Enchanting, std::nullopt, true);
+		}
+		expect_true("the armour enchant track chosen",
+					caster.advance(open::AdvancedSkill::ArmourEnchant));
+		const auto armour_before = caster.advanced(open::AdvancedSkill::ArmourEnchant);
+		const open::ItemId blade4 = give(caster, *armourer.catalog, kBladeA, 96);
+		expect_true("a weapon enchantment starts", armourer_session.request_work(
+													 caster_roster, caster.id(),
+													 enchant_request(blade4), armourer.env));
+		for (int i = 0; i < 15; ++i) {
+			armourer_session.step(1.0, caster_roster, armourer.env);
+		}
+		expect_true("it still completes on the frozen parent",
+					caster.work_status().phase == open::WorkPhase::Completed
+						&& caster.instance(blade4)->enchantments.size() == 1u);
+		expect_true("and the armour track earned nothing from a blade",
+					caster.advanced(open::AdvancedSkill::ArmourEnchant)->xp == armour_before->xp);
+	}
 }
