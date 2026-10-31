@@ -60,8 +60,15 @@ public:
 	// what was turned aside, which part, and which technique was performed (0 when the attack
 	// was the weapon's own). Presentation reads these and never decides from them.
 	//
-	// Keys: actor_id, target_id, part, damage, prevented, nullified, technique_id,
-	// attacker_item, defender_item. Absent part, technique and items are 0.
+	// Keys: actor_id, target_id, part, damage, prevented, attack_cooldown, nullified,
+	// technique_id, attacker_item, defender_item, defense_action. Absent part, technique and
+	// items are 0. `attack_cooldown` is the whole duration the performed attempt started its
+	// attack clock with, in seconds, so a clip is scaled to the swing rather than to a clock
+	// later frames have already worn down. `defense_action` is the answer the defender
+	// actually attempted - "block", "dodge", or "none" when nothing was attempted because the
+	// defence was cooling, the sheet was stunned, or it holds nothing that defends. It is the
+	// only field that separates a dodge from no defence, and a block worth nothing from no
+	// block, so presentation reads the word and never infers one.
 	godot::Array take_combat_events();
 
 	// --- workbenches (Task 17) ----------------------------------------------------

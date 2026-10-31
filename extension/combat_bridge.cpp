@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <limits>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -40,6 +41,22 @@ open::Vec3 to_sim(const godot::Vector3 &position) {
 
 godot::Vector3 to_godot(const open::Vec3 &velocity) {
 	return godot::Vector3(velocity.x, velocity.y, velocity.z);
+}
+
+// The three words the action chat switches on, written from the C++ answer and from
+// nothing else. `defender_item` cannot tell a dodge from no defence, and `prevented`
+// cannot tell a block worth nothing from no block at all, so neither is consulted here;
+// and because the value arrives from a known C++ enum rather than from a script, the
+// switch covers it exhaustively and no unvalidated GDScript input is cast into anything.
+godot::String defense_action_name(const std::optional<open::DefendAction> &action) {
+	if (!action.has_value()) {
+		return godot::String("none");  // no answer was attempted: cooling, stunned, or nothing held
+	}
+	switch (*action) {
+	case open::DefendAction::Block: return godot::String("block");
+	case open::DefendAction::Dodge: return godot::String("dodge");
+	}
+	return godot::String("none");  // unreachable while the enum holds two answers
 }
 
 // No seed crosses this boundary on purpose: reproducible draws are a C++ test
@@ -281,6 +298,11 @@ godot::Array OpenCombat::take_combat_events() {
 			swing.attack_item.has_value() ? static_cast<std::int64_t>(*swing.attack_item) : 0;
 		entry["defender_item"] =
 			swing.defense_item.has_value() ? static_cast<std::int64_t>(*swing.defense_item) : 0;
+		// Which answer the defender actually attempted, in the three words above. A dodge and
+		// no defence at all share a zero `defender_item`, so this is the only field that can
+		// tell them apart - and it is copied out of the report, never re-decided from the
+		// clocks or the equipment, which frames since have already moved.
+		entry["defense_action"] = defense_action_name(swing.defense_action);
 		events.push_back(entry);
 	}
 	events_.clear();

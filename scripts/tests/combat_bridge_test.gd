@@ -39,6 +39,24 @@ const TYPED_BLOW := 0.04 / 1.05
 # What any answer costs the sheet that makes it, whether it is a block or a dodge.
 const DEFENCE_COST := 8.0
 
+# The hand a shield is raised in: the C++ `Slot::LeftHand`.
+const SLOT_LEFT_HAND := 5
+
+# Every key a performed swing is expected to report, the new one included: the log is
+# built on `defense_action`, and the popups and clips are built on the rest, so an event
+# that loses a field is a bridge bug rather than a presentation problem.
+const EVENT_KEYS := ["actor_id", "target_id", "part", "damage", "prevented", "attack_cooldown",
+	"nullified", "technique_id", "attacker_item", "defender_item", "defense_action"]
+
+
+func _defense_of(event: Dictionary) -> String:
+	# Guarded on purpose: a bridge that never grew the key has to fail as an assertion in
+	# this suite, not as a script error that ends the run before the rest of it is counted.
+	if not event.has("defense_action"):
+		_check(false, "the event carries a defense_action key")
+		return "<missing>"
+	return String(event["defense_action"])
+
 
 func _combat():
 	return ClassDB.instantiate(&"OpenCombat")
@@ -377,10 +395,92 @@ func _swings_carry_their_clock() -> void:
 		_check(same_clock, note)
 
 
+func _events_name_the_defence_that_ran() -> void:
+	# The field exists because no number in an event can be read back into an answer: a
+	# zero-damage blow might be a dodge, a full block or armour, and a blow that prevented
+	# nothing might be a worthless block or no defence at all. The bridge's part is to say
+	# which one C++ decided, in the one spelling the log switches on.
+	#
+	# --- dodge: a fresh unarmed sheet's first answer, paid for in full.
+	var dodge_fight = _combat()
+	var hitter := _sheet(1, "Dodge Hitter")
+	var dodger := _sheet(2, "Dodge Dodger")
+	_check(dodge_fight.add_character(hitter, Vector3.ZERO), "the attacker registers")
+	_check(dodge_fight.add_character(dodger, Vector3(1.0, 0.0, 0.0)), "the defender registers in reach")
+	_check(dodge_fight.issue_attack(1, 2), "the dodge fight is ordered")
+	_check(dodge_fight.step(0.01), "a frame runs")
+	var dodged: Array = dodge_fight.take_combat_events()
+	_check(dodged.size() == 1, "one performed swing is one event, got %d" % dodged.size())
+	if dodged.size() == 1:
+		_check(_defense_of(dodged[0]) == "dodge", "the paid answer is reported as a dodge")
+		# The tempting guess, pinned beside the fact it would get wrong: this is the
+		# zero-damage event that *was* a defence.
+		_check(bool(dodged[0]["nullified"]) and _close(float(dodged[0]["damage"]), 0.0),
+			"and it is the nullified zero, as a dodge should be")
+		_check(float(dodged[0]["prevented"]) > 0.0, "and it prevented the whole of the blow")
+	_check(dodge_fight.take_combat_events().is_empty(), "the dodge queue is drained once")
+
+	# --- block: the starter's own shield, raised with the ordinary bridge call.
+	var block_fight = _combat()
+	var attacker := _sheet(1, "Shield Attacker")
+	var guard := _sheet(2, "Shield Guard")
+	_check(block_fight.add_character(attacker, Vector3.ZERO), "the shield attacker registers")
+	_check(block_fight.add_character(guard, Vector3(1.0, 0.0, 0.0)), "the guard registers in reach")
+	_check(block_fight.setup_starter_player(2), "the guard is given the starter kit by C++")
+	var shield_id := 0
+	var shield_slots: Array = []
+	for row in guard.get_equipment_snapshot():
+		if String(row["model_key"]) == "Shield_Round":
+			shield_id = int(row["item_id"])
+			shield_slots = row["slots"]
+	_check(shield_id != 0, "the starter kit owns a round shield the snapshot can name")
+	if shield_slots.is_empty():
+		_check(guard.equip_item(shield_id, SLOT_LEFT_HAND), "the shield is raised in the left hand")
+	else:
+		_check(shield_slots.has(SLOT_LEFT_HAND), "the shield already holds the left hand")
+	_check(block_fight.issue_attack(1, 2), "the block fight is ordered")
+	_check(block_fight.step(0.01), "a frame runs")
+	var blocked: Array = block_fight.take_combat_events()
+	_check(blocked.size() == 1, "one performed swing is one event, got %d" % blocked.size())
+	if blocked.size() == 1:
+		_check(_defense_of(blocked[0]) == "block", "a shield answer is reported as a block")
+		_check(int(blocked[0]["defender_item"]) == shield_id, "and it still names the item it blocked with")
+		_check(float(blocked[0]["prevented"]) > 0.0, "the board prevented something")
+		_check(float(blocked[0]["damage"]) > 0.0, "and part of the blow still arrived")
+	_check(block_fight.take_combat_events().is_empty(), "the block queue is drained once")
+
+	# --- none: one defence clock, spent by the first of two attackers in the same frame.
+	var spent = _combat()
+	# Registration order is swing order, so the two attackers are placed on purpose: the one
+	# named first is the one the target answers, and the second is the one it cannot.
+	var first := _sheet(1, "First Attacker")
+	var second := _sheet(4, "Second Attacker")
+	var shared := _sheet(2, "Shared Target")
+	_check(spent.add_character(first, Vector3.ZERO), "the first attacker registers")
+	_check(spent.add_character(second, Vector3(0.2, 0.0, 0.0)),
+		"the second attacker registers inside the same reach")
+	_check(spent.add_character(shared, Vector3(1.0, 0.0, 0.0)), "the target registers in reach")
+	_check(spent.issue_attack(1, 2), "the first attack is ordered")
+	_check(spent.issue_attack(4, 2), "and the second")
+	_check(spent.step(0.01), "one frame carries both swings")
+	var pair: Array = spent.take_combat_events()
+	_check(pair.size() == 2, "two performed swings are two events, got %d" % pair.size())
+	if pair.size() == 2:
+		_check(int(pair[0]["actor_id"]) == 1 and int(pair[1]["actor_id"]) == 4,
+			"the events stay in the order the swings happened")
+		_check(_defense_of(pair[0]) == "dodge", "the first blow met the defence that was ready")
+		_check(_defense_of(pair[1]) == "none", "the second met the same clock cooling")
+		_check(float(pair[1]["damage"]) > 0.0, "and so the second blow arrived")
+	for key in EVENT_KEYS:
+		_check(pair[0].has(key), "the event still carries %s" % key)
+	_check(spent.take_combat_events().is_empty(), "a drained queue is not a replay")
+
+
 func _run() -> void:
 	_registration_and_safe_defaults()
 	_end_to_end_fight()
 	_swings_carry_their_clock()
+	_events_name_the_defence_that_ran()
 	_lifetime_and_safety()
 	_seeding_varies_per_session()
 
