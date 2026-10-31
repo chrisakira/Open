@@ -319,6 +319,30 @@ bool Character::can_move() const {
 	return can_move_;
 }
 
+bool Character::playtest_power_up() {
+	if (!alive()) {
+		return false;
+	}
+	// The playtest rule is exactly what its name says: ten in every base, a
+	// hundred in every combat job, through the sheet's own setters so pools
+	// recalculate by the ordinary rule (keep the current value, clamp to the new
+	// maximum, refill nothing). Nothing about this is earned, and nothing
+	// downstream may come to expect it - it is the human asking to spar.
+	static constexpr BasicSkill kCombatJobs[] = {BasicSkill::OneHandedWeapons, BasicSkill::TwoHandedWeapons,
+												 BasicSkill::Polearms, BasicSkill::UnarmedCombat,
+												 BasicSkill::Archery, BasicSkill::Blocking,
+												 BasicSkill::Dodging};
+	for (int i = 0; i < static_cast<int>(Attribute::Count); ++i) {
+		set_base(static_cast<Attribute>(i), 10.0f);
+	}
+	for (const BasicSkill skill : kCombatJobs) {
+		while (skills_.basic(skill).rank < 100u) {
+			skills_.record_use(skill, std::nullopt, true);
+		}
+	}
+	return true;
+}
+
 void Character::set_can_move(bool can_move) {
 	can_move_ = can_move;
 }

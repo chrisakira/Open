@@ -67,6 +67,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_I or event.physical_keycode == KEY_I:
 			_toggle_popup()
 			return
+		if event.keycode == KEY_P or event.physical_keycode == KEY_P:
+			# The playtest lever, straight through to the sheet: C++ decides what
+			# "powered up" is, this only carries the human's intent.
+			if _player != null and _player.sheet != null:
+				_player.sheet.power_up()
+			return
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
@@ -526,7 +532,7 @@ func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var label := Label.new()
-	label.text = "Left click the floor to move. Left click a character to attack. I opens the character sheet."
+	label.text = "Left click the floor to move. Left click a character to attack. I opens the character sheet. P powers you up."
 	label.position = Vector2(24, 20)
 	label.add_theme_font_size_override("font_size", 22)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE

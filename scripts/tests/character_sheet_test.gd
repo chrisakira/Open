@@ -233,6 +233,29 @@ func _run() -> void:
 	_check(_close(clocked.get_health(), 80.0), "hp stayed where the hit left it")
 	_check(_close(clocked.get_part_health(0), 15.0), "the head stayed where the hit left it")
 
+	# The playtest lever: one call raises every attribute base and trains every
+	# combat job; the reads show it, and a dead sheet refuses it like every action.
+	var buffed := _configured_sheet()
+	_check(buffed.has_method("power_up"), "the bridge carries the playtest lever")
+	if buffed.has_method("power_up"):
+		_check(buffed.power_up(), "a living sheet accepts it")
+		_check(buffed.get_strength() >= 10.0,
+				"the strength reads at least the new base ten: got %s" % str(buffed.get_strength()))
+		var one_handed := 0.0
+		for row in buffed.get_skill_snapshot():
+			if String(row.name) == "One-Handed Weapons":
+				one_handed = float(row.value)
+		_check(one_handed > 100.0,
+				"the combat job reports a trained hundred: got %s" % str(one_handed))
+		var cooked := 0.0
+		for row in buffed.get_skill_snapshot():
+			if String(row.name) == "Cooking":
+				cooked = float(row.value)
+		_check(cooked < 20.0, "a non-combat job stayed untrained: got %s" % str(cooked))
+		var fallen := _configured_sheet()
+		_check(fallen.apply_damage(1, 1.0e30), "this sheet dies")
+		_check(not fallen.power_up(), "a dead sheet refuses the gift")
+
 	if failures == 0:
 		print("Character sheet: all checks passed")
 	quit(1 if failures else 0)

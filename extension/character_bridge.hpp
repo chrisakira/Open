@@ -59,6 +59,10 @@ public:
 	bool get_can_move() const;
 	void set_can_move(bool can_move);
 
+	// The playtest lever (Character::playtest_power_up): bases to ten, combat
+	// jobs to a hundred. False for an unconfigured object or a dead sheet.
+	bool power_up();
+
 	// Read-only view for the character popup: one dictionary per basic skill
 	// (name, value, advanced_name, advanced_value) in BasicSkill order. Empty
 	// for an unconfigured sheet. Names and effective values come from C++.

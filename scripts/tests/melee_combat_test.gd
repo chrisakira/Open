@@ -1002,6 +1002,27 @@ func _the_chat_is_drawn_under_the_popups() -> void:
 	await _free_world(world)
 
 
+func _the_power_key_lifts_the_player() -> void:
+	# P is the playtest lever, and it lifts exactly one sheet: the player's. The
+	# C++ rule is pinned by the simulation suite; what this scene check owns is
+	# that the key reaches the player's sheet and nobody else's.
+	var world := await _new_world()
+	var player: Node = world.get_node("Player")
+	var enemy: Node = world.get_node("Enemy")
+	_check(player.sheet.get_strength() < 2.0, "the player starts as fresh as the sheet allows")
+	_press_key(KEY_P)
+	_check(player.sheet.get_strength() >= 10.0,
+			"P lifts the player's strength: got %s" % str(player.sheet.get_strength()))
+	var one_handed := 0.0
+	for row in player.sheet.get_skill_snapshot():
+		if String(row.name) == "One-Handed Weapons":
+			one_handed = float(row.value)
+	_check(one_handed > 100.0,
+			"and the One-Handed job reports its trained hundred: got %s" % str(one_handed))
+	_check(enemy.sheet.get_strength() < 2.0, "the Enemy keeps the base it spawned with")
+	await _free_world(world)
+
+
 func _run() -> void:
 	# Read the viewport the tests actually run in, so a project window-size change
 	# moves the edge cases with it instead of stranding them off screen. In headless
@@ -1023,6 +1044,7 @@ func _run() -> void:
 	await _a_click_on_the_chat_still_walks_the_player()
 	await _the_chat_is_drawn_under_the_popups()
 	await _the_hud_chat_hears_the_worlds_first_swing()
+	await _the_power_key_lifts_the_player()
 
 	if failures == 0:
 		print("Melee combat: all checks passed")

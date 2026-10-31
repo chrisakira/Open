@@ -55,7 +55,9 @@ The bridge is `OpenCharacter` (`extension/character_bridge.cpp`):
 `configure_npc(id, name, faction, level, seed)` for an NPC, one successful
 configuration per object. Reads answer `0` / `false` / `-1` and bad ids report an
 error instead of throwing across Godot. `velocity_at(position)` takes no speed —
-the sheet owns it.
+the sheet owns it. `power_up()` is the playtest lever, not progression: it raises
+every base to ten and trains every combat job to a hundred on a living sheet
+(`Character::playtest_power_up`), and the scene binds it to **P**.
 
 Not built: earning levels or attribute bases, healing, crit and drop rolls, backpack capacity, the encumbrance formula, recruiting, squads, hunger/bleed, prosthetics and save/load. Combat resolution is the typed model `weapons.md` owns and `combat.md` sequences: an item catalog with owned instances, attack and defence profiles resolved from what a sheet actually holds, cut/pierce/blunt damage resisted by armour, percentage mitigation with a defence that costs its own stamina, durability and wear, and a stagger meter that stuns. Built and running, in other words. So are the techniques and the workbench actions, with the equipment and technique panels: the `OpenCharacter` bridge reads and moves real catalog instances, the player starts with the five-item backpack, held models and damage feedback draw from the same state, and the benches forge, mend and enchant through the coordinator. The scene's standing dummies fight bare hands because the starter setup is the player's, not because the bridge cannot dress them. `OpenMoveOrder` stays
 registered as a utility, but it is no longer the player's sheet.

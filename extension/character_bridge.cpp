@@ -170,6 +170,7 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("get_can_move"), &OpenCharacter::get_can_move);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_can_move", "can_move"),
 							   &OpenCharacter::set_can_move);
+	godot::ClassDB::bind_method(godot::D_METHOD("power_up"), &OpenCharacter::power_up);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_skill_snapshot"), &OpenCharacter::get_skill_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("set_destination", "destination"),
 							   &OpenCharacter::set_destination);
@@ -426,6 +427,14 @@ bool OpenCharacter::has_right_leg() const {
 bool OpenCharacter::get_can_move() const {
 	const open::Character *c = sheet();
 	return c != nullptr && c->can_move();
+}
+
+bool OpenCharacter::power_up() {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	return c->playtest_power_up();
 }
 
 void OpenCharacter::set_can_move(bool can_move) {

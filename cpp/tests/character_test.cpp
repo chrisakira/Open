@@ -375,5 +375,36 @@ int main() {
 		expect_true("a new pickup is impossible", !c.add_item(chest_armour(105)));
 	}
 
+	{
+		// playtest_power_up: the one command that turns a fresh sheet into a sparring
+		// partner: every attribute base to ten and every combat job to rank 100. Not
+		// progression - nobody earned this; the human asked, and the sheet obliged.
+		open::Character c = make_character();
+		expect_true("the living sheet accepts it", c.playtest_power_up());
+		for (int i = 0; i < static_cast<int>(open::Attribute::Count); ++i) {
+			const auto attribute = static_cast<open::Attribute>(i);
+			expect_close("every attribute base stands at ten", c.base(attribute), 10.0f);
+		}
+		const open::BasicSkill combat[] = {open::BasicSkill::OneHandedWeapons, open::BasicSkill::TwoHandedWeapons,
+										   open::BasicSkill::Polearms, open::BasicSkill::UnarmedCombat,
+										   open::BasicSkill::Archery, open::BasicSkill::Blocking,
+										   open::BasicSkill::Dodging};
+		for (const open::BasicSkill skill : combat) {
+			expect_true("every combat job is trained to a hundred", c.basic(skill).rank == 100u);
+		}
+		expect_true("and a non-combat job was left where it was born",
+					c.basic(open::BasicSkill::Cooking).rank == 1u);
+		expect_close("the HP maximum followed Constitution", c.pool(open::PoolKind::Hp).maximum, 1000.0f);
+		expect_close("the current value kept rather than refilled",
+					 c.pool(open::PoolKind::Hp).current, 100.0f);
+		expect_true("asking twice changes nothing more", c.playtest_power_up());
+		expect_close("and the bases are still ten", c.base(open::Attribute::Strength), 10.0f);
+
+		open::Character dead = make_character();
+		expect_true("this sheet dies", dead.damage(open::BodyPart::Torso, 1.0e30f));
+		expect_true("a dead sheet refuses the gift", !dead.playtest_power_up());
+		expect_close("and keeps the bases it died with", dead.base(open::Attribute::Strength), 1.0f);
+	}
+
 	return test_summary();
 }

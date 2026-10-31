@@ -120,6 +120,11 @@ public:
 	// turning it on cannot bring a character back.
 bool can_move() const;
 	void set_can_move(bool can_move);
+
+	// Playtest knob: raise every attribute base to ten and train every combat job
+	// to rank 100 in one command. It is not a progression system - nothing is
+	// earned, nothing is remembered about it - and a dead sheet refuses it.
+	bool playtest_power_up();
 	float walk_speed() const;
 
 	bool set_destination(float x, float y, float z);
