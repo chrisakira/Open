@@ -274,6 +274,9 @@ public:
 	const TechniqueDefinition *technique(TechniqueId id) const;
 	const CraftRecipe *recipe(RecipeId id) const;
 
+	// Every enchantment id, sorted: the bench lists what it can fix and guesses at no ids.
+	std::vector<EnchantmentId> enchantment_ids() const;
+
 	// Every recipe id, sorted: the popup enumerates what a bench can make without
 	// guessing at ids, and a test can insist it enumerated all of them.
 	std::vector<RecipeId> recipe_ids() const;

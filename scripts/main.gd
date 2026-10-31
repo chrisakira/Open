@@ -30,8 +30,19 @@ var _attack_popup: AttackPopup
 var _weapon_popup: WeaponPopup
 var _technique_popup: TechniquePopup
 var _equipment_popup: EquipmentPopup
+var _workbench_popup: WorkbenchPopup
 var _combat: OpenCombat
 var _feedback: CombatFeedback
+
+# The two benches the starter scene places, per docs/weapons.md: one clearly visible
+# Smithing Workbench and one clearly visible Enchanting Workbench. Ids and types are the
+# coordinator's observation schema; positions are recorded here only to hand to it.
+const BENCH_DEFS := [
+	{"id": 1, "type": 0, "name": "SmithingWorkbench",
+			"position": Vector3(-9.0, 0.0, 5.0), "color": Color(0.45, 0.32, 0.20)},
+	{"id": 2, "type": 1, "name": "EnchantingWorkbench",
+			"position": Vector3(-9.0, 0.0, 9.0), "color": Color(0.28, 0.22, 0.45)},
+]
 
 # Presentation only: the bodies whose positions the coordinator is told about.
 # Faction, health, ranks and orders stay in C++; nothing is mirrored here.
@@ -44,6 +55,7 @@ func _ready() -> void:
 	_build_player()
 	_build_standing_dummies()
 	_build_combat()
+	_build_workbenches()
 	_build_camera()
 	_build_marker()
 	_build_hud()
@@ -71,6 +83,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_technique_popup.close()
 			if _equipment_popup != null:
 				_equipment_popup.close()
+			if _workbench_popup != null:
+				_workbench_popup.close()
 			_try_character_or_floor_click(mouse.position)
 
 
@@ -83,7 +97,8 @@ func _popup_covers(point: Vector2) -> bool:
 	return (_attack_popup != null and _attack_popup.covers(point)) \
 		or (_weapon_popup != null and _weapon_popup.covers(point)) \
 		or (_technique_popup != null and _technique_popup.covers(point)) \
-		or (_equipment_popup != null and _equipment_popup.covers(point))
+		or (_equipment_popup != null and _equipment_popup.covers(point)) \
+		or (_workbench_popup != null and _workbench_popup.covers(point))
 
 
 func _toggle_popup() -> void:
@@ -145,6 +160,19 @@ func _on_unequip_requested(slot: int) -> void:
 	_player.sheet.unequip_item(slot)
 
 
+func _on_work_requested(request: Dictionary) -> void:
+	if _combat == null or _player == null or _player.sheet == null:
+		return
+	# Carried to the coordinator unchanged: the panel named ids, the coordinator decides.
+	_combat.request_work(_player.sheet.get_character_id(), request)
+
+
+func _on_work_cancel_requested() -> void:
+	if _combat == null or _player == null or _player.sheet == null:
+		return
+	_combat.cancel_work(_player.sheet.get_character_id())
+
+
 func _on_attack_requested(target_id: int) -> void:
 	if _combat == null or _player == null or _player.sheet == null:
 		return
@@ -167,6 +195,21 @@ func _try_character_or_floor_click(screen_pos: Vector2) -> void:
 	if hit.is_empty():
 		return
 	var body: Node = hit.get("collider", null)
+	if body is Area3D and body.has_meta("bench_id"):
+		# A bench click is a bench click. In reach it opens that bench's panel; out of reach
+		# it walks there through the coordinator and does not open anything - the approach is
+		# the click, not a preview of it.
+		var bench_id: int = int(body.get_meta("bench_id"))
+		if _combat != null and _player != null and _player.sheet != null:
+			var bench_position: Vector3 = (body.get_parent() as Node3D).global_position
+			var gap := Vector2(_player.global_position.x - bench_position.x,
+					_player.global_position.z - bench_position.z).length()
+			if gap <= 1.5 + 0.001:
+				_workbench_popup.open_for_bench(bench_id, int(body.get_meta("bench_type")),
+						screen_pos)
+			else:
+				_combat.approach_workbench(_player.sheet.get_character_id(), bench_id)
+		return
 	if body is Area3D and body.collision_layer & WEAPON_MASK:
 		_weapon_popup.open_for_model(body.get_parent().name, screen_pos)
 		return
@@ -192,7 +235,13 @@ func _try_move_to_click(screen_pos: Vector2) -> void:
 	if hit.is_empty():
 		return
 	var point: Vector3 = hit.position
-	_player.go_to(point)
+	# The floor walk goes through the coordinator when there is one, so the same order
+	# reaches the bench queue the way every other door does; the bare sheet call remains the
+	# fixture fallback.
+	if _combat != null and _player != null and _player.sheet != null:
+		_combat.issue_move(_player.sheet.get_character_id(), point)
+	else:
+		_player.go_to(point)
 	_show_marker(point)
 
 
@@ -347,6 +396,56 @@ func _build_combat() -> void:
 	_feedback.bind_combat(_combat, _actors)
 
 
+func _build_workbenches() -> void:
+	# Existing primitives only: a named table with a top, on a pick area, per the docs'
+	# "one clearly visible" bench. The pick area lives on the scenery mask and carries the
+	# coordinator's own observation ids, so a click reaches the same bench the step reads.
+	var observations: Array = []
+	for definition in BENCH_DEFS:
+		var bench := Node3D.new()
+		bench.name = String(definition["name"])
+		bench.position = definition["position"]
+		add_child(bench)
+
+		var table := MeshInstance3D.new()
+		var table_mesh := BoxMesh.new()
+		table_mesh.size = Vector3(1.8, 0.9, 1.4)
+		table.mesh = table_mesh
+		table.position = Vector3(0.0, 0.45, 0.0)
+		var table_material := StandardMaterial3D.new()
+		table_material.albedo_color = definition["color"]
+		table_material.roughness = 0.8
+		table.material_override = table_material
+		bench.add_child(table)
+
+		var legs := MeshInstance3D.new()
+		var leg_mesh := BoxMesh.new()
+		leg_mesh.size = Vector3(1.9, 0.18, 1.5)
+		legs.mesh = leg_mesh
+		legs.position = Vector3(0.0, 0.09, 0.0)
+		legs.material_override = table_material
+		bench.add_child(legs)
+
+		var area := Area3D.new()
+		area.name = "BenchPickArea"
+		area.collision_layer = WEAPON_MASK
+		area.collision_mask = 0
+		area.set_meta("bench_id", int(definition["id"]))
+		area.set_meta("bench_type", int(definition["type"]))
+		bench.add_child(area)
+		var collision := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(2.2, 1.4, 1.8)
+		collision.shape = shape
+		collision.position = Vector3(0.0, 0.7, 0.0)
+		area.add_child(collision)
+
+		observations.append({"id": int(definition["id"]), "type": int(definition["type"]),
+				"position": definition["position"]})
+	if _combat != null and not _combat.update_workbenches(observations):
+		push_error("The bench observations were refused by the coordinator")
+
+
 func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.name = "Camera"
@@ -402,6 +501,16 @@ func _build_hud() -> void:
 	_popup.equipment_requested.connect(_on_equipment_requested)
 	_equipment_popup.equip_requested.connect(_on_equip_requested)
 	_equipment_popup.unequip_requested.connect(_on_unequip_requested)
+
+	# The bench panel is the same shape as the other two: a view of the player's own working
+	# picture, sending requests the coordinator answers or refuses.
+	_workbench_popup = WorkbenchPopup.new()
+	_workbench_popup.name = "WorkbenchPopup"
+	_workbench_popup.visible = false
+	layer.add_child(_workbench_popup)
+	_workbench_popup.bind_worker(_combat, _player.sheet)
+	_workbench_popup.work_requested.connect(_on_work_requested)
+	_workbench_popup.cancel_requested.connect(_on_work_cancel_requested)
 
 	_attack_popup = AttackPopup.new()
 	_attack_popup.name = "AttackPopup"

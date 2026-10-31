@@ -449,4 +449,14 @@ std::vector<RecipeId> ItemCatalog::recipe_ids() const {
 	return ids;
 }
 
+std::vector<EnchantmentId> ItemCatalog::enchantment_ids() const {
+	std::vector<EnchantmentId> ids;
+	ids.reserve(enchantments_.size());
+	for (const auto &entry : enchantments_) {
+		ids.push_back(entry.first);
+	}
+	std::sort(ids.begin(), ids.end());
+	return ids;
+}
+
 }  // namespace open

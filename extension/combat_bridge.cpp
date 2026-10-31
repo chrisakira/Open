@@ -3,14 +3,18 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
+#include <set>
 #include <vector>
 
 #include "open/starter_content.hpp"
+#include "open/work_actions.hpp"
 
 // This adapter is compiled with -fno-exceptions, exactly like the rest of the
 // extension, so no call here may be able to throw: every input is checked before
@@ -83,9 +87,23 @@ void OpenCombat::_bind_methods() {
 							   &OpenCombat::setup_starter_player);
 	godot::ClassDB::bind_method(godot::D_METHOD("take_combat_events"),
 							   &OpenCombat::take_combat_events);
+	godot::ClassDB::bind_method(godot::D_METHOD("update_workbenches", "benches"),
+							   &OpenCombat::update_workbenches);
+	godot::ClassDB::bind_method(godot::D_METHOD("request_work", "actor_id", "request"),
+							   &OpenCombat::request_work);
+	godot::ClassDB::bind_method(godot::D_METHOD("cancel_work", "actor_id"),
+							   &OpenCombat::cancel_work);
+	godot::ClassDB::bind_method(godot::D_METHOD("approach_workbench", "actor_id", "bench_id"),
+							   &OpenCombat::approach_workbench);
+	godot::ClassDB::bind_method(godot::D_METHOD("issue_move", "actor_id", "position"),
+							   &OpenCombat::issue_move);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_work_snapshot", "actor_id"),
+							   &OpenCombat::get_work_snapshot);
 }
 
-OpenCombat::OpenCombat() : session_(random_seed()) {}
+OpenCombat::OpenCombat()
+	: catalog_(open::make_starter_catalog()), work_(*catalog_, ids_, materials_),
+	  session_(random_seed()) {}
 
 bool OpenCombat::build_roster(std::vector<open::Combatant> &roster) const {
 	roster.clear();
@@ -151,8 +169,18 @@ bool OpenCombat::remove_character(int64_t id) {
 	// object. Erasing from entries_ first is what makes an order aimed at this id
 	// stale, which is exactly what the survivors then reconcile away.
 	godot::Ref<OpenCharacter> leaving = entry->sheet;
-	if (open::Character *sheet = leaving->sheet()) {
-		sheet->clear_order();
+	open::Character *departing = leaving.is_null() ? nullptr : leaving->sheet();
+	// Removing a worker interrupts before anything is released: a queued job clears free,
+	// an active one stays paid, and the ledger never sees a second transaction or a refund.
+	// `cancel_work` needs a roster, and the departing sheet with its last known position
+	// is exactly one.
+	if (departing != nullptr && departing->work_status().busy()) {
+		const std::vector<open::Combatant> alone{
+			open::Combatant{departing, entry->position}};
+		session_.cancel_work(alone, static_cast<std::uint64_t>(id), work_);
+	}
+	if (departing != nullptr) {
+		departing->clear_order();
 	}
 	entries_.erase(entry);
 	std::vector<open::Combatant> roster;
@@ -192,8 +220,14 @@ bool OpenCombat::step(float seconds) {
 		return false;
 	}
 	// The session rejects a bad frame before it reads or writes anything, so an
-	// earlier position stays valid.
-	if (!session_.step(seconds, roster)) {
+	// earlier position stays valid. Once the scene has placed benches, every frame runs
+	// with the work environment: queued jobs may arrive and active ones may finish, and a
+	// frame that hid the environment from a live job is refused outright rather than
+	// silently ticking the fight without it.
+	const bool worked = !work_.benches.empty();
+	const bool stepped = worked ? session_.step(seconds, roster, work_)
+								: session_.step(seconds, roster);
+	if (!stepped) {
 		return false;
 	}
 	// Collected here rather than handed straight on: a frame that performed nothing has
@@ -269,4 +303,281 @@ godot::Vector3 OpenCombat::velocity_at(int64_t id) const {
 		return godot::Vector3();
 	}
 	return to_godot(session_.velocity_at(static_cast<std::uint64_t>(id), roster));
+}
+
+// --- workbenches (Task 17) -------------------------------------------------------------
+
+namespace {
+
+// One strictly-typed integer field: no float masquerading as an id, no text that "reads
+// like" a number, no silent Variant coercion. `allow_zero` marks the optional-reference
+// fields (target, enchantment), where 0 is the documented spelling of "none".
+bool read_int_field(const godot::Dictionary &source, const char *key, std::int64_t &out,
+					bool allow_zero) {
+	if (!source.has(key)) {
+		return false;
+	}
+	const godot::Variant value = source.get(key, godot::Variant());
+	if (value.get_type() != godot::Variant::INT) {
+		return false;
+	}
+	const std::int64_t number = static_cast<std::int64_t>(value);
+	if (number < 0 || (number == 0 && !allow_zero)) {
+		return false;
+	}
+	out = number;
+	return true;
+}
+
+bool has_exact_keys(const godot::Dictionary &source, const std::initializer_list<const char *> keys) {
+	if (static_cast<std::size_t>(source.size()) != keys.size()) {
+		return false;
+	}
+	for (const char *key : keys) {
+		if (!source.has(key)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+const char *work_phase_name(open::WorkPhase phase) {
+	switch (phase) {
+	case open::WorkPhase::Idle: return "idle";
+	case open::WorkPhase::Queued: return "queued";
+	case open::WorkPhase::Active: return "active";
+	case open::WorkPhase::Completed: return "completed";
+	case open::WorkPhase::Failed: return "failed";
+	}
+	return "idle";
+}
+
+const char *work_failure_name(open::WorkFailure failure) {
+	switch (failure) {
+	case open::WorkFailure::None: return "none";
+	case open::WorkFailure::Cancelled: return "cancelled";
+	case open::WorkFailure::Combat: return "combat";
+	case open::WorkFailure::Movement: return "movement";
+	case open::WorkFailure::BenchLost: return "bench_lost";
+	case open::WorkFailure::TargetLost: return "target_lost";
+	case open::WorkFailure::Dead: return "dead";
+	case open::WorkFailure::RequirementsUnmet: return "requirements_unmet";
+	}
+	return "none";
+}
+
+}  // namespace
+
+bool OpenCombat::update_workbenches(const godot::Array &benches) {
+	if (benches.is_empty()) {
+		return false;  // a scene without benches has nothing to register
+	}
+	std::vector<open::WorkbenchObservation> observed;
+	observed.reserve(static_cast<std::size_t>(benches.size()));
+	for (std::int64_t index = 0; index < benches.size(); ++index) {
+		const godot::Variant raw = benches[static_cast<int>(index)];
+		if (raw.get_type() != godot::Variant::DICTIONARY) {
+			return false;
+		}
+		const godot::Dictionary entry = raw;
+		if (!has_exact_keys(entry, {"id", "type", "position"})) {
+			return false;  // including a fourth field the coordinator never declared
+		}
+		std::int64_t id = 0;
+		std::int64_t type = 0;
+		if (!read_int_field(entry, "id", id, false) || !read_int_field(entry, "type", type, true)) {
+			return false;
+		}
+		if (type != static_cast<std::int64_t>(open::BenchType::Smithing)
+			&& type != static_cast<std::int64_t>(open::BenchType::Enchanting)) {
+			return false;
+		}
+		if (entry.get("position", godot::Variant()).get_type() != godot::Variant::VECTOR3) {
+			return false;
+		}
+		const godot::Vector3 position = entry.get("position", godot::Variant());
+		if (!std::isfinite(static_cast<double>(position.x))
+			|| !std::isfinite(static_cast<double>(position.y))
+			|| !std::isfinite(static_cast<double>(position.z))) {
+			return false;
+		}
+		for (const open::WorkbenchObservation &earlier : observed) {
+			if (earlier.id == static_cast<open::WorkbenchId>(id)) {
+				return false;  // one id cannot be two places
+			}
+		}
+		observed.push_back(open::WorkbenchObservation{static_cast<open::WorkbenchId>(id),
+													  static_cast<open::BenchType>(type),
+													  to_sim(position)});
+	}
+	// Validated whole, then adopted whole: the previous table served until this moment and
+	// the new one serves from it.
+	work_.benches = std::move(observed);
+	return true;
+}
+
+bool OpenCombat::request_work(int64_t actor_id, const godot::Dictionary &request) {
+	if (!usable_id(actor_id) || !has_exact_keys(request,
+			{"kind", "recipe", "bench", "target", "quality", "enchantment"})) {
+		return false;
+	}
+	std::int64_t kind = 0;
+	std::int64_t recipe = 0;
+	std::int64_t bench = 0;
+	std::int64_t target = 0;
+	std::int64_t quality = 0;
+	std::int64_t enchantment = 0;
+	if (!read_int_field(request, "kind", kind, true) || !read_int_field(request, "recipe", recipe, false)
+		|| !read_int_field(request, "bench", bench, false)
+		|| !read_int_field(request, "target", target, true)
+		|| !read_int_field(request, "quality", quality, true)
+		|| !read_int_field(request, "enchantment", enchantment, true)) {
+		return false;
+	}
+	open::WorkRequest parsed;
+	if (!open::valid(static_cast<open::WorkKind>(kind))) {
+		return false;
+	}
+	parsed.kind = static_cast<open::WorkKind>(kind);
+	parsed.recipe = static_cast<open::RecipeId>(recipe);
+	parsed.bench = static_cast<open::WorkbenchId>(bench);
+	if (target != 0) {
+		parsed.target = static_cast<open::ItemId>(target);
+	}
+	parsed.quality = static_cast<unsigned>(quality);
+	if (enchantment != 0) {
+		parsed.enchantment = static_cast<open::EnchantmentId>(enchantment);
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	return session_.request_work(roster, static_cast<std::uint64_t>(actor_id), parsed, work_);
+}
+
+bool OpenCombat::cancel_work(int64_t actor_id) {
+	if (!usable_id(actor_id)) {
+		return false;
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	return session_.cancel_work(roster, static_cast<std::uint64_t>(actor_id), work_);
+}
+
+bool OpenCombat::approach_workbench(int64_t actor_id, int64_t bench_id) {
+	if (!usable_id(actor_id) || !usable_id(bench_id)) {
+		return false;
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	return session_.approach_workbench(roster, static_cast<std::uint64_t>(actor_id),
+									   static_cast<open::WorkbenchId>(bench_id), work_);
+}
+
+bool OpenCombat::issue_move(int64_t actor_id, const godot::Vector3 &position) {
+	if (!usable_id(actor_id)) {
+		return false;
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	return session_.issue_move(roster, static_cast<std::uint64_t>(actor_id), to_sim(position),
+							   work_);
+}
+
+godot::Dictionary OpenCombat::get_work_snapshot(int64_t actor_id) const {
+	godot::Dictionary snapshot;
+	if (!usable_id(actor_id)) {
+		snapshot["valid"] = false;
+		return snapshot;
+	}
+	const auto entry = find(actor_id);
+	open::Character *who = entry == entries_.end() || entry->sheet.is_null() ? nullptr
+																			 : entry->sheet->sheet();
+	if (who == nullptr) {
+		snapshot["valid"] = false;
+		return snapshot;
+	}
+	snapshot["valid"] = true;
+	const open::WorkStatus status = who->work_status();
+	snapshot["busy"] = status.busy();
+	snapshot["phase"] = godot::String::utf8(work_phase_name(status.phase));
+	snapshot["failure"] = godot::String::utf8(work_failure_name(status.failure));
+	snapshot["elapsed"] = status.elapsed;
+	snapshot["duration"] = open::kWorkDuration;
+	snapshot["output"] = static_cast<std::int64_t>(status.output.value_or(0));
+	godot::Dictionary request;
+	request["kind"] = static_cast<std::int64_t>(status.request.kind);
+	request["recipe"] = static_cast<std::int64_t>(status.request.recipe);
+	request["bench"] = static_cast<std::int64_t>(status.request.bench);
+	request["target"] = static_cast<std::int64_t>(status.request.target.value_or(0));
+	request["quality"] = static_cast<std::int64_t>(status.request.quality);
+	request["enchantment"] = static_cast<std::int64_t>(status.request.enchantment.value_or(0));
+	snapshot["request"] = request;
+
+	// The purse, by material id. The ledger answers zero for what is not owned, so an
+	// absent entry and an empty one cannot be confused by whoever reads this.
+	godot::Dictionary materials;
+	std::set<open::MaterialId> spendable;
+	for (const open::RecipeId id : catalog_->recipe_ids()) {
+		const open::CraftRecipe *recipe = catalog_->recipe(id);
+		if (recipe != nullptr) {
+			for (const open::MaterialQuantity &line : recipe->cost) {
+				spendable.insert(line.material);
+			}
+		}
+	}
+	for (const open::MaterialId material : spendable) {
+		materials[static_cast<std::int64_t>(material)] = static_cast<std::int64_t>(
+			materials_.quantity(static_cast<std::uint64_t>(actor_id), material));
+	}
+	snapshot["materials"] = materials;
+	snapshot["quality_cap"] = static_cast<std::int64_t>(open::max_weapon_quality(*who));
+
+	// The whole work table, with one fact added in C++ per row: can this sheet, right now,
+	// pay this recipe's cost. Eligibility beyond the purse - caps, benches, targets, combat -
+	// stays the start-time answer it has always been, so a greyed button can never disagree
+	// with a refused request, but a lit one never promises delivery either.
+	godot::Array recipes;
+	for (const open::RecipeId id : catalog_->recipe_ids()) {
+		const open::CraftRecipe *recipe = catalog_->recipe(id);
+		if (recipe == nullptr) {
+			continue;
+		}
+		godot::Dictionary row;
+		row["id"] = static_cast<std::int64_t>(recipe->id);
+		row["kind"] = static_cast<std::int64_t>(recipe->kind);
+		row["bench"] = static_cast<std::int64_t>(recipe->bench);
+		row["output"] = static_cast<std::int64_t>(recipe->output);
+		godot::Array cost;
+		bool affordable = true;
+		for (const open::MaterialQuantity &line : recipe->cost) {
+			godot::Dictionary bill;
+			bill["material"] = static_cast<std::int64_t>(line.material);
+			bill["quantity"] = static_cast<std::int64_t>(line.quantity);
+			cost.push_back(bill);
+			if (materials_.quantity(static_cast<std::uint64_t>(actor_id), line.material) < line.quantity) {
+				affordable = false;
+			}
+		}
+		row["cost"] = cost;
+		row["affordable"] = affordable;
+		if (recipe->kind == open::WorkKind::EnchantWeapon) {
+			// The bench's own enchantment list, from the catalog: the popup sends an id it
+			// was shown and invents none.
+			godot::Array offers;
+			for (const open::EnchantmentId enchantment_id : catalog_->enchantment_ids()) {
+				offers.push_back(static_cast<std::int64_t>(enchantment_id));
+			}
+			row["enchantments"] = offers;
+		}
+		recipes.push_back(row);
+	}
+	snapshot["recipes"] = recipes;
+	return snapshot;
 }

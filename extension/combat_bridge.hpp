@@ -10,6 +10,10 @@
 #include "character_bridge.hpp"
 #include "open/combat_session.hpp"
 #include "open/item_instance.hpp"
+#include "open/items.hpp"
+#include "open/work.hpp"
+
+#include <godot_cpp/variant/dictionary.hpp>
 
 // Godot-facing handle on one open::CombatSession. It keeps the OpenCharacter
 // objects the scene registered alive, remembers where each was last standing, and
@@ -60,6 +64,37 @@ public:
 	// attacker_item, defender_item. Absent part, technique and items are 0.
 	godot::Array take_combat_events();
 
+	// --- workbenches (Task 17) ----------------------------------------------------
+
+	// Replaces this scene's bench observations in one validated step. Each entry is a
+	// dictionary of exactly id (a positive int), type (0 smithing, 1 enchanting) and
+	// position (a finite Vector3); ids are unique and the table is not empty. A bad entry
+	// refuses the whole call and keeps the previous table: a half-updated scene would let
+	// a job walk toward a bench nobody meant to place. Positions enter and are read; like
+	// combatant positions they are never trusted past this call, and a bench that vanishes
+	// is discovered by the next step missing its observation.
+	bool update_workbenches(const godot::Array &benches);
+
+	// Asks the coordinator to work. The dictionary is exactly a WorkRequest - kind, recipe,
+	// bench, target, quality, enchantment, all ints, 0 for "none" - and nothing else: no
+	// costs, no caps, no "in_combat" flag, because every one of those is C++'s answer, not
+	// the caller's claim. A malformed dictionary is refused before anything is read.
+	bool request_work(int64_t actor_id, const godot::Dictionary &request);
+
+	// Put the sheet's job down (free while queued, kept-paid while active), walk it to a
+	// bench, or move it on business of the caller's - each interrupting work exactly the
+	// way the same order would arrive from any other door.
+	bool cancel_work(int64_t actor_id);
+	bool approach_workbench(int64_t actor_id, int64_t bench_id);
+	bool issue_move(int64_t actor_id, const godot::Vector3 &position);
+
+	// One sheet's whole working picture: its schedule (phase, request, elapsed, duration,
+	// failure, output), the purse (materials by id), the C++ quality cap, and the whole
+	// work table with per-recipe affordability. The coordinator, not the sheet, answers -
+	// the schedule lives on the sheet but the purse lives here, and a popup should not be
+	// stitching two half-truths together.
+	godot::Dictionary get_work_snapshot(int64_t actor_id) const;
+
 private:
 	struct Entry {
 		godot::Ref<OpenCharacter> sheet;
@@ -80,6 +115,14 @@ private:
 	// setup command and (from Task 17) the workbench operations. Nothing outside this class
 	// adds to it; the starter setup is the only thing that ever has.
 	open::MaterialLedger materials_;
+	// The one catalog this coordinator works from - the same production table every sheet
+	// was configured against - held here so the work environment can point at it for as
+	// long as the coordinator lives.
+	std::shared_ptr<const open::ItemCatalog> catalog_;
+	// The work environment handed to every work-aware call: catalog, mint and purse by
+	// reference, plus this scene's current bench observations. Member-declared last among
+	// its dependencies so the references it holds are always already alive.
+	open::WorkContext work_;
 	// Swings collected from the session on the step that performed them, so that reading them
 	// is a separate decision from fighting.
 	std::vector<open::CombatEvent> events_;
