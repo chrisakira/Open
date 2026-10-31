@@ -773,6 +773,33 @@ func _a_real_event_warps_its_clip_to_its_own_clock() -> void:
 	await _free(world)
 
 
+# The floating labels' number formatting is about to move into a shared helper so the action chat
+# can print the same figures. Pinned against the current implementation first: this case has to
+# pass before the move and after it without being edited, which is what makes the move a
+# relocation rather than a rewrite. The trailing point on a whole amount is today's output and is
+# recorded as such - the chat's sentence form is asserted separately in `combat_log_test`.
+func _the_damage_format_is_pinned_before_it_moves() -> void:
+	var feedback := CombatFeedback.new()
+	var table := [
+		[0.0, "0."], [0.001, "0.001"], [0.0001, "0.0001"], [0.00000001, "0.00000001"],
+		[1.5, "1.5"], [3.8, "3.8"], [12.0, "12."], [900.0, "900."], [12345.678, "12345.678"],
+	]
+	for row in table:
+		var got := String(feedback.call("_damage_text", float(row[0])))
+		_check(got == String(row[1]), "the formatter reads %s as [%s], expected [%s]" % [
+				str(row[0]), got, String(row[1])])
+	_check(String(feedback.call("_damage_text", 0.04 / 1.05)) == "0.0381",
+			"and a rank-1 blow keeps the four decimals it needs to be more than nothing")
+	for row in table:
+		var amount := float(row[0])
+		if amount <= 0.0:
+			continue
+		var text := String(feedback.call("_damage_text", amount))
+		_check(text != "0" and float(text) > 0.0,
+				"no positive amount in the table prints as nothing: %s -> [%s]" % [str(amount), text])
+	feedback.free()
+
+
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
@@ -785,6 +812,7 @@ func _run() -> void:
 	await _a_real_event_warps_its_clip_to_its_own_clock()
 	await _landed_damage_shows_the_number_that_arrived()
 	await _tiny_and_technique_events_stay_legible()
+	_the_damage_format_is_pinned_before_it_moves()
 	_check(checks > 50, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Combat feedback: all checks passed")

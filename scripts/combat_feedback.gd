@@ -14,6 +14,10 @@ extends Node3D
 # read is kept by the coordinator rather than dropped, so a listener cannot miss a blow, and a
 # listener that reads cannot be handed the same blow again.
 
+# The amount a damage label prints, shared with the action chat so the two can never disagree
+# about what C++ reported.
+const CombatText := preload("res://scripts/combat_text.gd")
+
 const MODEL_PATH := "res://assets/weapons/quaternius_medieval/%s.obj"
 const SLOT_LEFT_HAND := 5
 const SLOT_RIGHT_HAND := 6
@@ -294,19 +298,10 @@ func _show_damage(target_id: int, damage: float) -> void:
 
 # Five decimals, then whatever is left: a rank-1 blow is worth under a hundredth of damage, and
 # a display that rounds it to zero would be reporting that nothing happened when C++ said
-# something did. A big hit keeps its whole number for the same reason.
+# something did. The rule lives in `combat_text.gd` so the action chat prints the same figures;
+# this stays as the label's own door, since it is where the tests reach it.
 func _damage_text(damage: float) -> String:
-	var text := String.num(damage, 5)
-	while text.ends_with("0") and not text.ends_with(".0"):
-		text = text.substr(0, text.length() - 1)
-	if text.ends_with(".0"):
-		text = text.substr(0, text.length() - 1)
-	if damage > 0.0 and float(text) <= 0.0:
-		# Five fixed decimals cannot hold this small a positive, and "0" would report
-		# that nothing arrived when C++ says something did. The engine's own default
-		# conversion does not round away a positive: it just gets longer about it.
-		text = String.num(damage)
-	return text
+	return CombatText.damage(damage)
 
 
 # Bigger hurts bigger, and both extremes stay on the screen: a chip is readable and a
