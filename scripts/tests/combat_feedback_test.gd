@@ -444,9 +444,11 @@ func _one_performed_swing_one_motion() -> void:
 			"a swing nobody could perform plays no motion")
 	_check(_labels_of(feedback).is_empty(), "and no damage either")
 
-	# The defender was never ordered and is never animated as if it were.
-	_check(int(feedback.call("swing_motion_count", ally_id)) == 0,
-			"the sheet that only defended plays no attack motion")
+	# The defender does not merely defend any more: the provoked sheet orders itself back
+	# and, rostered after its attacker, performs that return inside the same tick. One
+	# motion for it, and no more than one.
+	_check(int(feedback.call("swing_motion_count", ally_id)) == 1,
+			"the provoked defender plays exactly its one retaliation motion")
 	await _free(world)
 
 
@@ -511,8 +513,8 @@ func _landed_damage_shows_the_number_that_arrived() -> void:
 	_check(int(feedback.call("swing_motion_count", player_id)) >= 1
 			and int(feedback.call("swing_motion_count", ally_id)) >= 1,
 			"and both attacker views animated: the motion follows the sheet that swung")
-	_check(int(enemy_sheet.get_attack_target_id()) == 0,
-			"while the target still never ordered anything")
+	_check(int(enemy_sheet.get_attack_target_id()) == player_id,
+			"while the provoked Enemy holds its retaliation against the first sheet that hit it")
 
 	# Drained, then polled: the reports already drawn cannot be drawn again.
 	var labels_seen := labels.size()
@@ -752,10 +754,12 @@ func _a_real_event_warps_its_clip_to_its_own_clock() -> void:
 	while guard < 30 and event.is_empty():
 		combat.step(0.1)
 		var drained: Array = combat.take_combat_events()
-		if drained.size() == 1:
+		# The first event is the player's own swing; a provoked return may follow it in
+		# the same queue, and it is the ordered blow whose reported clock gets measured.
+		if not drained.is_empty():
 			event = drained[0]
 		guard += 1
-	_check(not event.is_empty(), "one real performed swing arrives")
+	_check(not event.is_empty(), "a real performed swing arrives")
 	if event.is_empty():
 		world.set_physics_process(true)
 		await _free(world)
@@ -840,9 +844,10 @@ func _park_at(world, who: String, next_to: String) -> void:
 	mover.global_position = anchor.global_position + Vector3(1.0, 0.0, 0.0)
 
 
-# The first real swing of a fresh fight is turned aside by the defender's paid dodge. It was still
-# performed, so it has to be seen twice: once as the clip, once as the line - and not at all as a
-# number, because nothing arrived.
+# The first real swing of a fresh fight is turned aside by the defender's paid dodge - and
+# provokes the defender into a return of its own, which the attacker dodges just as whole.
+# Both performed swings have to be seen by both report views, once each, and neither may
+# show a number, because nothing arrived either way.
 func _a_performed_swing_is_reported_once_to_every_view() -> void:
 	var world = await _world()
 	var feedback = _feedback_of(world)
@@ -860,26 +865,32 @@ func _a_performed_swing_is_reported_once_to_every_view() -> void:
 	_tick(world, 0.05)
 	_tick(feedback, 0.05)
 
-	_check(captured.size() == 1, "one performed swing is reported onward once, got %d"
+	_check(captured.size() == 2, "the ordered swing and its provoked return are each reported once, got %d"
 			% captured.size())
-	if captured.size() == 1:
+	if captured.size() == 2:
 		_check(String(captured[0]["defense_action"]) == "dodge",
 				"and it is the same event the drain produced: %s" % str(captured[0]))
+		_check(int(captured[1]["actor_id"]) == enemy_id and int(captured[1]["target_id"]) == player_id,
+				"the second report is the Enemy's return at its provoker")
+		_check(String(captured[1]["defense_action"]) == "dodge",
+				"and the player answered it the same way, whole")
 	_check(int(feedback.call("swing_motion_count", player_id)) == 1, "the clip played once")
 	_check(_labels_of(feedback).is_empty(), "a defence worth everything has no number to show")
 	if chat != null:
 		var lines := _chat_lines(chat)
-		_check(lines.size() == 1, "and the chat shows that one swing, got %s" % str(lines))
-		if lines.size() == 1:
+		_check(lines.size() == 2, "and the chat shows both swings, got %s" % str(lines))
+		if lines.size() == 2:
 			_check(String(lines[0]) == "Player attacks but Enemy dodges",
 					"the line names the dodge the event named: got [%s]" % String(lines[0]))
+			_check(String(lines[1]) == "Enemy attacks but Player dodges",
+					"and the retaliation reads as truthfully: got [%s]" % String(lines[1]))
 	# An empty poll afterwards reports nothing, to anybody.
 	_tick(world, 0.05)
 	_tick(feedback, 0.05)
-	_check(captured.size() == 1, "an empty poll adds no line, got %d" % captured.size())
+	_check(captured.size() == 2, "an empty poll adds no line, got %d" % captured.size())
 	_check(int(feedback.call("swing_motion_count", player_id)) == 1, "nor a second motion")
 	if chat != null:
-		_check(_chat_lines(chat).size() == 1, "nor a second entry")
+		_check(_chat_lines(chat).size() == 2, "nor a second entry")
 	_check(combat.take_combat_events().is_empty(),
 			"and the queue is still the feedback's to drain: nothing was left and nothing twice")
 	await _free(world)
@@ -908,15 +919,21 @@ func _a_blow_that_lands_reaches_the_clip_the_number_and_the_line() -> void:
 	_tick(world, 0.05)
 	_tick(feedback, 0.05)
 
-	_check(captured.size() == 2, "two performed swings are two reports, got %d" % captured.size())
-	if captured.size() != 2:
+	# Two ordered swings and the retaliation the first provoked: three reports, in the
+	# order the roster asked, and the enemy's answer to the player is a third performed
+	# swing - not a fourth view of somebody else's blow.
+	_check(captured.size() == 3, "two performed swings and the provoked return, got %d" % captured.size())
+	if captured.size() != 3:
 		await _free(world)
 		return
 	_check(String(captured[0]["defense_action"]) == "dodge"
 			and String(captured[1]["defense_action"]) == "none",
-			"the frame's two events differ only in the defence the clock left: %s then %s" % [
+			"the frame's two ordered events differ only in the defence the clock left: %s then %s" % [
 					String(captured[0]["defense_action"]), String(captured[1]["defense_action"])])
 	_check(float(captured[1]["damage"]) > 0.0, "and the second of them arrived")
+	_check(int(captured[2]["actor_id"]) == enemy_id and int(captured[2]["target_id"]) == player_id
+			and String(captured[2]["defense_action"]) == "dodge",
+			"the third is the Enemy's provoked return, dodged whole by the player")
 	_check(int(feedback.call("swing_motion_count", player_id)) == 1
 			and int(feedback.call("swing_motion_count", ally_id)) == 1,
 			"one motion each, no more")
@@ -926,8 +943,8 @@ func _a_blow_that_lands_reaches_the_clip_the_number_and_the_line() -> void:
 		await _free(world)
 		return
 	var lines := _chat_lines(chat)
-	_check(lines.size() == 2, "two swings are two lines, got %s" % str(lines))
-	if lines.size() != 2:
+	_check(lines.size() == 3, "three swings are three lines, got %s" % str(lines))
+	if lines.size() != 3:
 		await _free(world)
 		return
 	_check(String(lines[0]) == "Player attacks but Enemy dodges", "the answered swing reads true")
@@ -937,6 +954,8 @@ func _a_blow_that_lands_reaches_the_clip_the_number_and_the_line() -> void:
 	_check(String(lines[1]) == "Friendly attacks Enemy and deals %s damage" % amount,
 			"the line carries the very figure the label shows: [%s] against [%s]" % [
 					String(lines[1]), amount])
+	_check(String(lines[2]) == "Enemy attacks but Player dodges",
+			"and the retaliation line names the player's own dodge")
 	await _free(world)
 
 
@@ -965,19 +984,20 @@ func _a_refused_swing_reaches_nothing_at_all() -> void:
 	if chat != null:
 		_check(_chat_lines(chat).is_empty(), "and writes no line: %s" % str(_chat_lines(chat)))
 
-	# The same again with the clock, not the distance, refusing: one performed swing, then a
-	# frame inside its own cooldown.
+	# The same again with the clock, not the distance, refusing: one performed swing and
+	# the return it provokes, then a frame inside their own cooldowns.
 	_park_at(world, "Enemy", "Player")
 	_tick(world, 0.05)
 	_tick(feedback, 0.05)
-	_check(captured.size() == 1, "in reach, the swing happens and is reported once")
+	_check(captured.size() == 2, "in reach, the swing and its provoked return are reported")
+	_check(int(captured[1]["actor_id"]) == enemy_id, "the second is the Enemy's own retaliation")
 	var performed := int(feedback.call("swing_motion_count", player_id))
 	_tick(world, 0.01)
 	_tick(feedback, 0.01)
-	_check(captured.size() == 1, "cooling, it is not reported twice, got %d" % captured.size())
+	_check(captured.size() == 2, "cooling, neither is reported twice, got %d" % captured.size())
 	_check(int(feedback.call("swing_motion_count", player_id)) == performed, "nor played twice")
 	if chat != null:
-		_check(_chat_lines(chat).size() == 1, "and the chat did not invent a second line")
+		_check(_chat_lines(chat).size() == 2, "and the chat did not invent a third line")
 	await _free(world)
 
 

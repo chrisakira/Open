@@ -130,6 +130,51 @@ func _physics_process(delta: float) -> void:
 		if sheet != null:
 			_combat.set_position(sheet.get_character_id(), actor.global_position)
 	_combat.step(delta)
+	_face_attack_targets(delta)
+
+
+# Facing the fight: a character that holds an attack order turns to look at whoever C++
+# ordered it to attack. The order is the simulation's and nothing here adds one - the
+# same rule the walk faces along velocity already follows, only aimed at the target
+# instead of the feet. It matters most where walking cannot help: the standing dummy
+# cannot chase, but it no longer fights the back of its own head. The player gets it
+# too - in reach the ordered velocity is zero, so this, not the walk, is what aims
+# the model at the fight.
+const TURN_TO_TARGET_SPEED := 10.0
+
+
+func _face_attack_targets(delta: float) -> void:
+	var blend := clampf(TURN_TO_TARGET_SPEED * delta, 0.0, 1.0)
+	for actor in _actors:
+		if not is_instance_valid(actor):
+			continue
+		var sheet: OpenCharacter = actor.get("sheet")
+		if sheet == null:
+			continue
+		var target_id := int(sheet.get_attack_target_id())
+		if target_id == 0:
+			continue
+		var target := _actor_by_id(target_id)
+		if target == null or target == actor:
+			continue
+		var direction: Vector3 = target.global_position - actor.global_position
+		direction.y = 0.0
+		if direction.length_squared() < 0.0001:
+			continue
+		var wanted := actor.transform.looking_at(
+				actor.global_position + direction.normalized(), Vector3.UP)
+		actor.basis = Basis(actor.basis.get_rotation_quaternion().slerp(
+				wanted.basis.get_rotation_quaternion(), blend))
+
+
+func _actor_by_id(actor_id: int) -> CharacterBody3D:
+	for actor in _actors:
+		if not is_instance_valid(actor):
+			continue
+		var sheet: OpenCharacter = actor.get("sheet")
+		if sheet != null and int(sheet.get_character_id()) == actor_id:
+			return actor
+	return null
 
 
 # The technique panel is another view of the player's own sheet: it reads and writes that

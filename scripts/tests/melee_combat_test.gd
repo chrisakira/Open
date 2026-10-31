@@ -524,31 +524,47 @@ func _approach_then_auto_swing() -> void:
 	# worth everything it can do, so the blow lands as nothing: no health, no body part.
 	guard = await _wait_for_stamina_dip(enemy.sheet, 240)
 	_check(guard >= 0, "the Enemy answered a swing within 240 physics frames of the fight arriving")
-	_check(enemy.sheet.get_stamina() < 93.0, "the answer cost the Enemy its 8")
-	_check(player.sheet.get_stamina() < 93.0, "and the swing cost the player its own 8")
+	_check(enemy.sheet.get_stamina() < 85.5,
+			"the Enemy paid 8 for the answer and 8 more for the return it provoked")
+	_check(player.sheet.get_stamina() < 85.5,
+			"the player paid 8 for the swing and 8 for dodging that return")
 	_check(_close(enemy.sheet.get_health(), enemy_hp), "and the turned-aside blow changed no health")
 	_check(int(_parts_lost(enemy.sheet)[0]) == 0, "and no body part at all")
 	_check(player.sheet.get_level() == 1, "the player is still level one")
-	_check(_attack_target_id(enemy.sheet) == 0, "the defender never ordered a retaliation")
+	_check(_attack_target_id(enemy.sheet) == 1, "the swung-at Enemy ordered the player back")
+	# Facing is presentation reading the order: the dummy cannot walk to its target, but a
+	# model holding an attack order turns its eyes on it. The turn is smoothed, so give it
+	# half a second before measuring; the enemy spawned facing away from the fight and must
+	# not still be.
+	for frame in range(30):
+		await physics_frame
+	var facing: Vector3 = (-enemy.global_transform.basis.z).normalized()
+	var toward_player: Vector3 = player.global_position - enemy.global_position
+	toward_player.y = 0.0
+	toward_player = toward_player.normalized()
+	_check(facing.dot(toward_player) > 0.95,
+			"and the Enemy faces the player it is fighting, got %.2f" % facing.dot(toward_player))
 	_check(_close(enemy.global_position.x - enemy_start.x, 0.0) and \
 			_close(enemy.global_position.z - enemy_start.z, 0.0), "the standing dummy did not move")
 	_check(not enemy.sheet.get_can_move(), "and it still cannot move on its own")
-	_check(_close(player.sheet.get_health(), 100.0), "nothing was swung back at the player")
+	_check(_close(player.sheet.get_health(), 100.0), "the return blow was dodged whole")
 
 	# Automatic repeat: no further clicks, just the scene clock passing a cooldown. The
 	# bar refills well before the next swing is due, so a second dip can only be a second
-	# exchange, and the only thing that drives it is the world's own frame loop.
+	# exchange, and the only thing that drives it is the world's own frame loop. The
+	# Enemy now spends 16 a round - answer and retaliation - so it starts the refill
+	# deeper than the 8 an unengaged defender used to cost.
 	guard = 0
-	while guard < 120 and enemy.sheet.get_stamina() < 99.0:
+	while guard < 240 and enemy.sheet.get_stamina() < 99.0:
 		await physics_frame
 		guard += 1
-	_check(guard < 120, "the Enemy's bar came back while the cooldown ran")
+	_check(guard < 240, "the Enemy's bar came back while the cooldown ran")
 	guard = await _wait_for_stamina_dip(enemy.sheet, 300)
 	_check(guard >= 0, "the fight swung again on its own after one cooldown")
 	_check(guard >= 0 and enemy.sheet.get_stamina() < 93.0, "and the Enemy paid for the answer again")
 	_check(_close(enemy.sheet.get_health(), enemy_hp), "still turned aside, so still no damage")
 	_check(_close(player.sheet.get_health(), 100.0), "and the player is still unhurt")
-	_check(_attack_target_id(enemy.sheet) == 0, "the defender still ordered nobody")
+	_check(_attack_target_id(enemy.sheet) == 1, "the Enemy still holds its retaliation order")
 
 	# A floor click cancels and moves.
 	var floor_point := _floor_screen(world, camera, player.global_position, popup)
@@ -557,8 +573,12 @@ func _approach_then_auto_swing() -> void:
 		_click_at(floor_point)
 		_check(_attack_target_id(player.sheet) == 0, "the floor click cancelled the attack")
 		_check(marker.visible, "and showed the movement marker")
-		_check(not combat.is_in_combat(1), "the attacker left the fight")
-		_check(not combat.is_in_combat(3), "and so did the target")
+		# Walking away cancels the player's own order; it does not cancel the Enemy's
+		# grudge, and combat is true for both sides of any live order. The player is
+		# still being attacked, so the player is still in a fight - by order, not by
+		# distance, which is what the docs say in_combat means.
+		_check(combat.is_in_combat(1), "but the provoked Enemy keeps the player in the fight")
+		_check(combat.is_in_combat(3), "and still holds its own retaliation order")
 		var stopped_hp: float = enemy.sheet.get_health()
 		var walked: Vector3 = player.global_position
 		for frame in range(40):
@@ -644,15 +664,17 @@ func _manual_tick_regeners_once() -> void:
 
 	_check(combat.issue_attack(1, 2), "the in-range attack order is accepted")
 	_tick(world, 0.1)
-	# The swing happened on this tick and the ally's ready, paid dodge turned it aside, so
-	# the tick is measured in bars: 100 - 8 + one combat frame's 0.5 for each of them, the
-	# swing and the defence priced the same way.
+	# The swing happened on this tick and the ally's ready, paid dodge turned it aside -
+	# and the ally, provoked, ordered the player back and returned the blow inside the
+	# same tick, at an answer the player paid for as well. The tick is measured in bars:
+	# 100 - 8 - 8 + one combat frame's 0.5 for each of them.
 	_check(_close(ally.sheet.get_health(), 100.0), "the manual tick's opening swing was turned aside")
 	_check(int(_parts_lost(ally.sheet)[0]) == 0, "and wounded no body part")
 	var after_swing: float = player.sheet.get_stamina()
-	_check(_close(after_swing, 92.5, 0.0001), "the swing paid 8 and one frame regrew 0.5")
-	_check(_close(ally.sheet.get_stamina(), 92.5, 0.0001),
-		"the defence that answered it paid the same 8 and regrew the same 0.5")
+	_check(_close(after_swing, 84.5, 0.0001),
+			"the player paid 8 for the swing and 8 for the provoked return, and regrew 0.5")
+	_check(_close(ally.sheet.get_stamina(), 84.5, 0.0001),
+			"the ally paid 8 for the defence and 8 for its retaliation, and regrew the same 0.5")
 	var ally_stamina: float = ally.sheet.get_stamina()
 	var ally_mana: float = ally.sheet.get_mana()
 	var enemy_stamina: float = enemy.sheet.get_stamina()
@@ -671,9 +693,9 @@ func _manual_tick_regeners_once() -> void:
 	_check(_close(ally.sheet.get_mana(), ally_mana), "with its untouched mana still clamped at max")
 	_check(_close(enemy.sheet.get_stamina(), enemy_stamina), "the bystander's pools stayed full")
 	_check(_close(ally.sheet.get_health(), ally_hp), "the still-cooling attack did not spend again")
-	_check(_close(player.sheet.get_health(), player_hp), "and nobody was hit back")
-	_check(_attack_target_id(ally.sheet) == 0, "the passive defender never gained outgoing intent")
-	_check(_attack_target_id(enemy.sheet) == 0, "and neither did the bystander")
+	_check(_close(player.sheet.get_health(), player_hp), "and every blow this tick was turned aside")
+	_check(_attack_target_id(ally.sheet) == 1, "the provoked ally now holds its attacker as its order")
+	_check(_attack_target_id(enemy.sheet) == 0, "the bystander gained no intent of any kind")
 
 	await _free_world(world)
 
@@ -728,9 +750,10 @@ func _two_attackers_land_whole_blows() -> void:
 	_check(int(parts[0]) >= 1, "at least one body part took them")
 	_check(_close(float(parts[1]), whole_blows * TYPED_BLOW, 0.0002),
 		"the body parts were charged once for the same damage main HP was")
-	_check(_close(player.sheet.get_health(), 100.0) and _close(ally.sheet.get_health(), 100.0),
-		"neither attacker was hit back: a defence is not a retaliation")
-	_check(_attack_target_id(enemy.sheet) == 0, "the target still ordered nobody")
+	_check(player.sheet.get_health() > 99.0 and ally.sheet.get_health() > 99.0,
+		"the Enemy's returns land at most typed quanta, never a rout")
+	_check(_attack_target_id(enemy.sheet) == 1,
+		"and the Enemy fought back: its order names the first sheet that swung at it")
 	_check(combat.remove_character(2), "the second attacker is stood down again")
 	await _free_world(world)
 

@@ -31,11 +31,11 @@ Clicking the floor sets a `MoveOrder`. Left-clicking a living character (Friendl
 
 `Character::try_melee_swing` resolves one attempt: it pays `MeleeSwing` when it can and marks that swing exhausted when it cannot, runs the defender's block/dodge clock, samples one of six body parts, and applies damage once through `Character::damage`. Attack and defend cooldowns live on each sheet and advance once per `CombatSession::step`.
 
-`in_combat` is derived in C++ from outgoing and incoming attack orders, and `CombatSession::step` regenerates each living sheet with it. The scene no longer passes `false`; only a fixture with no coordinator does. Standing dummies still `set_can_move(false)` and never gain an order of their own.
+`in_combat` is derived in C++ from outgoing and incoming attack orders, and `CombatSession::step` regenerates each living sheet with it. The scene no longer passes `false`; only a fixture with no coordinator does. Standing dummies still `set_can_move(false)`: they never walk, never take an order of their own initiative — and once one is performed at them, they hold that retaliation, face it, and spend it from where they stand (section 1).
 
 Skill XP goes through the existing `record_use`; Duelist/Breaker kills and Wall blocks through `record_title_progress`. `OpenCharacter` exposes the target id, `OpenCombat` is the bridge's coordinator handle. `effective_skill`, `target_multiplier`, `held_usable`, `record_use`, and limb weapon gates exist in C++ and tests, and combat reads trained ranks through them rather than effective attributes.
 
-Not built: ranged and magic, squads and multiple-attacker systems, auto-retaliate, bleed, KO vs death. Crits (Luck) remain Open.
+Not built: ranged and magic, squads and multiple-attacker systems, bleed, KO vs death. Crits (Luck) remain Open.
 
 ## 1. Orders — locked
 
@@ -52,7 +52,7 @@ You do not pick each swing. In range, they attack on their own clock.
 
 How the player points: left-click a living character (Friendly or Enemy) opens a tiny popup with Attack. Choosing Attack issues the attack order on that id. Left-click floor is still a move order and cancels the attack. C++ owns the order; Godot only sends the target id.
 
-Auto-retaliate (attack back without an order): Open.
+**Current — auto-retaliate.** A performed swing at a living character is a provocation whatever its outcome: dodged, blocked, armour-zero or landed all count, and a refused attempt provokes nobody because nothing was performed. An unengaged victim — no attack order of its own — takes the attacker as its attack order, through the same setter an issued order uses: walk and bench go the way they do for any accepted attack. A victim already holding an attack order keeps it; explicit orders always outrank retaliation. The player's character is not exempt, and faction is never a gate. The order then behaves like any other order: it survives stun, holds until cancelled or the target dies, and keeps the fight true for both sides in `in_combat`. Facing follows the order: any character holding a live attack order turns its model toward the target, presentation reading the C++ order and nothing deciding anything back.
 
 Attacking the same faction is allowed. The popup is how you choose to do it.
 
@@ -192,7 +192,7 @@ Title progress stays as on the sheet: Duelist / Breaker on kills with that weapo
 
 ## 10. Later — open
 
-Beyond the starter slice: bows and crossbows, spell swings, multiple attackers, squads, bleed, KO vs death and auto-retaliate (still Open — no attack back without an order). The starter item catalog, weapon reach, typed damage and armour mitigation mechanics are locked in `weapons.md`, not deferred here; armour mitigation is exercised there with test fixtures, and playable armour content stays unbuilt.
+Beyond the starter slice: bows and crossbows, spell swings, multiple attackers, squads, bleed, KO vs death. Auto-retaliate is no longer deferred — section 1 carries the rule. The starter item catalog, weapon reach, typed damage and armour mitigation mechanics are locked in `weapons.md`, not deferred here; armour mitigation is exercised there with test fixtures, and playable armour content stays unbuilt.
 
 ## Ownership
 

@@ -21,7 +21,8 @@
 // C++ orders, clocks or regeneration advanced twice in one step, a roster with a
 // duplicate id, a null sheet or a NaN position that half-applies, a corpse that
 // swings or regens, pursuit from a position the coordinator kept instead of the
-// one it was just given, and a passive defence that turns into retaliation.
+// one it was just given, a provoked victim that repoints a fighter already ordered,
+// and a swing nobody performed counting as provocation.
 
 namespace {
 
@@ -550,8 +551,11 @@ int main() {
 	}
 
 	{
-		// passive_defense_is_not_retaliation: a landed hit trains and orders nobody
-		// on the defending side.
+		// landed_blow_orders_retaliation: a character hit by a swing takes that
+		// attacker as its own order. The provocation is the attempt, not the outcome,
+		// and it never repoints a sheet that already holds an attack order. Here the
+		// rostered victim stands after the attacker, so the return blow is performed
+		// inside the very same step.
 		open::Character attacker = make_character(1);
 		open::Character target = make_character(2);
 		const std::vector<open::Combatant> world =
@@ -566,21 +570,28 @@ int main() {
 
 		expect_close("the blow lands", hp_lost(before_target, target), kAnsweredBlow, 0.001f);
 		expect_true("exactly one part is hurt", parts_hurt(before_target, target) == 1);
-		expect_close("the attacker is unharmed", hp_lost(before_attacker, attacker), 0.0f);
-		expect_true("the defender still has no attack order", !target.attack_target().has_value());
+		expect_true("the defender took the attacker as its order", is_target(target.attack_target(), 1));
 		expect_true("the defender has no move order either", !target.destination().has_value());
-		expect_close("the defender never starts its own attack clock", target.attack_cooldown_remaining(),
-					 0.0f);
+		// The return swing is real and it is performed with an empty bar: exhausted,
+		// doubled, and clamped at the band's five-second floor of slowness.
+		expect_close("the defender's own attack clock runs", target.attack_cooldown_remaining(),
+					 5.0f, 0.001f);
+		// The return blow met a ready, paid answer: the attacker dodged the whole of it.
+		expect_close("the attacker is unharmed", hp_lost(before_attacker, attacker), 0.0f);
+		expect_close("and the attacker's answer has its clock running too",
+					 attacker.defend_cooldown_remaining(), kRank1Cooldown, 0.001f);
 		expect_close("the attacker's clock runs", attacker.attack_cooldown_remaining(), kRank1Cooldown,
 					 0.001f);
-		// The answer it could not pay for is exhausted, so its clock is the doubled
-		// rank-1 figure clamped to the band.
+		expect_true("the attacker keeps its own order instead of being repointed",
+					is_target(attacker.attack_target(), 2));
+		// The answer the defender could not pay for is exhausted, so its clock is the
+		// doubled rank-1 figure clamped to the band.
 		expect_close("the defender's spent defence clock runs too", target.defend_cooldown_remaining(),
 					 5.0f, 0.001f);
-		// Passive still means passive: no retaliation, and no Blocking either, because a
-		// dodge is what a sheet with nothing held defends with. What it does earn - one
-		// Dodging XP for the half it turned aside - is a defence rule, not a coordinator
-		// one, and is pinned by the swing tests.
+		// Retaliation orders the victim; it does not invent a Blocking, because a
+		// sheet holding nothing defends by dodging, and it earns no Wall for a lost
+		// defence. What the defence does earn - one Dodging XP for the half it turned
+		// aside - is a defence rule pinned by the swing tests.
 		expect_true("the defender learns no Blocking and earns no Wall",
 					target.basic(open::BasicSkill::Blocking).xp == before_target.tracks[kBlocking].xp);
 		expect_true("no Wall progress from a defence that lost",
@@ -588,6 +599,95 @@ int main() {
 		expect_true("the attacker trains once for the hit",
 					attacker.basic(open::BasicSkill::UnarmedCombat).xp ==
 						before_attacker.tracks[kUnarmed].xp + 1u);
+		// Both performed swings are reported, in the order the roster asked.
+		const std::vector<open::CombatEvent> frame = session.take_swing_events();
+		expect_true("one step, two performed swings", frame.size() == 2);
+		expect_true("the ordered blow first", frame.size() == 2 && frame[0].actor == 1 &&
+					frame[0].target == 2);
+		expect_true("the return blow second", frame.size() == 2 && frame[1].actor == 2 &&
+					frame[1].target == 1);
+		expect_true("and the return blow really met the answer it dodged",
+					frame.size() == 2 && frame[1].swing.defense_action.has_value());
+	}
+
+	{
+		// a_turned_aside_blow_still_provokes: dodged, blocked or zero - the attempt
+		// is the provocation. A fresh defence that nullifies the blow completely was
+		// still attacked, and it orders the attacker back.
+		open::Character attacker = make_character(1);
+		open::Character target = make_character(2);
+		const std::vector<open::Combatant> world =
+			roster({{&attacker, at(0.0f, 0.0f, 0.0f)}, {&target, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(27);
+		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+
+		const Observed before_target = observe(target);
+		expect_true("a short step runs", session.step(0.1f, world));
+
+		expect_close("the nullified blow hurt nothing", hp_lost(before_target, target), 0.0f);
+		expect_true("and it still provoked", is_target(target.attack_target(), 1));
+		// The victim paid the 8 for its answer and the 8 for the return swing it then
+		// made, in this same step, at its own full speed.
+		expect_true("the defender paid for the answer and for the return",
+					target.pool(open::PoolKind::Stamina).current < 92.0f);
+		expect_close("the defender's attack clock runs", target.attack_cooldown_remaining(),
+					 kRank1Cooldown, 0.001f);
+	}
+
+	{
+		// refused_attempt_provokes_nobody: a walk toward a target is not yet a
+		// swing. Nothing performed, nothing reported, nothing to retaliate against.
+		open::Character attacker = make_character(1);
+		open::Character target = make_character(2);
+		const std::vector<open::Combatant> world =
+			roster({{&attacker, at(0.0f, 0.0f, 0.0f)}, {&target, at(5.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(31);
+		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+		expect_true("a short step runs", session.step(0.1f, world));
+		expect_true("nothing was performed", session.take_swing_events().empty());
+		expect_true("nobody was provoked", !target.attack_target().has_value());
+		expect_close("the would-be defender spent no answer", target.defend_cooldown_remaining(),
+					 0.0f, 0.001f);
+	}
+
+	{
+		// retaliation_never_repoints_a_fighter: a victim already ordered at somebody
+		// keeps that target. Getting hit from elsewhere is provocation only for a
+		// sheet that held no attack order at all.
+		open::Character attacker = make_character(1);
+		open::Character target = make_character(2);
+		open::Character rival = make_character(3);
+		const std::vector<open::Combatant> world =
+			roster({{&attacker, at(0.0f, 0.0f, 0.0f)},
+					{&target, at(1.0f, 0.0f, 0.0f)},
+					{&rival, at(30.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(37);
+		expect_true("the victim already fights elsewhere", target.set_attack_target(3));
+		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+		exhaust_defence(target);
+
+		const Observed before_target = observe(target);
+		expect_true("a short step runs", session.step(0.1f, world));
+
+		expect_true("the blow did land", hp_lost(before_target, target) > 0.0f);
+		expect_true("and the victim still aims at its own chosen target",
+					is_target(target.attack_target(), 3));
+	}
+
+	{
+		// a_walk_becomes_a_fight: a victim that was walking loses the walk to the
+		// retaliation, exactly as an issued attack order clears the walk it replaces.
+		open::Character attacker = make_character(1);
+		open::Character target = make_character(2);
+		const std::vector<open::Combatant> world =
+			roster({{&attacker, at(0.0f, 0.0f, 0.0f)}, {&target, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(41);
+		expect_true("the victim is walking away", target.set_destination(1.0f, 0.0f, 8.0f));
+		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
+		exhaust_defence(target);
+		expect_true("a short step runs", session.step(0.1f, world));
+		expect_true("the defender gave up the walk", !target.destination().has_value());
+		expect_true("and took the attacker as its own order", is_target(target.attack_target(), 1));
 	}
 
 	{
@@ -606,6 +706,7 @@ int main() {
 		expect_true("a short step runs", session.step(0.1f, world));
 		expect_close("the swing finishes the victim", victim.pool(open::PoolKind::Hp).current, 0.0f, 0.001f);
 		expect_true("the victim is dead", !victim.alive());
+		expect_true("and the killing blow provokes nobody", !victim.attack_target().has_value());
 		expect_true("the killing order is already cancelled", !killer.attack_target().has_value());
 		expect_true("the winner is out of combat at once", !session.in_combat(1, world));
 		expect_true("the corpse is out of combat", !session.in_combat(2, world));
@@ -1112,8 +1213,11 @@ int main() {
 	}
 
 	{
-		// a_stun_holds_a_walker_in_place_without_taking_the_walk_away: the walk is not
-		// cancelled by being stunned, it is only not being done, and it resumes.
+		// a_stun_holds_a_fighter_in_place_without_taking_the_order_away: an order is
+		// not cancelled by being stunned, it is only not being done, and it resumes.
+		// The order under test is the retaliation the first landed blow installed -
+		// a walk no longer survives being swung at, and that replacement is pinned
+		// here too, by the same fight.
 		auto master = [](std::uint64_t id) {
 			open::Character made = make_character(id);
 			while (made.basic(open::BasicSkill::UnarmedCombat).rank < 100u) {
@@ -1122,39 +1226,47 @@ int main() {
 			return made;
 		};
 		open::Character hitter = master(1);
-		open::Character walker = make_character(2);
-		// Straight down the Z axis from where it stands, so the walk the coordinator is
-		// being asked for is one number rather than a heading.
+		open::Character target = make_character(2);
 		const std::vector<open::Combatant> world =
-			roster({{&hitter, at(0.0f, 0.0f, 0.0f)}, {&walker, at(0.0f, 0.0f, 1.0f)}});
+			roster({{&hitter, at(0.0f, 0.0f, 0.0f)}, {&target, at(0.0f, 0.0f, 1.0f)}});
 		open::CombatSession session(93);
 		expect_true("the attack is issued", session.issue_attack(world, 1, 2));
-		expect_true("the victim is walking away", walker.set_destination(0.0f, 0.0f, 30.0f));
-		expect_vec("and is being told to walk by the coordinator", session.velocity_at(2, world), 0.0f,
-				   0.0f, 4.5f);
+		expect_true("the victim was walking away", target.set_destination(0.0f, 0.0f, 30.0f));
 
 		int steps = 0;
-		while (!walker.is_stunned() && steps < 2000) {
+		while (!target.is_stunned() && steps < 2000) {
 			++steps;
 			exhaust_defence(hitter);
-			exhaust_defence(walker);
+			exhaust_defence(target);
 			expect_true("a tenth of a second passes", session.step(0.1f, world));
 		}
-		expect_true("the walker was stunned mid-stride", walker.is_stunned());
-		expect_vec("which holds them in place", session.velocity_at(2, world), 0.0f, 0.0f, 0.0f);
-		expect_true("without taking the walk away", walker.destination().has_value());
-		expect_true("and without making them a bystander", session.in_combat(2, world));
+		expect_true("the fighter was stunned mid-fight", target.is_stunned());
+		expect_true("the first landed blow had taken the walk away and given a "
+					"retaliation in its place",
+					!target.destination().has_value() && is_target(target.attack_target(), 1));
+		expect_vec("the stun holds them in place", session.velocity_at(2, world), 0.0f, 0.0f, 0.0f);
+		expect_true("and does not make them a bystander", session.in_combat(2, world));
 
 		int to_expiry = 0;
-		while (walker.is_stunned() && to_expiry < 60) {
+		while (target.is_stunned() && to_expiry < 60) {
 			++to_expiry;
 			exhaust_defence(hitter);
-			exhaust_defence(walker);
+			exhaust_defence(target);
 			expect_true("a tenth of a second passes", session.step(0.1f, world));
 		}
-		expect_true("the stun ended", !walker.is_stunned());
-		expect_vec("and the walk is the walk it was", session.velocity_at(2, world), 0.0f, 0.0f, 4.5f);
-		expect_true("still to the same place", walker.destination().has_value());
+		expect_true("the stun ended", !target.is_stunned());
+		expect_true("the retaliation order outlived the stun", is_target(target.attack_target(), 1));
+
+		const float hitter_hp_before = hitter.pool(open::PoolKind::Hp).current;
+		int resumed = 0;
+		while (hitter.pool(open::PoolKind::Hp).current == hitter_hp_before && resumed < 120) {
+			++resumed;
+			exhaust_defence(hitter);
+			exhaust_defence(target);
+			expect_true("a tenth of a second passes", session.step(0.1f, world));
+		}
+		expect_true("and the freed sheet swings its attacker again",
+					hitter.pool(open::PoolKind::Hp).current < hitter_hp_before);
 	}
 
 	{
@@ -1244,7 +1356,14 @@ int main() {
 		const Observed before_hit = observe(target);
 		expect_true("the first frame runs", session.step(0.1f, world));
 		const std::vector<open::CombatEvent> first = session.take_swing_events();
-		expect_true("one performed blow is one event", first.size() == 1u);
+		// The ordered blow, plus the retaliation it provoked: the victim is rostered
+		// second, so its return swing is performed inside the same frame.
+		expect_true("one performed blow, plus the return it provoked, is two events",
+					first.size() == 2u);
+		if (first.size() == 2u) {
+			expect_true("the second event is the retaliation, aimed back at its provoker",
+						first[1].actor == 2u && first[1].target == 1u);
+		}
 		if (!first.empty()) {
 			expect_true("named by the two sheets it happened between",
 						first[0].actor == 1u && first[0].target == 2u);
@@ -1306,7 +1425,10 @@ int main() {
 		expect_true("the guarded fight is issued", guarded.issue_attack(duel, 5, 6));
 		expect_true("a frame runs", guarded.step(0.1f, duel));
 		const std::vector<open::CombatEvent> turned = guarded.take_swing_events();
-		expect_true("the turned-aside blow is still one event", turned.size() == 1u);
+		// Nullified is not unprovoking: the dodged sheet takes the attacker as its
+		// order and, rostered second, returns the blow inside the same frame.
+		expect_true("the turned-aside blow is reported, plus the return it provoked",
+					turned.size() == 2u);
 		if (!turned.empty()) {
 			expect_true("reported as nullified, with no damage to show",
 						turned[0].swing.nullified && turned[0].swing.damage == 0.0f);
@@ -1348,8 +1470,12 @@ int main() {
 		expect_true("and the second", crowded.issue_attack(three, 8, 9));
 		expect_true("a frame runs", crowded.step(0.1f, three));
 		const std::vector<open::CombatEvent> pair = crowded.take_swing_events();
-		expect_true("two performed blows are two events", pair.size() == 2u);
-		if (pair.size() == 2u) {
+		// Two ordered blows in roster order, and the retaliation the first one
+		// provoked: middle is rostered last, so its return swing is performed in the
+		// same frame, after both attackers had their turn.
+		expect_true("two performed blows and the provoked return are three events",
+					pair.size() == 3u);
+		if (pair.size() == 3u) {
 			expect_true("in roster order", pair[0].actor == 7u && pair[1].actor == 8u);
 			expect_true("both against the sheet they were ordered at",
 						pair[0].target == 9u && pair[1].target == 9u);
@@ -1362,6 +1488,8 @@ int main() {
 							*pair[0].swing.defense_action == open::DefendAction::Dodge);
 			expect_true("and the second met the same defence cooling",
 						!pair[1].swing.defense_action.has_value());
+			expect_true("the third is middle's retaliation, aimed at the first sheet that hit it",
+						pair[2].actor == 9u && pair[2].target == 7u);
 		}
 		expect_true("a frame reported once: the pair is not queued twice",
 					crowded.take_swing_events().empty());
@@ -1376,7 +1504,10 @@ int main() {
 		exhaust_defence(victim);
 		expect_true("the killing fight is issued", ending.issue_attack(last, 10, 11));
 		expect_true("a frame runs", ending.step(0.1f, last));
-		expect_true("the killing blow is reported once", ending.take_swing_events().size() == 1u);
+		// The blow and the return it provoked: the victim is only a corpse two lines
+		// from here, so at the swing it still had every reason to order itself back.
+		expect_true("the blow and its provoked return are reported together",
+					ending.take_swing_events().size() == 2u);
 		victim.damage(open::BodyPart::Torso, 1.0e30f);
 		killer.advance_combat_clocks(60.0f);
 		expect_true("the next frame runs", ending.step(0.1f, last));

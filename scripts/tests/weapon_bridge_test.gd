@@ -478,9 +478,12 @@ func _a_performed_technique_starts_a_real_clock() -> void:
 		combat.step(0.1)
 		events = combat.take_combat_events()
 		guard += 1
-	_check(events.size() == 1, "one performed swing is reported, got %d" % events.size())
+	_check(events.size() == 2, "one performed swing and its provoked return, got %d" % events.size())
 	if events.is_empty():
 		return
+	_check(int(events[0]["actor_id"]) == 15, "the ordered blow comes first, in roster order")
+	_check(int(events[1]["actor_id"]) == 16,
+			"and the second is the provoked victim's own return at its attacker")
 	_check(int(events[0]["technique_id"]) == SLASH,
 			"and it performed the sequence's first entry, not the unsupported one")
 	_check(_cooldown_of(sheet, BLUNT_EDGE) == 0.0,
@@ -501,15 +504,28 @@ func _a_performed_technique_starts_a_real_clock() -> void:
 
 	# The next swing, still inside the cooldown: Slash is Skip-while-cooling, the hammer move
 	# is unsupported on this weapon too, one loop finds nothing, and the attack is a basic one.
+	# The victim, still holding its retaliation, answers on its own clock beside it.
 	events = []
 	guard = 0
 	while guard < 200 and events.is_empty():
 		combat.step(0.1)
 		events = combat.take_combat_events()
 		guard += 1
-	_check(events.size() == 1, "the fight swung again on its own clock")
-	if events.size() == 1:
-		_check(int(events[0]["technique_id"]) == 0,
+	# The victim, still holding its retaliation, is on its own clock beside it - the
+	# faster one here: an unarmed rank-1 return (4.67 s) comes round before the
+	# requirement-starved sword swing it answers (clamped to the band's 5 s floor).
+	_check(events.size() == 1 and int(events[0]["actor_id"]) == 16,
+			"the provoked victim's return arrives alone, on its own quicker clock, got %d"
+			% events.size())
+	events = []
+	guard = 0
+	while guard < 200 and events.is_empty():
+		combat.step(0.1)
+		events = combat.take_combat_events()
+		guard += 1
+	_check(not events.is_empty(), "and the ordered sheet swings again on its own clock")
+	if not events.is_empty():
+		_check(int(events[0]["actor_id"]) == 15 and int(events[0]["technique_id"]) == 0,
 				"with every entry skipped, the performed attack is the weapon's own basic one")
 	_check(_cooldown_of(sheet, SLASH) < cooling,
 			"while the clock kept wearing down between the swings, once per step")

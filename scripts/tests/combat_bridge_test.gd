@@ -173,13 +173,13 @@ func _end_to_end_fight() -> void:
 	# blow does nothing at all - which the bridge can only show through the two bars that
 	# moved, because nothing else about the exchange is visible from here.
 	_check(_close(target.get_health(), 100.0), "a ready, paid defence turns the opening swing aside")
-	_check(_close(player.get_health(), 100.0), "the attacker was not hurt by swinging")
-	_check(player.get_stamina() > 92.0 and player.get_stamina() < 93.0,
-		"the swing paid 8 stamina and only this frame's combat regen came back")
-	_check(target.get_stamina() > 92.0 and target.get_stamina() < 93.0,
-		"and so did the defence that turned it aside, unasked")
-	_check(_attack_target_of(target) == 0, "the defender never took an attack order itself")
-	_check(combat.is_in_combat(2), "the defender is in the fight without ordering anything")
+	_check(_close(player.get_health(), 100.0), "and the return it provoked was dodged as whole")
+	_check(player.get_stamina() > 84.0 and player.get_stamina() < 85.0,
+		"the swing paid 8 and dodging the provoked return paid 8, one frame's regen aside")
+	_check(target.get_stamina() > 84.0 and target.get_stamina() < 85.0,
+		"the defence paid its 8 and the retaliation that answer provoked paid another")
+	_check(_attack_target_of(target) == 1, "the defender ordered the attacker back")
+	_check(combat.is_in_combat(2), "the provoked defender holds its own place in the fight")
 	var parts: Array = _parts_hit(target)
 	_check(int(parts[0]) == 0, "a turned-aside swing wounds no body part at all")
 
@@ -205,8 +205,10 @@ func _end_to_end_fight() -> void:
 
 	_check(player.set_destination(Vector3(6.0, 0.0, 0.0)), "a floor-style move order goes through the sheet")
 	_check(_attack_target_of(player) == 0, "the move order cancelled the attack")
-	_check(not combat.is_in_combat(1), "the attacker left the fight")
-	_check(not combat.is_in_combat(2), "and so did the defender")
+	# The provoked defender still holds its own order, and combat is true of both sides
+	# of any live order: cancelling your own does not cancel the one taken against you.
+	_check(combat.is_in_combat(1), "the walk leaves the fight the player started, not the one started on it")
+	_check(combat.is_in_combat(2), "and the provoked defender still holds the fight")
 	var walk: Vector3 = combat.velocity_at(1)
 	_check(_close(walk.x, 4.5) and _close(walk.y, 0.0) and _close(walk.z, 0.0),
 		"the coordinator publishes ordinary move velocity again")
@@ -371,8 +373,10 @@ func _swings_carry_their_clock() -> void:
 	combat.step(0.1)
 	combat.step(0.4)
 	var events: Array = combat.take_combat_events()
-	_check(events.size() == 1, "one performed swing waits in the queue")
-	if events.size() != 1:
+	# The ordered swing and the return its provocation performed, both inside the first
+	# frame: the foe is registered second, so the roster asks it after its attacker.
+	_check(events.size() == 2, "one performed swing and its provoked return wait in the queue")
+	if events.size() != 2:
 		return
 	_check(events[0].has("attack_cooldown"), "and the event carries its own clock")
 	var late: float = float(events[0]["attack_cooldown"])
@@ -387,8 +391,8 @@ func _swings_carry_their_clock() -> void:
 	_check(fresh.issue_attack(1, 2), "the oracle fight is on")
 	fresh.step(0.1)
 	var now: Array = fresh.take_combat_events()
-	_check(now.size() == 1, "the oracle swing is reported at once")
-	if now.size() == 1:
+	_check(now.size() == 2, "the oracle reports the swing and its provoked return")
+	if now.size() == 2:
 		var same_clock := _close(late, float(now[0]["attack_cooldown"]), 0.0001)
 		var note := "the late drain reports the whole duration, not the four and a half "
 		note += "seconds left: %s against %s" % [str(late), str(float(now[0]["attack_cooldown"]))]
@@ -410,14 +414,19 @@ func _events_name_the_defence_that_ran() -> void:
 	_check(dodge_fight.issue_attack(1, 2), "the dodge fight is ordered")
 	_check(dodge_fight.step(0.01), "a frame runs")
 	var dodged: Array = dodge_fight.take_combat_events()
-	_check(dodged.size() == 1, "one performed swing is one event, got %d" % dodged.size())
-	if dodged.size() == 1:
+	# The provoked dodger does not stand there having only dodged: it orders the hitter
+	# back, is rostered second, and returns the blow inside the same frame.
+	_check(dodged.size() == 2, "one performed swing and its provoked return, got %d" % dodged.size())
+	if dodged.size() == 2:
 		_check(_defense_of(dodged[0]) == "dodge", "the paid answer is reported as a dodge")
 		# The tempting guess, pinned beside the fact it would get wrong: this is the
 		# zero-damage event that *was* a defence.
 		_check(bool(dodged[0]["nullified"]) and _close(float(dodged[0]["damage"]), 0.0),
 			"and it is the nullified zero, as a dodge should be")
 		_check(float(dodged[0]["prevented"]) > 0.0, "and it prevented the whole of the blow")
+		_check(int(dodged[1]["actor_id"]) == 2 and int(dodged[1]["target_id"]) == 1,
+			"the second event is the retaliation, aimed back at its provoker")
+		_check(_defense_of(dodged[1]) == "dodge", "and it met the hitter's own fresh dodge")
 	_check(dodge_fight.take_combat_events().is_empty(), "the dodge queue is drained once")
 
 	# --- block: the starter's own shield, raised with the ordinary bridge call.
@@ -441,12 +450,14 @@ func _events_name_the_defence_that_ran() -> void:
 	_check(block_fight.issue_attack(1, 2), "the block fight is ordered")
 	_check(block_fight.step(0.01), "a frame runs")
 	var blocked: Array = block_fight.take_combat_events()
-	_check(blocked.size() == 1, "one performed swing is one event, got %d" % blocked.size())
-	if blocked.size() == 1:
+	_check(blocked.size() == 2, "one performed swing and its provoked return, got %d" % blocked.size())
+	if blocked.size() == 2:
 		_check(_defense_of(blocked[0]) == "block", "a shield answer is reported as a block")
 		_check(int(blocked[0]["defender_item"]) == shield_id, "and it still names the item it blocked with")
 		_check(float(blocked[0]["prevented"]) > 0.0, "the board prevented something")
 		_check(float(blocked[0]["damage"]) > 0.0, "and part of the blow still arrived")
+		_check(int(blocked[1]["actor_id"]) == 2 and int(blocked[1]["target_id"]) == 1,
+			"and the provoked guard answers the attacker, whoever it holds in its hand")
 	_check(block_fight.take_combat_events().is_empty(), "the block queue is drained once")
 
 	# --- none: one defence clock, spent by the first of two attackers in the same frame.
@@ -464,13 +475,17 @@ func _events_name_the_defence_that_ran() -> void:
 	_check(spent.issue_attack(4, 2), "and the second")
 	_check(spent.step(0.01), "one frame carries both swings")
 	var pair: Array = spent.take_combat_events()
-	_check(pair.size() == 2, "two performed swings are two events, got %d" % pair.size())
-	if pair.size() == 2:
+	# Two ordered swings, and the retaliation the first of them provoked: the target is
+	# registered last, so its answer is performed inside the same frame, after both.
+	_check(pair.size() == 3, "two performed swings and the provoked return, got %d" % pair.size())
+	if pair.size() == 3:
 		_check(int(pair[0]["actor_id"]) == 1 and int(pair[1]["actor_id"]) == 4,
 			"the events stay in the order the swings happened")
 		_check(_defense_of(pair[0]) == "dodge", "the first blow met the defence that was ready")
 		_check(_defense_of(pair[1]) == "none", "the second met the same clock cooling")
 		_check(float(pair[1]["damage"]) > 0.0, "and so the second blow arrived")
+		_check(int(pair[2]["actor_id"]) == 2 and int(pair[2]["target_id"]) == 1,
+				"the provoked target answers its first attacker, not its second")
 	for key in EVENT_KEYS:
 		_check(pair[0].has(key), "the event still carries %s" % key)
 	_check(spent.take_combat_events().is_empty(), "a drained queue is not a replay")

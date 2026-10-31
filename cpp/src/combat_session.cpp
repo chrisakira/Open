@@ -233,6 +233,19 @@ bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 				events_.erase(events_.begin());
 			}
 			events_.push_back(CombatEvent{actor.character->id(), target->character->id(), *swung});
+			// Auto-retaliation: the performed attempt is the provocation, whatever its
+			// outcome - dodged, blocked, armour-zero or a plain hit all count, and a
+			// refused one provokes nobody because nothing was done to provoke with. The
+			// order goes in only when the victim held no attack order at all: being hit
+			// from the side never repoints a fight already chosen, and an issued order -
+			// the player's click among them - always outranks this one. Death refuses the
+			// order inside set_attack_target, so a killing blow provokes nobody, and a
+			// walk or bench the retaliation replaces is cleared by that same setter.
+			// Roster order is untouched: a victim asked later returns the blow inside
+			// this step, a victim asked earlier does it in the next.
+			if (!target->character->attack_target().has_value()) {
+				target->character->set_attack_target(actor.character->id());
+			}
 		}
 	}
 	// Whatever those swings killed has to be reconciled before the frame reports
