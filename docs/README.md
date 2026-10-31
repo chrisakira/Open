@@ -8,4 +8,5 @@ Design lives here. Code and tests still win when they disagree with an older par
 | [combat.md](combat.md) | Attack orders, swings, speed, damage |
 | [weapons.md](weapons.md) | Weapon and item properties: starter equipment, typed damage, techniques, durability, workbenches |
 | [style.md](style.md) | Visual and interaction style for menus and popups |
+| [combat_log.md](combat_log.md) | On-screen overlay: bottom-left action chat |
 | [superpowers/plans/](superpowers/plans/) | Implementation plans, newest first |
