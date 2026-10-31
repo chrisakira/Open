@@ -725,6 +725,54 @@ func _the_swing_plays_the_clip_c_asks_for() -> void:
 	await _free(world)
 
 
+func _a_real_event_warps_its_clip_to_its_own_clock() -> void:
+	var world: Node = await _world()
+	var combat = world.get("_combat")
+	var feedback = _feedback_of(world)
+	if feedback == null:
+		await _free(world)
+		return
+	world.set_physics_process(false)
+	var players: Array = world.get_node("Player").find_children(
+			"CharacterAnimationPlayer", "AnimationPlayer", true, false)
+	if players.size() != 1:
+		world.set_physics_process(true)
+		await _free(world)
+		return
+	var anim: AnimationPlayer = players[0]
+
+	# A real fight, a real drained event, the feedback fed that very event: the clip it
+	# chooses must last exactly the duration this swing's C++ clock reported - captured
+	# from the event, not re-read from a later, partially ticked one.
+	var enemy: Node = world.get_node("Enemy")
+	combat.set_position(1, enemy.global_position + Vector3(-1.0, 0.0, 0.0))
+	_check(combat.issue_attack(1, int(enemy.sheet.get_character_id())), "the fight is on")
+	var event: Dictionary = {}
+	var guard := 0
+	while guard < 30 and event.is_empty():
+		combat.step(0.1)
+		var drained: Array = combat.take_combat_events()
+		if drained.size() == 1:
+			event = drained[0]
+		guard += 1
+	_check(not event.is_empty(), "one real performed swing arrives")
+	if event.is_empty():
+		world.set_physics_process(true)
+		await _free(world)
+		return
+	var duration: float = float(event["attack_cooldown"])
+	_check(duration > 0.0 and is_finite(duration), "its own clock: %s" % str(duration))
+	feedback.call("_play_reports", [event])
+	var clip: StringName = anim.current_animation
+	var played: float = anim.get_animation(clip).length / anim.speed_scale
+	_check(absf(played - duration) < 0.0001,
+			"the clip %s lasts exactly the reported %s seconds" % [str(clip), str(duration)])
+	_check(absf(duration - 0.28) > 0.01,
+			"and that is C++'s duration, not the retired fixed tilt time")
+	world.set_physics_process(true)
+	await _free(world)
+
+
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
@@ -734,6 +782,7 @@ func _run() -> void:
 	await _the_dummy_view_needs_no_orders()
 	await _one_performed_swing_one_motion()
 	await _the_swing_plays_the_clip_c_asks_for()
+	await _a_real_event_warps_its_clip_to_its_own_clock()
 	await _landed_damage_shows_the_number_that_arrived()
 	await _tiny_and_technique_events_stay_legible()
 	_check(checks > 50, "the suite ran its full set of checks (ran %d)" % checks)
