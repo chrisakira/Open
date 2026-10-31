@@ -1015,6 +1015,106 @@ void active_interruptions() {
 	}
 }
 
+// --- review pass: interruption is a fact of the order and the frame ------------------
+
+// "Combat beginning (including an incoming attack order)" clears a queue, and "the
+// character must stay within workbench reach; leaving reach... interrupts the action
+// without returning consumed materials" (docs/weapons.md). Both are read at issue and
+// at the frame's position, not at a convenience: an accepted order has begun combat the
+// moment it is accepted, and a worker the world moved out of reach is no longer working
+// whatever doors the move came through.
+void combat_and_distance_at_issue() {
+	// An incoming order interrupts a QUEUED job at issue - free, with no step in
+	// between. Waiting for a frame to notice is waiting for a frame that may be the
+	// one the raider's blade arrives in.
+	{
+		AtTheBench b;
+		b.session.cancel_work(b.roster, b.who.id(), b.world.env);
+		slot_at(b.roster, b.who.id()).position = at(8.0, 0.0);
+		expect_true("queued again",
+					b.session.request_work(b.roster, b.who.id(), craft_request(102), b.world.env));
+		open::Character raider = sheet(2, b.world.catalog, "Raider");
+		b.roster.push_back(open::Combatant{&raider, at(20.0, 20.0)});
+		expect_true("an order on the worker is accepted from across the field",
+					b.session.issue_attack(b.roster, raider.id(), b.who.id()));
+		expect_failed("and the queue is already gone - no frame needed", b.who.work_status(),
+					  open::WorkFailure::Combat);
+		expect_true("cleared free", stock(b.world, b.who.id(), kScrap) == 18);
+	}
+	// An incoming order interrupts an ACTIVE job at issue, paid - and withdrawing
+	// the attack afterwards does not undo it, because what interrupted was the
+	// combat that began.
+	{
+		AtTheBench b; // active from the fixture, paid, elapsed zero
+		open::Character raider = sheet(2, b.world.catalog, "Raider");
+		b.roster.push_back(open::Combatant{&raider, at(30.0, 0.0)});
+		expect_true("an order on the worker is accepted",
+					b.session.issue_attack(b.roster, raider.id(), b.who.id()));
+		expect_failed("the job in progress is interrupted at issue", b.who.work_status(),
+					  open::WorkFailure::Combat);
+		open::Character away = sheet(3, b.world.catalog, "Away");
+		b.roster.push_back(open::Combatant{&away, at(30.0, 5.0)});
+		expect_true("the raider changes their mind before any step",
+					b.session.issue_attack(b.roster, raider.id(), away.id()));
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_failed("and the kept reason is still the combat that began", b.who.work_status(),
+					  open::WorkFailure::Combat);
+		expect_true("paid and undelivered", stock(b.world, b.who.id(), kScrap) == 18 &&
+												backpack_size(b.who) == 0);
+	}
+	// Reach: the move doors already interrupt a paid job, and this is the rest of
+	// the rule - the world moving the worker needs no door of its own.
+	{
+		AtTheBench b;
+		slot_at(b.roster, b.who.id()).position = at(8.0, 0.0);
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_failed("a worker carried out of reach is interrupted", b.who.work_status(),
+					  open::WorkFailure::Movement);
+		expect_true("paid and undelivered", stock(b.world, b.who.id(), kScrap) == 18 &&
+												backpack_size(b.who) == 0);
+	}
+	// The boundary is the same 1.5-inclusive line the request path uses: exactly
+	// on it keeps working; an epsilon past it ends the job.
+	{
+		AtTheBench b; // the forge stands at at(0.0, 0.0)
+		slot_at(b.roster, b.who.id()).position = at(1.5, 0.0);
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_true("a job stays alive at exactly the limit", b.who.work_status().active());
+		slot_at(b.roster, b.who.id()).position = at(1.5001, 0.0);
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_failed("and interrupts just past it", b.who.work_status(),
+					  open::WorkFailure::Movement);
+	}
+	// The completion boundary: leaving reach at fourteen point nine means the
+	// fifteenth second delivers nothing. The reading comes before the progress, so
+	// a job that was not at its bench cannot bank the second it spent leaving.
+	{
+		AtTheBench b;
+		for (int i = 0; i < 149; ++i) {
+			b.session.step(0.1, b.roster, b.world.env);
+		}
+		expect_true("fourteen point nine, still running", b.who.work_status().active());
+		slot_at(b.roster, b.who.id()).position = at(8.0, 0.0);
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_failed("leaving reach outrings the completion bell", b.who.work_status(),
+					  open::WorkFailure::Movement);
+		expect_true("nothing delivered", backpack_size(b.who) == 0);
+	}
+	// A QUEUED job, by contrast, does not mind the distance: walking toward the
+	// bench is the whole reason a queue exists.
+	{
+		AtTheBench b;
+		b.session.cancel_work(b.roster, b.who.id(), b.world.env);
+		slot_at(b.roster, b.who.id()).position = at(8.0, 0.0);
+		expect_true("queued at distance",
+					b.session.request_work(b.roster, b.who.id(), craft_request(102), b.world.env));
+		b.session.step(0.1, b.roster, b.world.env);
+		expect_true("a queued job survives being far",
+					b.who.work_status().phase == open::WorkPhase::Queued);
+		expect_true("unpaid", stock(b.world, b.who.id(), kScrap) == 18);
+	}
+}
+
 // --- approach, cancel of a queue, and the frame's own discipline --------------------
 
 void bench_clicks_and_frames() {
@@ -1190,6 +1290,7 @@ int main() {
 	quality_caps();
 	queue_and_arrival();
 	active_interruptions();
+	combat_and_distance_at_issue();
 	bench_clicks_and_frames();
 	frame_discipline();
 	work_locks_the_target();

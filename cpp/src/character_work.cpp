@@ -104,6 +104,16 @@ bool Character::advance_work(float seconds, const Vec3 &self_position, WorkConte
 		// the job neither progresses nor ends, and resumes when the legs do.
 		return false;
 	}
+	if (!in_bench_reach(self_position, bench->position)) {
+		// "The character must stay within workbench reach; leaving reach... interrupts
+		// the action without returning consumed materials" (docs/weapons.md). The move
+		// doors interrupt a job before any walk starts; this is the rest of the rule -
+		// however the worker or the bench moved, an active job that is no longer at its
+		// bench is not being worked. Paid stays paid, and the reading comes before the
+		// progress so a job cannot bank the seconds it spent away from the anvil.
+		interrupt_work(WorkFailure::Movement);
+		return true;
+	}
 	if (work_.request.target.has_value() && !instance(*work_.request.target).has_value()) {
 		interrupt_work(WorkFailure::TargetLost);
 		return true;

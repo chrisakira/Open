@@ -151,7 +151,19 @@ bool CombatSession::issue_attack(std::span<const Combatant> actors, std::uint64_
 	}
 	// The order itself stays on the sheet, which is also what refuses zero and
 	// self. Faction is never compared here.
-	return actor->character->set_attack_target(target_id);
+	if (!actor->character->set_attack_target(target_id)) {
+		return false;
+	}
+	// Combat beginning is true of both ends the moment the order is accepted. The
+	// attacker's own sheet door interrupts its bench; the target's interruption lives
+	// here, at issue, because the docs count "an incoming attack order" among the
+	// facts that clear a queue and interrupt a job: queued clears free, active stays
+	// paid, and an attacker that changes its mind before any frame has run does not
+	// un-begin a combat that began. The frame's engagement reading stays as the
+	// in-frame backstop for combat that arrives without any new order at all - an
+	// order that only became live as positions moved, for instance.
+	target->character->interrupt_work(open::WorkFailure::Combat);
+	return true;
 }
 
 bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
