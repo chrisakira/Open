@@ -529,6 +529,9 @@ godot::Array OpenCharacter::get_equipment_snapshot() const {
 		entry["enchantment_capacity"] = static_cast<std::int64_t>(row.enchantment_capacity);
 		entry["enchantments"] = enchantment_rows(row.enchantments);
 		entry["requirements"] = requirement_rows(row.requirements);
+		entry["is_weapon"] = row.is_weapon;
+		entry["is_shield"] = row.is_shield;
+		entry["held_usable"] = row.held_usable;
 		rows.push_back(entry);
 	}
 	return rows;

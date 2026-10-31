@@ -64,6 +64,14 @@ struct EquipmentSnapshotRow {
 	unsigned enchantment_capacity = 0;
 	std::vector<EnchantmentSnapshotRow> enchantments;
 
+	// What the definition is and whether the body still works the grip: read from the
+	// catalog, and from C++'s own limb gate for the item's actual held state. Carried
+	// answers false for usability - out of the hand there is no grip to speak of - and
+	// nothing here is a claim about durability.
+	bool is_weapon = false;
+	bool is_shield = false;
+	bool held_usable = false;
+
 	// This sheet's whole workload for this item: its own requirements plus the
 	// enchantments' aggregated ones, exactly as the effectiveness rule adds them, so the
 	// popup never sums anything itself.
@@ -91,8 +99,13 @@ inline std::vector<EquipmentSnapshotRow> equipment_snapshot(const Character &cha
 			const ItemDefinition *definition = catalog->item(instance.definition);
 			if (definition != nullptr) {
 				row.model_key = definition->model_key;
+				row.is_weapon = definition->weapon.has_value();
+				row.is_shield = definition->shield.has_value();
 			}
 		}
+		// Every read is fresh: an arm falls between snapshots and the answer has to move
+		// with it, so usability is never kept anywhere this row could be caching.
+		row.held_usable = character.held_usable(instance.ref.id);
 		row.quality = instance.quality;
 		row.durability = instance.durability;
 		row.max_durability = instance.max_durability;

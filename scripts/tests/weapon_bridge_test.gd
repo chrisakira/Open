@@ -516,12 +516,64 @@ func _a_performed_technique_starts_a_real_clock() -> void:
 	_check(_cooldown_of(sheet, SLASH) > 0.0, "and was still running at the second swing")
 
 
+func _rows_answer_what_an_item_is_and_whether_the_body_can_use_it() -> void:
+	var kit := _real_backpack(21)
+	var sheet = kit["sheet"]
+	var by_model: Dictionary = kit["ids"]
+
+	var row_of := func(model: String) -> Dictionary:
+		for row in sheet.get_equipment_snapshot():
+			if String(row["model_key"]) == model:
+				return row
+		return {}
+
+	# Carried: a sword is a sword, and out of the hand nothing is usable.
+	var carried: Dictionary = row_of.call("Sword")
+	_check(_has_schema(carried, ["is_weapon", "is_shield", "held_usable"]),
+			"every equipment row answers the three new fields")
+	if not _has_schema(carried, ["is_weapon", "is_shield", "held_usable"]):
+		return
+	_check(bool(carried["is_weapon"]) and not bool(carried["is_shield"]),
+			"a carried sword is a weapon and not a shield")
+	_check(not bool(carried["held_usable"]), "and carried is not held: no grip, no usability")
+
+	# Held with both arms up: usable now, and the type flags did not move.
+	_check(sheet.equip_item(int(by_model["Sword"]), SLOT_RIGHT_HAND), "the sword is held")
+	var held: Dictionary = row_of.call("Sword")
+	_check(bool(held["is_weapon"]) and bool(held["held_usable"]),
+			"a held sword with a working arm is usable")
+	_check(sheet.unequip_item(SLOT_RIGHT_HAND), "and back in the pack")
+	_check(not bool(row_of.call("Sword")["held_usable"]),
+			"usability is read per snapshot: off the hand, it is off again")
+
+	# The shield: a shield, never a weapon.
+	_check(sheet.equip_item(int(by_model["Shield_Round"]), SLOT_LEFT_HAND), "the shield goes left")
+	var shield: Dictionary = row_of.call("Shield_Round")
+	_check(bool(shield["is_shield"]) and not bool(shield["is_weapon"]),
+			"the shield is a shield and never a weapon")
+	_check(bool(shield["held_usable"]), "held in a living arm, it is a held thing")
+	_check(sheet.unequip_item(SLOT_LEFT_HAND), "shield off")
+
+	# The two-hander with one dead arm: the row and its slots stay, and C++ still
+	# answers that the grip is gone. This is the two-armed rule working, not the
+	# deferred side-specific one-handed gate.
+	_check(sheet.equip_item(int(by_model["Spear"]), SLOT_LEFT_HAND), "the spear is held")
+	_check(bool(row_of.call("Spear")["held_usable"]), "gripped in two living hands it is usable")
+	_check(sheet.apply_damage(2, 1.0e30), "the left arm falls")
+	var wounded: Dictionary = row_of.call("Spear")
+	_check(not wounded.is_empty() and (wounded["slots"] as Array).size() == 2,
+			"the spear keeps its row and both slots")
+	_check(not bool(wounded["held_usable"]),
+			"and one-handed-off the two-hander reports itself unusable")
+
+
 func _run() -> void:
 	_surface_and_schema()
 	_configure_rejections()
 	_configure_validation_edges()
 	_equip_commands_are_refused_safely()
 	_real_rows_round_trip()
+	_rows_answer_what_an_item_is_and_whether_the_body_can_use_it()
 	_real_weapons_offer_their_real_techniques()
 	_controller_handover_round_trips()
 	_a_performed_technique_starts_a_real_clock()
