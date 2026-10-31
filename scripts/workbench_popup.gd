@@ -145,6 +145,13 @@ func _render() -> void:
 	lines.append("failure=%s" % str(snapshot.get("failure")))
 	lines.append("elapsed=%.1f" % float(snapshot.get("elapsed")))
 	lines.append("cap=%d" % int(snapshot.get("quality_cap")))
+	# The repair and enchant lists are read from the equipment snapshot at build time,
+	# so the snapshot belongs in the watched truth: a sword that takes a scratch while
+	# the panel is open has to appear in its own picker without being asked.
+	for row in _sheet.get_equipment_snapshot():
+		lines.append("eq=%d:%d/%d:%d/%d" % [int(row["item_id"]), int(row["durability"]),
+				int(row["max_durability"]), (row["enchantments"] as Array).size(),
+				int(row["enchantment_capacity"])])
 	var signature := ",".join(lines)
 	if signature == _signature:
 		return  # same truth, same controls: nothing under the pointer gets replaced

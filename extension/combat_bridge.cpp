@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
+#include <limits>
 #include <set>
 #include <vector>
 
@@ -220,13 +221,12 @@ bool OpenCombat::step(float seconds) {
 		return false;
 	}
 	// The session rejects a bad frame before it reads or writes anything, so an
-	// earlier position stays valid. Once the scene has placed benches, every frame runs
-	// with the work environment: queued jobs may arrive and active ones may finish, and a
-	// frame that hid the environment from a live job is refused outright rather than
-	// silently ticking the fight without it.
-	const bool worked = !work_.benches.empty();
-	const bool stepped = worked ? session_.step(seconds, roster, work_)
-								: session_.step(seconds, roster);
+	// earlier position stays valid. Every frame runs with the work environment: queued
+	// jobs may arrive and active ones may finish, and a frame that hid the environment
+	// from a live job is refused outright rather than silently ticking the fight without
+	// it. The environment may hold no benches at all - that is the last bench vanishing,
+	// a fact live work has to be allowed to hear.
+	const bool stepped = session_.step(seconds, roster, work_);
 	if (!stepped) {
 		return false;
 	}
@@ -369,9 +369,11 @@ const char *work_failure_name(open::WorkFailure failure) {
 }  // namespace
 
 bool OpenCombat::update_workbenches(const godot::Array &benches) {
-	if (benches.is_empty()) {
-		return false;  // a scene without benches has nothing to register
-	}
+	// An empty table is a complete fact, not a missing one: a scene can lose its last
+	// bench, and the docs count bench disappearance among the causes that end work. step
+	// below always hands the session this (possibly empty) context while anything works,
+	// so a cleared table reads as "the benches are gone" rather than as a hidden
+	// environment.
 	std::vector<open::WorkbenchObservation> observed;
 	observed.reserve(static_cast<std::size_t>(benches.size()));
 	for (std::int64_t index = 0; index < benches.size(); ++index) {
@@ -435,7 +437,13 @@ bool OpenCombat::request_work(int64_t actor_id, const godot::Dictionary &request
 		return false;
 	}
 	open::WorkRequest parsed;
-	if (!open::valid(static_cast<open::WorkKind>(kind))) {
+	// GDScript ints are 64-bit and the domain types are narrower in places, so nothing is
+	// narrowed before it has been measured: a kind that only becomes a kind by losing its
+	// high half, or a tier that only becomes 1 by losing its own, is a malformed request,
+	// not a job. The id fields need no such guard - they are 64-bit in the domain too, and
+	// read_int_field has already refused the negatives.
+	if (kind >= static_cast<std::int64_t>(open::WorkKind::Count)
+		|| !open::valid(static_cast<open::WorkKind>(kind))) {
 		return false;
 	}
 	parsed.kind = static_cast<open::WorkKind>(kind);
@@ -443,6 +451,9 @@ bool OpenCombat::request_work(int64_t actor_id, const godot::Dictionary &request
 	parsed.bench = static_cast<open::WorkbenchId>(bench);
 	if (target != 0) {
 		parsed.target = static_cast<open::ItemId>(target);
+	}
+	if (quality > static_cast<std::int64_t>(std::numeric_limits<unsigned>::max())) {
+		return false;
 	}
 	parsed.quality = static_cast<unsigned>(quality);
 	if (enchantment != 0) {

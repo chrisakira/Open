@@ -66,7 +66,7 @@ func _observations_are_validated() -> void:
 		return
 	_check(combat.update_workbenches([_bench(1, BENCH_SMITHING, Vector3(0, 0, 0)),
 			_bench(2, BENCH_ENCHANTING, Vector3(4, 0, 2))]), "a named bench table is accepted")
-	_check(not combat.update_workbenches([]), "an empty table is refused - a scene has benches")
+	_check(combat.update_workbenches([]), "an empty table is accepted: the last bench can vanish")
 	_check(not combat.update_workbenches([_bench(0, BENCH_SMITHING, Vector3.ZERO)]),
 			"bench id 0 is refused")
 	_check(not combat.update_workbenches([_bench(1, 7, Vector3.ZERO)]),
@@ -235,6 +235,44 @@ func _check_pass_through() -> void:
 
 # --- request validation: the UI gets exactly one door, and it is a narrow one ---------
 
+func _the_last_bench_can_vanish() -> void:
+	var combat = ClassDB.instantiate(&"OpenCombat")
+	if not combat.has_method("request_work"):
+		return
+	var smith = _sheet(3)
+	combat.add_character(smith, Vector3(1.0, 0.0, 0.0))
+	var walker = _sheet(4)
+	combat.add_character(walker, Vector3(30.0, 0.0, 30.0))
+	combat.update_workbenches([_bench(1, BENCH_SMITHING, Vector3.ZERO)])
+	combat.setup_starter_player(3)
+	combat.setup_starter_player(4)
+	_check(combat.request_work(3, {"kind": 0, "recipe": 101, "bench": 1, "target": 0,
+			"quality": 1, "enchantment": 0}), "the forge starts on the spot")
+	_check(combat.request_work(4, {"kind": 0, "recipe": 101, "bench": 1, "target": 0,
+			"quality": 1, "enchantment": 0}), "a far smith queues")
+
+	# The scene loses its only bench. The coordinator must hear about it - and a frame
+	# with no benches is still a frame: hiding the environment from live work was never
+	# an answer, and clearing the table to nothing is how the last bench disappears.
+	_check(combat.update_workbenches([]), "the emptied scene is accepted")
+	combat.step(0.1)
+	var active: Dictionary = combat.get_work_snapshot(3)
+	_check(active.get("phase") == "failed" and String(active.get("failure")) == "bench_lost",
+			"the paid job ends with its bench")
+	_check(int((active.get("materials") as Dictionary).get(100, 0)) == 18,
+			"paid stays paid; a vanished bench buys no refund")
+	var queued: Dictionary = combat.get_work_snapshot(4)
+	_check(queued.get("phase") == "failed" and String(queued.get("failure")) == "bench_lost",
+			"the queued job ends free")
+	_check(int((queued.get("materials") as Dictionary).get(100, 0)) == 20,
+			"the walker was never asked to pay")
+	_check(combat.step(0.1), "and frames keep stepping with no benches at all")
+	_check(combat.update_workbenches([_bench(1, BENCH_SMITHING, Vector3.ZERO)]),
+			"a rebuilt bench returns")
+	_check(combat.request_work(4, {"kind": 0, "recipe": 101, "bench": 1, "target": 0,
+			"quality": 1, "enchantment": 0}), "and work is askable again")
+
+
 func _requests_are_validated() -> void:
 	var combat = ClassDB.instantiate(&"OpenCombat")
 	if not combat.has_method("request_work"):
@@ -258,6 +296,16 @@ func _requests_are_validated() -> void:
 	var floaty: Dictionary = good.duplicate()
 	floaty["quality"] = 1.5
 	_check(not combat.request_work(4, floaty), "a fractional quality is refused")
+	# GDScript ints are 64-bit and the coordinator's domains are not all of that size:
+	# what arrives is range-checked before anything is narrowed, so a value that only
+	# looks valid after truncation cannot smuggle a real job past the door.
+	_check(not combat.request_work(4, {"kind": 4294967296, "recipe": 101, "bench": 1,
+			"target": 0, "quality": 1, "enchantment": 0}),
+			"a kind that is only Craft after truncation is refused")
+	_check(not combat.request_work(4, {"kind": 0, "recipe": 101, "bench": 1, "target": 0,
+			"quality": 4294967297, "enchantment": 0}),
+			"a tier that is only one after truncation is refused")
+	_check(combat.get_work_snapshot(4).get("phase") == "idle", "and neither smuggled a job in")
 	var texty: Dictionary = good.duplicate()
 	texty["recipe"] = "101"
 	_check(not combat.request_work(4, texty), "a text recipe id is refused")
@@ -471,7 +519,9 @@ func _clicking_a_bench_opens_its_own_choices() -> void:
 	await process_frame
 	_check(not popup.visible, "Escape closes the bench panel")
 
-	# The far bench: a click there approaches, and does not open.
+	# The far bench: a click there opens its panel and issues the approach. The panel is
+	# how an action gets chosen, and a choice made on the walk is the docs' queued case -
+	# closing the door until arrival would strand that feature behind it.
 	var edge_area = benches[BENCH_ENCHANTING_ID]
 	var edge_position: Vector3 = (edge_area.get_parent() as Node3D).global_position
 	marker.visible = false
@@ -485,10 +535,27 @@ func _clicking_a_bench_opens_its_own_choices() -> void:
 	_check(not popup.covers(near_point), "the far bench is reachable on screen beside the panel")
 	_click_at(near_point)
 	await process_frame
-	_check(not popup.visible, "the far bench does not open its panel from across the map")
+	await process_frame
+	_check(popup.visible, "the far bench opens its panel from across the map")
+	_check(_any_text(popup, "Enchanting Workbench"), "and it is that bench's panel")
 	_check(marker.visible or player.sheet.velocity_at(player.global_position).length() > 0.0,
-			"but the click did issue the approach")
+			"and the click issued the approach")
 	_check(int(player.sheet.get_attack_target_id()) == 0, "still no attack")
+
+	# Selecting the table's work while walking queues it: accepted unpaid, with the
+	# coordinator owning the arrival.
+	var fix_button := _button(popup, "Enchant106")
+	_check(fix_button != null and not fix_button.disabled, "the walking panel offers its work")
+	if fix_button != null:
+		_click_at(fix_button.get_global_rect().get_center())
+		await process_frame
+		var walk_snapshot: Dictionary = world.get("_combat").get_work_snapshot(1)
+		_check(String(walk_snapshot.get("phase")) == "queued",
+				"a choice made while approaching queues instead of starting")
+		_check(int((walk_snapshot.get("materials") as Dictionary).get(101, 0)) == 5,
+				"and the queue has paid nothing")
+	_check(player.sheet.velocity_at(player.global_position).length() > 0.0,
+			"and the walk to the bench is still on")
 	await _free(world)
 
 
@@ -572,6 +639,62 @@ func _the_panel_asks_the_coordinator_and_draws_its_answer() -> void:
 	await _free(world)
 
 
+func _the_panel_follows_the_body_it_reads() -> void:
+	var world = await _world()
+	var combat = world.get("_combat")
+	var player: Node = world.get_node("Player")
+	var popup = _popup_of(world)
+	if popup == null:
+		await _free(world)
+		return
+	# Freeze the frame: every step below is asked for by name, so nothing moves a clock
+	# that this case did not move.
+	world.set_physics_process(false)
+	popup.open_for_bench(BENCH_SMITHING_ID, BENCH_SMITHING, Vector2(60.0, 60.0))
+	popup.call("_process", 0.0)
+	_check(popup.visible, "the forge panel is open")
+	var pickers: Array = popup.find_children("Target105", "OptionButton", true, false)
+	_check(pickers.size() == 1, "the forge panel carries its repair picker")
+	if pickers.size() != 1:
+		world.set_physics_process(true)
+		await _free(world)
+		return
+	var picker = pickers[0]
+	_check(int(picker.item_count) == 0, "a whole sword is nothing to mend")
+
+	# Equip the sword and swing once: the wear is a fact about the same body the panel
+	# reads, and an open panel that watches only materials, phase and clock is missing
+	# half the truth.
+	var sheet = player.sheet
+	var sword := 0
+	for row in sheet.get_equipment_snapshot():
+		if String(row["model_key"]) == "Sword":
+			sword = int(row["item_id"])
+	_check(sword != 0, "the starter sword is in the backpack")
+	_check(sheet.equip_item(sword, SLOT_RIGHT_HAND), "the sword is held")
+	var enemy: Node = world.get_node("Enemy")
+	combat.set_position(1, enemy.global_position + Vector3(-1.0, 0.0, 0.0))
+	_check(combat.issue_attack(1, int(enemy.sheet.get_character_id())), "the enemy is ordered attacked")
+	combat.step(0.1)
+	var worn := 100
+	for row in sheet.get_equipment_snapshot():
+		if int(row["item_id"]) == sword:
+			worn = int(row["durability"])
+	_check(worn < 100, "one performed swing wore the sword (durability %d)" % worn)
+	popup.call("_process", 0.0)
+	# The rebuild that proves the point also frees the old picker: read the new one.
+	var fresh: Array = popup.find_children("Target105", "OptionButton", true, false)
+	var listed := false
+	if fresh.size() == 1:
+		var picker_now = fresh[0]
+		for index in range(int(picker_now.item_count)):
+			if String(picker_now.get_item_text(index)) == "Sword %d/100" % worn:
+				listed = true
+	_check(listed, "and the open panel noticed: the worn sword is offered for mending")
+	world.set_physics_process(true)
+	await _free(world)
+
+
 func _the_panel_refuses_what_the_coordinator_refuses() -> void:
 	var world = await _world()
 	var combat = world.get("_combat")
@@ -630,11 +753,13 @@ func _run() -> void:
 	_observations_are_validated()
 	_a_craft_runs_through_the_real_step()
 	_queues_and_interruptions_through_the_bridge()
+	_the_last_bench_can_vanish()
 	_requests_are_validated()
 	_the_snapshot_lists_what_the_bench_can_do()
 	await _the_world_has_two_named_benches()
 	await _clicking_a_bench_opens_its_own_choices()
 	await _the_panel_asks_the_coordinator_and_draws_its_answer()
+	await _the_panel_follows_the_body_it_reads()
 	await _the_panel_refuses_what_the_coordinator_refuses()
 	_check(checks > 60, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:

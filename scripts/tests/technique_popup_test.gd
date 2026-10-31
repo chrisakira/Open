@@ -311,11 +311,13 @@ func _a_real_sword_offers_real_moves() -> void:
 			"and the hammer's move is not offered to a sword at all")
 
 	# Add, duplicate and Skip, all through the controls, all read back from the sheet.
-	_click_at(add_slash.get_global_rect().get_center())
+	# Every press rebuilds the panel - each control lives one frame - so each click
+	# looks its button up again first; the sheet is what keeps the truth.
+	_click_at(_button(popup, "Add%d" % TECHNIQUE_A).get_global_rect().get_center())
 	await process_frame
-	_click_at(add_slash.get_global_rect().get_center())
+	_click_at(_button(popup, "Add%d" % TECHNIQUE_A).get_global_rect().get_center())
 	await process_frame
-	_click_at(add_thrust.get_global_rect().get_center())
+	_click_at(_button(popup, "Add%d" % TECHNIQUE_B).get_global_rect().get_center())
 	await process_frame
 	_check(_ids(sheet) == [TECHNIQUE_A, TECHNIQUE_A, TECHNIQUE_B],
 			"two Slashes and a Thrust, added as duplicates through the controls")

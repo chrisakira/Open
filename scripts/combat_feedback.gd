@@ -105,17 +105,27 @@ func _report_held_items() -> void:
 
 
 func _sync_attachments(actor: Node3D, wanted: Dictionary) -> void:
-	var wanted_models := {}
+	# What belongs on the hands is an instance in a slot, not a model: two swords from
+	# one forge share a model and need a mesh each, and a sword that changes hands moves
+	# its mesh with it rather than leaving it hanging where it was parked.
+	var wanted_pairs := {}
 	for key in wanted.keys():
-		wanted_models[String(wanted[key]["model_key"])] = true
+		var entry: Dictionary = wanted[key]
+		wanted_pairs[_holder_key(int(entry["item_id"]), int(entry["slot"]))] = entry
 	for holder in _held_nodes(actor):
-		if not wanted_models.has(String(holder.get_meta("model_key", ""))):
+		var holder_key := _holder_key(int(holder.get_meta("item_id", 0)),
+				int(holder.get_meta("slot", -1)))
+		if not wanted_pairs.has(holder_key):
 			holder.free()
 	for key in wanted.keys():
 		var entry: Dictionary = wanted[key]
-		if _find_held(actor, String(entry["model_key"])) != null:
+		if _find_held(actor, int(entry["item_id"]), int(entry["slot"])) != null:
 			continue
 		_attach(actor, int(entry["item_id"]), String(entry["model_key"]), int(entry["slot"]))
+
+
+func _holder_key(item_id: int, slot: int) -> String:
+	return "%d:%d" % [item_id, slot]
 
 
 func _attach(actor: Node3D, item_id: int, model_key: String, slot: int) -> void:
@@ -161,9 +171,10 @@ func _held_nodes(actor: Node3D) -> Array:
 	return actor.find_children("Held_*", "MeshInstance3D", true, false)
 
 
-func _find_held(actor: Node3D, model_key: String) -> MeshInstance3D:
+func _find_held(actor: Node3D, item_id: int, slot: int) -> MeshInstance3D:
 	for holder in _held_nodes(actor):
-		if String(holder.get_meta("model_key", "")) == model_key:
+		if int(holder.get_meta("item_id", 0)) == item_id \
+				and int(holder.get_meta("slot", -1)) == slot:
 			return holder as MeshInstance3D
 	return null
 
@@ -240,6 +251,11 @@ func _damage_text(damage: float) -> String:
 		text = text.substr(0, text.length() - 1)
 	if text.ends_with(".0"):
 		text = text.substr(0, text.length() - 1)
+	if damage > 0.0 and float(text) <= 0.0:
+		# Five fixed decimals cannot hold this small a positive, and "0" would report
+		# that nothing arrived when C++ says something did. The engine's own default
+		# conversion does not round away a positive: it just gets longer about it.
+		text = String.num(damage)
 	return text
 
 

@@ -482,12 +482,82 @@ func _tiny_and_technique_events_stay_legible() -> void:
 				"bigger damage is drawn bigger: %d against %d" % [big_size, small_size])
 		_check(big_size <= 52 and small_size >= 22,
 				"and both extremes stay on the screen: %d and %d" % [big_size, small_size])
+	# And a chip so small that five fixed decimals would print zero: C++ said something
+	# arrived, and the screen must not answer "0". Chained fractions - an exhausted half
+	# dodge, then armour, then a zero-durability third - can reach this low.
+	var chip := {
+		"actor_id": 1, "target_id": 3, "part": 1, "damage": 0.00000001, "prevented": 0.0,
+		"nullified": false, "technique_id": 0, "attacker_item": 0, "defender_item": 0,
+	}
+	feedback.call("_play_reports", [chip])
+	labels = _labels_of(feedback)
+	_check(labels.size() == 3, "a positive chip is a number on the screen")
+	if labels.size() == 3:
+		_check(String(labels[2].text) != "0" and float(String(labels[2].text)) > 0.0,
+				"ten ten-millionths of damage is not displayed as nothing: got %s"
+				% String(labels[2].text))
+	await _free(world)
+
+
+func _two_weapons_of_one_model_hang_in_two_hands() -> void:
+	var world: Node = await _world()
+	var combat = world.get("_combat")
+	var feedback = _feedback_of(world)
+	var sheet = _sheet_of(world, "Player")
+	if feedback == null:
+		await _free(world)
+		return
+	# A crafted copy of the starter sword: same model, different instance - the case a
+	# shelf that files held items by model cannot survive. The forge is in the scene, so
+	# the copy is made the only honest way: paid for, at the bench, fifteen real seconds.
+	world.set_physics_process(false)
+	var bench_node: Node3D = world.find_children("SmithingWorkbench", "", true, false)[0]
+	var player: Node = world.get_node("Player")
+	player.global_position = bench_node.global_position + Vector3(0.8, 0.0, 0.0)
+	combat.set_position(1, player.global_position)
+	_check(combat.request_work(1, {"kind": 0, "recipe": 101, "bench": 1, "target": 0,
+			"quality": 1, "enchantment": 0}), "the forge takes the order")
+	for second in range(16):
+		combat.step(1.0)
+	_check(String(combat.get_work_snapshot(1).get("phase")) == "completed",
+			"the forge delivered a second sword")
+	var ids := []
+	for row in sheet.get_equipment_snapshot():
+		if String(row["model_key"]) == "Sword":
+			ids.append(int(row["item_id"]))
+	_check(ids.size() == 2, "one model, two instances: %s" % str(ids))
+	if ids.size() != 2:
+		world.set_physics_process(true)
+		await _free(world)
+		return
+	_check(sheet.equip_item(int(ids[0]), SLOT_RIGHT_HAND), "the starter sword goes right")
+	_tick(feedback, 0.1)
+	var meshes := _held_meshes(world)
+	_check(_mesh_count_of(meshes, "Sword") == 1, "one sword, one mesh")
+	_check(sheet.equip_item(int(ids[1]), SLOT_LEFT_HAND), "the forged sword goes left")
+	_tick(feedback, 0.1)
+	meshes = _held_meshes(world)
+	_check(_mesh_count_of(meshes, "Sword") == 2, "two swords of one model, two meshes")
+	var sockets := []
+	for mesh in _held_meshes(world):
+		if String(mesh.get_meta("model_key", "")) == "Sword":
+			sockets.append(_socket_of(mesh))
+	sockets.sort()
+	_check(sockets == ["LeftHandSocket", "RightHandSocket"], "one hangs in each hand")
+	# And each mesh belongs to the instance it was hung for: taking the forged sword off
+	# must not take the starter sword's mesh with it.
+	_check(sheet.unequip_item(SLOT_LEFT_HAND), "the forged sword comes off")
+	_tick(feedback, 0.1)
+	_check(_mesh_count_of(_held_meshes(world), "Sword") == 1,
+			"the sword still held keeps its mesh")
+	world.set_physics_process(true)
 	await _free(world)
 
 
 func _run() -> void:
 	await _the_world_owns_a_feedback_node()
 	await _every_starter_item_shows_in_the_hand_that_holds_it()
+	await _two_weapons_of_one_model_hang_in_two_hands()
 	await _a_dead_limb_keeps_its_mesh()
 	await _the_dummy_view_needs_no_orders()
 	await _one_performed_swing_one_motion()

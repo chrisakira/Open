@@ -196,18 +196,19 @@ func _try_character_or_floor_click(screen_pos: Vector2) -> void:
 		return
 	var body: Node = hit.get("collider", null)
 	if body is Area3D and body.has_meta("bench_id"):
-		# A bench click is a bench click. In reach it opens that bench's panel; out of reach
-		# it walks there through the coordinator and does not open anything - the approach is
-		# the click, not a preview of it.
+		# A bench click is a bench click: the panel opens on the spot, near or on the way -
+		# selecting an action while approaching is the docs' queued case, so closing the
+		# panel until arrival would strand that feature behind the door. Out of reach the
+		# same click also orders the approach; whether any chosen job starts or queues is
+		# C++'s answer, not this distance's.
 		var bench_id: int = int(body.get_meta("bench_id"))
 		if _combat != null and _player != null and _player.sheet != null:
+			_workbench_popup.open_for_bench(bench_id, int(body.get_meta("bench_type")),
+					screen_pos)
 			var bench_position: Vector3 = (body.get_parent() as Node3D).global_position
 			var gap := Vector2(_player.global_position.x - bench_position.x,
 					_player.global_position.z - bench_position.z).length()
-			if gap <= 1.5 + 0.001:
-				_workbench_popup.open_for_bench(bench_id, int(body.get_meta("bench_type")),
-						screen_pos)
-			else:
+			if gap > 1.5 + 0.001:
 				_combat.approach_workbench(_player.sheet.get_character_id(), bench_id)
 		return
 	if body is Area3D and body.collision_layer & WEAPON_MASK:
