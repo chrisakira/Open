@@ -118,7 +118,7 @@ func _the_player_view_follows_damage_with_no_manual_refresh() -> void:
 	var value: Label = null
 	if hp_row != null:
 		value = _find(hp_row, "Value") as Label
-	_check(value != null and value.text == "77.00 / 100.00",
+	_check(value != null and value.text == "77/100",
 			"the plaque followed the pool with no hand-refreshed seam")
 	_check(bool(player.sheet.is_alive()), "and the sim agrees it still lives")
 	world.queue_free()
@@ -459,7 +459,7 @@ func _the_plaque_mirrors_live_combat_not_the_enemy() -> void:
 	await process_frame
 	await process_frame
 	var fresh := String(_find(plaque, "HP").get_node("Value").text)
-	_check(fresh.ends_with("1000.00") or float(fresh.split(" / ")[1]) > 100.0,
+	_check(float(fresh.split("/")[1]) > 100.0,
 			"the new maximum shows with no manual refresh (%s)" % fresh)
 	await _free_world(world)
 
@@ -481,12 +481,45 @@ func _resizing_the_real_scene_keeps_the_layout() -> void:
 		stage.queue_free()
 		return
 	var wide := plaque.get_global_rect()
+	var hint: Label = null
+	for candidate in world.find_children("*", "Label", true, false):
+		if String(candidate.text).contains("Left click the floor"):
+			hint = candidate as Label
+			break
+	_check(hint != null, "the HUD describes the real controls")
+	if hint != null:
+		_check(hint.text.contains("Left click a living dummy, then choose Attack")
+				and hint.text.contains("I opens character sheet")
+				and hint.text.contains("P powers you up"),
+				"the hint describes the two-step attack and retains I and P")
+		_check(hint.mouse_filter == Control.MOUSE_FILTER_IGNORE, "hint text ignores clicks")
+		var strip := hint.get_parent() as Control
+		_check(strip is PanelContainer, "the hint has a dark framed strip")
+		if strip is PanelContainer:
+			_check(strip.mouse_filter == Control.MOUSE_FILTER_IGNORE, "hint strip ignores clicks")
+			_check(absf(strip.get_global_rect().get_center().x - 640.0) < 1.0,
+					"the hint strip is centred: %s (minimum %s)"
+					% [strip.get_global_rect(), strip.get_combined_minimum_size()])
+			_check_hint_fit(hint, Vector2(1280, 720))
+	_check(log.mouse_filter == Control.MOUSE_FILTER_IGNORE, "the log ignores clicks")
+	for i in 8:
+		log.append_swing({"actor_id": 1, "target_id": 3, "defense_action": "block", "damage": 3.8})
+	await process_frame
+	await process_frame
+	_check_hud_rects(plaque, log, Vector2(1280, 720))
 	_check(absf(wide.get_center().x - 640.0) < 1.0, "bottom-centre at 1280 wide")
 	_check(absf(wide.end.y - (720.0 - 16.0)) < 1.0, "and sixteen above the bottom edge")
 	stage.size = Vector2i(720, 420)
 	await process_frame
 	await process_frame
 	var small := plaque.get_global_rect()
+	_check_hud_rects(plaque, log, Vector2(720, 420))
+	if hint != null and hint.get_parent() is PanelContainer:
+		var strip := hint.get_parent() as Control
+		_check(absf(strip.get_global_rect().get_center().x - 360.0) < 1.0,
+				"the hint stays centred at 720 wide: %s (minimum %s)"
+				% [strip.get_global_rect(), strip.get_combined_minimum_size()])
+		_check_hint_fit(hint, Vector2(720, 420))
 	_check(absf(small.get_center().x - 360.0) < 1.0, "still bottom-centre at 720 wide")
 	_check(absf(small.end.y - (420.0 - 16.0)) < 1.0, "still hugging the new bottom")
 	_check(absf((log as Control).get_global_position().x - 16.0) < 1.0,
@@ -503,6 +536,30 @@ func _resizing_the_real_scene_keeps_the_layout() -> void:
 	await process_frame
 
 
+func _check_hint_fit(hint: Label, viewport_size: Vector2) -> void:
+	var strip := hint.get_parent() as Control
+	var screen := Rect2(Vector2.ZERO, viewport_size)
+	var font := hint.get_theme_font("font")
+	var text_size := font.get_string_size(hint.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+			hint.get_theme_font_size("font_size"))
+	_check(screen.encloses(strip.get_global_rect()), "hint strip stays in %s" % viewport_size)
+	_check(strip.get_global_rect().encloses(hint.get_global_rect()),
+			"hint label stays in its strip at %s" % viewport_size)
+	_check(text_size.x <= hint.size.x + 0.5 and text_size.y <= hint.size.y + 0.5,
+			"hint text fits without clipping at %s: %s in %s"
+			% [viewport_size, text_size, hint.size])
+
+
+func _check_hud_rects(plaque: Control, log: Control, viewport_size: Vector2) -> void:
+	var screen := Rect2(Vector2.ZERO, viewport_size)
+	var plaque_rect := plaque.get_global_rect()
+	var log_rect := log.get_global_rect()
+	_check(screen.encloses(plaque_rect), "plaque stays in %s: %s" % [viewport_size, plaque_rect])
+	_check(screen.encloses(log_rect), "log stays in %s: %s" % [viewport_size, log_rect])
+	_check(not plaque_rect.intersects(log_rect), "log avoids plaque in %s: %s and %s"
+			% [viewport_size, log_rect, plaque_rect])
+
+
 func _the_scene_shows_both_dummies_overhead() -> void:
 	var world := _world()
 	await process_frame
@@ -517,6 +574,10 @@ func _the_scene_shows_both_dummies_overhead() -> void:
 			% views.size())
 	var ally := _find(world, "Friendly")
 	var foe := _find(world, "Enemy")
+	_check(ally != null and ally.sheet.get_character_name() == "Jane Doe 1",
+			"the friendly character's sheet is named Jane Doe 1")
+	_check(foe != null and foe.sheet.get_character_name() == "John Doe 1",
+			"the enemy character's sheet is named John Doe 1")
 	var ally_view: Node = null
 	var foe_view: Node = null
 	if ally != null:
@@ -528,8 +589,8 @@ func _the_scene_shows_both_dummies_overhead() -> void:
 	_check(ally_view != null and foe_view != null, "one view per dummy, named by character id")
 	if ally_view != null:
 		var ally_name := (ally_view as Node).find_child("CharacterName", true, false) as Label
-		_check(ally_name != null and ally_name.text == "Friendly",
-				"the empty sheet name falls back to the scene node name")
+		_check(ally_name != null and ally_name.text == "Jane Doe 1",
+				"the friendly overhead shows its character sheet name")
 		var ally_diamond := (ally_view as Node).find_child("RelationshipDiamond", true, false)
 		_check(ally_diamond != null and ally_diamond.get("diamond_color") == Color("#4E7A4A"),
 				"the ally diamond is the locked green")
@@ -537,7 +598,7 @@ func _the_scene_shows_both_dummies_overhead() -> void:
 		_check(overlay.status_visible(ally), "and status_visible answers true")
 	if foe_view != null:
 		var foe_name := (foe_view as Node).find_child("CharacterName", true, false) as Label
-		_check(foe_name != null and foe_name.text == "Enemy", "the enemy reads Enemy")
+		_check(foe_name != null and foe_name.text == "John Doe 1", "the enemy overhead shows its name")
 		var foe_diamond := (foe_view as Node).find_child("RelationshipDiamond", true, false)
 		_check(foe_diamond != null and foe_diamond.get("diamond_color") == Color("#8F423D"),
 				"the enemy diamond is the locked red")

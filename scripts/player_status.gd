@@ -1,8 +1,8 @@
 # The player's plaque: identity over three labelled bars, bottom-centre, click-through.
 #
 # This is the human's locked plaque (status_UID.md, G5 decisions 2026-11-01): solid opaque wood
-# `#241B16` in a brass frame with a dark cast band, ~340×90, 16 px above the bottom edge,
-# always bottom-centre — overlapping the action chat at small sizes is accepted, not fixed.
+# `#241B16` in a brass frame with a dark cast band, 16 px above the bottom edge,
+# always bottom-centre; the action chat narrows to clear it at tested viewport sizes.
 # The name and the `Level N` line mirror the sheet through the presenter; the three rows mirror
 # the three pools. It never ticks, spends, drains, caches a maximum or infers death: every
 # refresh re-reads the bridge, and an unbound or unconfigured sheet makes the whole plaque hide
@@ -24,11 +24,11 @@ const CAST_BAND := Color("#2E231C")
 const NAME_COLOR := Color("#F4E6C6")
 const LEVEL_COLOR := Color("#BD9862")
 
-const PLAQUE_SIZE := Vector2(340.0, 90.0)
+const PLAQUE_SIZE := Vector2(440.0, 108.0)
 const BOTTOM_GAP := 16.0
 const SIDE_PADDING := 12.0
-const IDENTITY_HEIGHT := 20.0
-const ROW_HEIGHT := 18.0
+const IDENTITY_HEIGHT := 22.0
+const ROW_HEIGHT := 20.0
 const ROW_GAP := 2.0
 
 var _sheet: OpenCharacter
@@ -56,9 +56,15 @@ func _init() -> void:
 	_identity.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_name = Label.new()
 	_name.name = "CharacterName"
+	var serif := SystemFont.new()
+	serif.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])
+	_name.add_theme_font_override("font", serif)
+	_name.add_theme_font_size_override("font_size", 14)
 	_name.add_theme_color_override("font_color", NAME_COLOR)
 	_level = Label.new()
 	_level.name = "Level"
+	_level.add_theme_font_override("font", serif)
+	_level.add_theme_font_size_override("font_size", 13)
 	_level.add_theme_color_override("font_color", LEVEL_COLOR)
 	_level.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_level.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

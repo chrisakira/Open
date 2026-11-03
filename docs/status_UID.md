@@ -19,14 +19,15 @@ popups, a bottom-left action chat, and floating combat damage numbers. The
 every popup, refreshes once per drawn frame after the camera follows, and owns
 the player plaque — bottom-centre, click-through, showing the sheet name, the
 `Level N` line, and three labeled bars (HP/stamina/mana, deep beveled palette,
-two-decimal half-up readouts over each pool's own current maximum). Bound to
+whole-number half-up readouts over each pool's own current maximum). Bound to
 the actual player sheet; hidden when unbound; never ticks, spends or infers
 anything. An unconfigured or missing sheet hides a status rather than showing
 a placeholder.
 
 The **world overhead is present in play**: each other character shows its own
 identity and pools overhead — sheet name falling back to the scene node name,
-the relationship diamond left of it, three unlabeled bars, the `Lv N` plate on
+the relationship diamond left of it, three unlabeled bars inside a compact
+wood-and-brass frame, the `Lv N` plate on
 the right, and the authored skull trailing the name when the simulation says
 the character is dead (with its real, non-zeroed pools still on the bars). The
 legacy floating label is gone. Overheads follow the G2 gate — true 3D
@@ -38,13 +39,14 @@ the scene's one owner of all of it, refreshing after the camera each frame.
 
 The character sheet and the combat simulation already exist; `OpenCharacter`
 exposes the character name, main level and current/maximum health, stamina and
-mana to Godot. The current scene sets the player's sheet name to `John Doe`;
+mana to Godot. The current scene sets the player's sheet name to `John Doe`, the
+friendly dummy's to `Jane Doe 1`, and the enemy's to `John Doe 1`;
 sheets may otherwise have empty names — the display rule falls back to the
 scene node name. See `characters.md` for the current sheet and pool rules.
 
-The action chat is separate and unchanged: same single event source, same
-wording, same bottom-left corner. The player plaque is designed with it in
-mind; at small window sizes overlap is possible and accepted (human G5).
+The action chat keeps the same single event source, wording and bottom-left
+corner. The HUD polish narrows it to clear the centred player plaque at
+1280×720 and 720×420 logical viewport sizes. Smaller sizes are not guaranteed.
 Floating damage numbers remain separate from persistent status displays.
 
 ## 1. Player HUD — locked direction
@@ -65,28 +67,31 @@ display alone must not be interpreted as a complete alive/dead indicator.
 A compact bottom-center panel, leaving the existing bottom-left action chat
 separate. Name and level form the identity area above three labeled horizontal
 bars showing HP, stamina and mana. Each bar shows its current and maximum values
-rounded to the nearest hundredth, with two decimal places, for example
-`HP 99.96 / 100.00`. A very small positive value can therefore display as `0.00`;
+rounded to the nearest whole number, for example
+`HP 100/100`. A small positive value can therefore display as `0`;
 rounding is presentation only and does not alter the actual pool.
 
-**Locked 2026-11-01 (human).** Rounding ties go **half-up** (`99.995 → 100.00`),
+**Updated 2026-11-03 (human).** The readouts use whole numbers, with ties **half-up** (`99.5 → 100`),
 through one shared formatter so the three readouts can never disagree. The plaque
 is a **solid opaque wood panel** (`#241B16`) with a **double brass frame** (1st
-`#806343`, cast-shadow band `#2E231C`), approximately **340×90 px at 1280×720**,
-**bottom-center, 16 px above the bottom edge**; each bar is **10 px** tall with a
-**62 px label column** and **100 px right-aligned value column**. Name and level
+`#806343`, cast-shadow band `#2E231C`), **bottom-center, 16 px above the bottom
+edge**. The approved 2026-11-03 HUD polish sizes it **440×108 px**, with 10 px
+tracks, a 62 px role column and a right-aligned value column at least 126 px
+wide. The value column grows with the measured live readout, keeping it inside
+the panel and clear of the track. Name and level
 share one identity row: name left, `Level N` right. Long names follow the shared
-20-character truncation rule (section 3). At small window sizes the plaque stays
-bottom-center and **may overlap the action chat — accepted**, no reflow rule.
+20-character truncation rule (section 3). The plaque stays bottom-center; the
+action chat narrows to clear it at the tested logical viewport sizes. This
+supersedes the earlier acceptance of overlap at those sizes.
 
 **Pointer input — locked.** Clicks on the player status HUD pass through to the
 game world, like the existing action chat.
 
 ```text
                  [ Character name    Level N ]
-                 [ HP       ========  99.96 / 100.00 ]
-                 [ Stamina  ========  85.00 / 100.00 ]
-                 [ Mana     ========  85.00 / 100.00 ]
+                 [ HP       ========  100/100 ]
+                 [ Stamina  ========   85/100 ]
+                 [ Mana     ========   85/100 ]
 ```
 
 This is a layout sketch, not approved dimensions, colors, numbers or a promise
@@ -158,14 +163,15 @@ right of the stack. The bars show their fill without numerical values or text
 labels; their fixed order and colors distinguish the resources. Clicks on the
 overhead status display pass through to the game world.
 
-**Locked 2026-11-01 (human) — overhead layout.** The name line (`◇ Name`, plus
-trailing skull when dead) sits centered above three stacked bars, each
-approximately **120×6 px** with **13 px name text**, the level badge to the
+**Approved HUD polish 2026-11-03 (human) — overhead layout.** A compact dark
+wood plaque with a muted brass frame contains the name line (`◇ Name`, plus
+trailing skull when dead) above three stacked bars, each **120×6 px** with
+**13 px serif name text**, the level badge to the
 right of the stack, vertically centered. The overlay's **bottom edge anchors
 about 2.3 units above the actor's feet** — the legacy label's clearance — and
 follows the actor. The level badge is a **brass-framed wooden plate** (fill
-`#493326`, border `#806343`, `Lv N` in light parchment `#F4E6C6`). Exact sizes
-are verified once against the production models on the desktop pass.
+`#493326`, border `#806343`, `Lv N` in light parchment `#F4E6C6`). The frame
+expands for the measured displayed name and skull instead of clipping them.
 
 ```text
                     ◇ Character name
@@ -201,7 +207,7 @@ different pools or characters can have different maxima.
 
 **Locked 2026-11-01 (human) — degenerate data.** If a maximum is zero, the bar
 draws **empty** (fill 0, no crash) and the player text prints the true numbers
-anyway (e.g. `0.00 / 0.00`). If a status's sheet is missing, freed or invalid,
+anyway (e.g. `0/0`). If a status's sheet is missing, freed or invalid,
 that status **hides entirely** and reappears when the data is valid again —
 never a placeholder or half-truth.
 
@@ -217,12 +223,12 @@ for deterministic tests; normal play drives the same path automatically.
 **Direction adopted 2026-11-01 (human):**
 
 - `style.md`'s rustic/medieval direction is adopted with the concrete palette
-  locked above; status surfaces use it without popup title chrome — except the
-  player plaque, which the human explicitly chose as a solid framed panel.
-- Presentation stays readable against the world; the action chat, popups and
-  floating damage feedback keep their places. The player HUD never moves out of
-  the bottom center; **overlap with the chat at small window sizes is accepted**
-  rather than resolved by reflow. Crowded overheads may overlap.
+  locked above; both the player and world status plaques have wood-and-brass
+  frames without popup title chrome.
+- The action chat, popups and floating damage feedback keep their places. The
+  player HUD stays bottom-center and the chat narrows to clear it at the tested
+  viewport sizes. Crowded overheads may overlap. Canvas stretch scales the HUD
+  down with the physical window; at 720×420 physical pixels text is very small.
 - Statuses draw from the live character state exposed through the bridge only —
   Godot owns the display, never a second copy of authoritative gameplay state.
 
@@ -236,23 +242,23 @@ scene-node wording regardless.
 
 1. **Player HUD layout — Locked:** bottom center, name and level above three
    labeled horizontal bars, separate from the bottom-left action chat. Each bar
-   shows its current / maximum value, rounded to the nearest hundredth, two
-   decimals, **ties half-up**. Solid wood plaque, double brass frame, fixed
-   pixel set (see section 1); small-window overlap with the chat accepted.
+   shows its current / maximum value, rounded to whole numbers,
+   **ties half-up**. Solid wood plaque, double brass frame, fixed
+   pixel set (see section 1); the chat narrows to clear it at the tested sizes.
 2. **World layout — Locked:** name above three stacked bars with the level
    badge to the right; clicks pass through. Overhead sizes, badge plate and
    the ~2.3-unit anchor are locked in section 2.
 3. **Level badge — Locked:** small medieval-style badge showing the current
    main level as a number, not experience or progress toward the next level.
-4. **Resource presentation — Locked:** values two-decimal half-up (player only),
+4. **Resource presentation — Locked:** whole-number values, half-up (player only),
    unlabeled world bars, deep beveled red/green/blue in HP / stamina / mana
    order, each pool against its own current maximum, immediate fills. Empty =
    bare track; zero maximum draws empty with truthful text; maxima re-read live.
 5. **World visibility — Locked except the cover algorithm:** normal-play
    visibility both factions; hide only under complete solid cover, visible if
-   any part can be seen — the exact realizable contract for that rule is under
-   a ratified-process engineering gate (spike → evidence → human decision), and
-   the world overlay ships only after it. Distance: camera → feet origin, true
+   any part can be seen — the exact realizable contract for that rule remains
+   under an engineering gate. The world overlay has shipped with range and
+   facing gates; wall occlusion is explicitly deferred. Distance: camera → feet origin, true
    3D, ≤ 50 inclusive, hidden behind camera, no screen-edge rule. Skull
    authored in-repo, trails the name, driven by true death only. Diamond left
    of name, shades clone the bars; two-state relationship. Empty names fall

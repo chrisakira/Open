@@ -397,7 +397,7 @@ func _build_standing_dummies() -> void:
 	friend.name = "Friendly"
 	friend.model_scene = FEMALE_MODEL
 	friend.position = Vector3(-6.0, 0.1, -2.0)
-	friend.setup(0, 1, 2, 2002)
+	friend.setup(0, 1, 2, 2002, "Jane Doe 1")
 	add_child(friend)
 	_actors.append(friend)
 
@@ -405,7 +405,7 @@ func _build_standing_dummies() -> void:
 	enemy.name = "Enemy"
 	enemy.model_scene = FEMALE_MODEL
 	enemy.position = Vector3(6.0, 0.1, -2.0)
-	enemy.setup(1, 1, 3, 3003)
+	enemy.setup(1, 1, 3, 3003, "John Doe 1")
 	add_child(enemy)
 	_actors.append(enemy)
 
@@ -534,12 +534,29 @@ func _build_marker() -> void:
 func _build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	var hint := PanelContainer.new()
+	hint.name = "ControlHint"
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	hint.offset_left = -344.0
+	hint.offset_right = 344.0
+	hint.offset_top = 16.0
+	hint.offset_bottom = 46.0
+	var hint_style := StyleBoxFlat.new()
+	hint_style.bg_color = Color(0.141, 0.106, 0.086, 0.9)
+	hint_style.border_color = Color("#806343")
+	hint_style.set_border_width_all(1)
+	hint_style.set_content_margin_all(6.0)
+	hint.add_theme_stylebox_override("panel", hint_style)
+	layer.add_child(hint)
 	var label := Label.new()
-	label.text = "Left click the floor to move. Left click a character to attack. I opens the character sheet. P powers you up."
-	label.position = Vector2(24, 20)
-	label.add_theme_font_size_override("font_size", 22)
+	label.text = "Left click the floor to move. Left click a living dummy, then choose Attack. I opens character sheet. P powers you up."
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color("#E0D0AE"))
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(label)
+	hint.add_child(label)
 
 	# The action chat is another view of the same fight: it is told about each event the feedback
 	# node drained, so it never reads the coordinator's queue itself. It is wired here, while the

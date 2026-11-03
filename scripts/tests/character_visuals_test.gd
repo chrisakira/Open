@@ -198,8 +198,8 @@ func _run() -> void:
 	_check(ally_view != null, "the standing character has exactly one world status")
 	if ally_view != null:
 		var status_name := (ally_view as Node).find_child("CharacterName", true, false) as Label
-		_check(status_name != null and status_name.text == "Friendly",
-				"the status names the ally through the locked fallback")
+		_check(status_name != null and status_name.text == "Jane Doe 1",
+				"the status shows the ally's character-sheet name")
 		var diamond := (ally_view as Node).find_child("RelationshipDiamond", true, false)
 		_check(diamond != null and (diamond as CanvasItem).visible,
 				"the relationship diamond shows")

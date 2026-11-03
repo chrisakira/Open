@@ -440,6 +440,40 @@ func _in_bounds(control, view: SubViewport, where: String) -> void:
 
 # --- the drain is somebody else's ----------------------------------------------
 
+func _newest_long_report_fits_at_720_by_420() -> void:
+	var log = _log()
+	var player := _actor("Player", 1)
+	var friendly := _actor("Friendly", 2)
+	log.bind_actors([player, friendly])
+	var view := _stage(log, Vector2i(720, 420))
+	for index in range(8):
+		log.append_swing(_event(1, 2, "block", 12345.678))
+	for frame in range(4):
+		await process_frame
+	var labels: Array = log.find_children("*", "Label", true, false)
+	_check(labels.size() == 8, "all eight reports remain in history")
+	if labels.size() == 8:
+		var newest := labels.back() as Label
+		_check(newest.text == "Player attacks but Friendly blocks and receives 12345.678 damage",
+				"the newest valid long report is unchanged: %s" % newest.text)
+		_check(log.get_global_rect().grow(0.5).encloses(newest.get_global_rect()),
+				"the newest report is fully visible: %s in %s" % [newest.get_global_rect(), log.get_global_rect()])
+		_check(log.get_global_rect().end.x <= 124.0,
+				"the log stays clear of the centered plaque")
+	view.size = Vector2i(1280, 720)
+	for frame in range(4):
+		await process_frame
+	view.size = Vector2i(720, 420)
+	for frame in range(4):
+		await process_frame
+	labels = log.find_children("*", "Label", true, false)
+	if labels.size() == 8:
+		_check(log.get_global_rect().grow(0.5).encloses((labels.back() as Label).get_global_rect()),
+				"the newest report remains visible after resizing back to 720 by 420")
+	_unstage(view)
+	player.free()
+	friendly.free()
+
 func _the_chat_holds_no_second_drain_of_its_own() -> void:
 	var log = _log()
 	if log == null:
@@ -554,6 +588,8 @@ func _run() -> void:
 			_the_panel_never_eats_a_click_and_never_leaves_the_screen)
 	await _case("entries wrap and the panel regrows", 6,
 			_the_panel_regrows_when_the_entries_wrap)
+	await _case("newest long report fits at 720 by 420", 4,
+			_newest_long_report_fits_at_720_by_420)
 	await _case("no second drain", 12, _the_chat_holds_no_second_drain_of_its_own)
 	await _case("an event comes through untouched", 4, _a_reported_event_comes_through_untouched)
 

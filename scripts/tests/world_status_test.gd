@@ -10,9 +10,8 @@ extends SceneTree
 # numbers, names follow the locked fallback and truncation policy, and freeing what an overhead
 # watches hides it instead of dereferencing it.
 #
-# Fixtures are real StandingDummy sheets, configured and damaged for real through C++ — the
-# empty production names of Friendly/Enemy are *not* used; the plan's G3 safe-work rule calls
-# for explicitly named NPC fixtures, with the empty-name cases tested on purpose-built ones.
+# Fixtures are real StandingDummy sheets, configured and damaged for real through C++ —
+# explicitly named NPC fixtures and purpose-built empty-name cases exercise both name paths.
 
 var failures := 0
 var checks := 0
@@ -80,6 +79,39 @@ func _free(node: Node) -> void:
 
 # --- cases ---------------------------------------------------------------------
 
+func _compact_plaque_contains_dead_identity_and_narrow_bars() -> void:
+	var status := _status()
+	var actor := _dummy(1, 7, 151, 751, "WWWWWWWWWWWWWWWWWWWW", "Wide")
+	_check(actor.sheet.apply_damage(0, 25.0), "fixture dies")
+	status.bind_actor(actor)
+	status.refresh()
+	await process_frame
+	await process_frame
+	var bounds := status.get_global_rect()
+	_check(bounds.size.x <= 300.0 and bounds.size.y <= 80.0, "overhead plaque stays compact")
+	for path in ["CharacterName", "RelationshipDiamond", "DeathIcon", "LevelBadge", "BarStack"] + BAR_ROW_PATHS:
+		var control := status.get_node(path) as Control
+		_check(bounds.encloses(control.get_global_rect()), "%s fits in the framed plaque" % path)
+	var name_label := status.get_node("CharacterName") as Label
+	var skull := status.get_node("DeathIcon") as Control
+	_check(skull.visible and name_label.get_global_rect().end.x <= skull.get_global_rect().position.x,
+			"the visible skull follows the name without overlap")
+	_check(name_label.get_theme_font("font").get_string_size(name_label.text, HORIZONTAL_ALIGNMENT_LEFT,
+			-1, name_label.get_theme_font_size("font_size")).x <= name_label.size.x,
+			"all twenty name characters fit")
+	for path in BAR_ROW_PATHS:
+		var row := status.get_node(path) as Control
+		_check(row.size.x <= 120.0, "%s is at most 120 pixels wide" % path)
+		_check(not (row.get_node("Role") as Control).visible and not (row.get_node("Value") as Control).visible,
+				"%s unused columns collapse" % path)
+	_check(status.mouse_filter == Control.MOUSE_FILTER_IGNORE, "world plaque ignores input")
+	for child in status.find_children("*", "Control", true, false):
+		_check((child as Control).mouse_filter == Control.MOUSE_FILTER_IGNORE,
+				"%s ignores input" % child.name)
+	_free(status)
+	actor.queue_free()
+
+
 func _the_overhead_shows_the_actors_own_identity() -> void:
 	var status := _status()
 	if status == null:
@@ -116,6 +148,9 @@ func _the_overhead_shows_the_actors_own_identity() -> void:
 			"the bars stack in the locked HP, stamina, mana order")
 	var stack := status.get_node_or_null("BarStack") as Control
 	var badge := status.get_node_or_null("LevelBadge") as Control
+	var badge_text := status.get_node_or_null("LevelBadge/Value") as Label
+	_check(badge_text != null and badge_text.vertical_alignment == VERTICAL_ALIGNMENT_CENTER,
+			"level text is vertically centered inside the badge")
 	_check(stack != null and badge != null
 			and badge.position.x >= stack.position.x + stack.size.x,
 			"the level badge sits right of the bar stack")
@@ -283,6 +318,8 @@ func _case(what: String, minimum: int, callable: Callable) -> void:
 
 
 func _run() -> void:
+	await _case("compact plaque contains dead identity and narrow bars", 18,
+			_compact_plaque_contains_dead_identity_and_narrow_bars)
 	await _case("the overhead shows the actor's own identity", 23,
 			_the_overhead_shows_the_actors_own_identity)
 	await _case("an attack order leaves the diamond alone", 5,

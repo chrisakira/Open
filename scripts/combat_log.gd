@@ -24,17 +24,18 @@ const TEXT_COLOR := Color(0.878, 0.816, 0.682, 1.0)
 const FRAME_WIDTH := 2.0
 const SCREEN_MARGIN := 16.0
 const INNER_PADDING := 10.0
-const FONT_SIZE := 16
+const FONT_SIZE := 14
 const LINE_SPACING := 3.0
 
 # The locked history: eight entries, newest at the bottom, oldest dropped. Eight *entries* - an
 # entry that wraps onto three screen lines is still the one swing it reports.
 const MAX_ENTRIES := 8
 
-# Viewport-relative limits, so the panel is modest at 1280x720 and still modest at half that:
-# the width is an anchor and the height a cap, both fractions of whatever the window is.
+# Keep the right edge clear of the centred 440-pixel player plaque and a 16-pixel gap.
 const WIDTH_FRACTION := 0.42
 const HEIGHT_FRACTION := 0.45
+const PLAYER_PLAQUE_HALF_WIDTH := 220.0
+const PANEL_GAP := 16.0
 
 var _actors: Array = []
 var _entries: PackedStringArray = PackedStringArray()
@@ -131,16 +132,15 @@ func _build() -> void:
 	# floor click that landed on a line would silently become no click at all.
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip_contents = true
-	# Bottom-left, and a fraction of the viewport wide: the anchors do the following-the-window
-	# work that a hand-computed position would only get right at one size.
+	# Bottom-left. _layout sizes the width against both the viewport and the player plaque.
 	anchor_left = 0.0
 	anchor_top = 1.0
-	anchor_right = WIDTH_FRACTION
+	anchor_right = 0.0
 	anchor_bottom = 1.0
 	grow_horizontal = Control.GROW_DIRECTION_END
 	grow_vertical = Control.GROW_DIRECTION_BEGIN
 	offset_left = SCREEN_MARGIN
-	offset_right = -SCREEN_MARGIN
+	offset_right = SCREEN_MARGIN
 	offset_bottom = -SCREEN_MARGIN
 	offset_top = -SCREEN_MARGIN
 	_lines = VBoxContainer.new()
@@ -194,11 +194,8 @@ func _line(text: String) -> Label:
 	return line
 
 
-# Where the panel sits and how tall it gets. The bottom-left corner and the width are anchors,
-# not arithmetic: a fraction of the viewport, held to the corner it is meant to sit in, so the
-# panel follows the window wherever it goes rather than only at the size it happened to be built
-# at. Only the height is measured, because that is the one dimension the entries decide - and it
-# is capped, so eight long entries wrap and clip inside the panel instead of walking off the top.
+# Size against the centred plaque as well as the viewport. Entries decide the height, capped so
+# eight long entries wrap and clip instead of walking off the top.
 func _layout() -> void:
 	var view := get_viewport()
 	if view == null:
@@ -206,8 +203,19 @@ func _layout() -> void:
 	var limits: Vector2 = view.get_visible_rect().size
 	if limits.x <= 0.0 or limits.y <= 0.0:
 		return
+	var right_edge := minf(limits.x * WIDTH_FRACTION - SCREEN_MARGIN,
+			limits.x * 0.5 - PLAYER_PLAQUE_HALF_WIDTH - PANEL_GAP)
+	offset_right = maxf(right_edge, SCREEN_MARGIN + 1.0)
 	var cap := maxf(limits.y * HEIGHT_FRACTION - 2.0 * SCREEN_MARGIN, _single_line_height())
-	var inner_width := maxf(limits.x * WIDTH_FRACTION - 2.0 * (SCREEN_MARGIN + INNER_PADDING), 16.0)
+	var inner_width := maxf(offset_right - SCREEN_MARGIN - 2.0 * INNER_PADDING, 16.0)
+	# At narrow widths even one report can wrap beyond the normal history cap. Give the
+	# newest report room, when possible, without letting the panel occupy most of the screen.
+	if not _entries.is_empty():
+		var newest_height := _entry_height(String(_entries[-1]), inner_width)
+		if _lines.size.x > 1.0 and _lines.get_child_count() > 0:
+			var newest := _lines.get_child(_lines.get_child_count() - 1) as Control
+			newest_height = maxf(newest_height, newest.get_combined_minimum_size().y)
+		cap = maxf(cap, minf(newest_height + 2.0 * INNER_PADDING, limits.y * 0.6))
 	# The same font says how tall the entries will be at this width, which is the only answer
 	# available before they have been laid out. Once their box has a real width it is the better
 	# measure of its own contents, so the panel follows it from then on.

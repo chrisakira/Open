@@ -24,6 +24,8 @@ const NAME_COLOR := Color("#F4E6C6")
 const BADGE_WOOD := Color("#493326")
 const BADGE_BRASS := Color("#806343")
 const BADGE_TEXT := Color("#F4E6C6")
+const WOOD := Color("#241B16")
+const CAST_BAND := Color("#2E231C")
 const SKULL_PATH := "res://assets/ui/status_skull.svg"
 
 const NAME_ROW_HEIGHT := 18.0
@@ -35,6 +37,7 @@ const STACK_HEIGHT := 3.0 * BAR_ROW_HEIGHT + 2.0 * BAR_ROW_GAP
 const BADGE_WIDTH := 38.0
 const BADGE_HEIGHT := 18.0
 const GAP := 4.0
+const PADDING := 7.0
 
 var _actor: CharacterBody3D
 
@@ -49,7 +52,9 @@ var _badge_label: Label
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(180.0, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT)
+	custom_minimum_size = Vector2(180.0, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT + 2.0 * PADDING)
+	var serif := SystemFont.new()
+	serif.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])
 
 	_diamond = _Diamond.new()
 	_diamond.name = "RelationshipDiamond"
@@ -57,12 +62,15 @@ func _init() -> void:
 
 	_name = Label.new()
 	_name.name = "CharacterName"
+	_name.add_theme_font_override("font", serif)
+	_name.add_theme_font_size_override("font_size", 13)
 	_name.add_theme_color_override("font_color", NAME_COLOR)
 	add_child(_name)
 
 	_skull = TextureRect.new()
 	_skull.name = "DeathIcon"
 	_skull.custom_minimum_size = Vector2(13.0, 13.0)
+	_skull.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_skull.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_skull.visible = false
 	add_child(_skull)
@@ -92,8 +100,11 @@ func _init() -> void:
 	_badge.add_theme_stylebox_override("panel", plate)
 	_badge_label = Label.new()
 	_badge_label.name = "Value"
+	_badge_label.add_theme_font_override("font", serif)
+	_badge_label.add_theme_font_size_override("font_size", 11)
 	_badge_label.add_theme_color_override("font_color", BADGE_TEXT)
 	_badge_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_badge.add_child(_badge_label)
 	add_child(_badge)
 
@@ -137,13 +148,13 @@ func _present_row(row_name: String, current: float, maximum: float) -> void:
 
 func _layout() -> void:
 	_diamond.size = Vector2(DIAMOND_SIZE, DIAMOND_SIZE)
-	_diamond.position = Vector2(0.0, (NAME_ROW_HEIGHT - DIAMOND_SIZE) / 2.0)
+	_diamond.position = Vector2(PADDING, PADDING + (NAME_ROW_HEIGHT - DIAMOND_SIZE) / 2.0)
 	_name.reset_size()
-	_name.position = Vector2(DIAMOND_SIZE + GAP, 0.0)
+	_name.position = Vector2(PADDING + DIAMOND_SIZE + GAP, PADDING)
 	_skull.position = Vector2(_name.position.x + _name.size.x + GAP + 1.0,
-			(NAME_ROW_HEIGHT - _skull.custom_minimum_size.y) / 2.0)
+			PADDING + (NAME_ROW_HEIGHT - _skull.custom_minimum_size.y) / 2.0)
 	_skull.size = _skull.custom_minimum_size
-	_stack.position = Vector2(0.0, NAME_ROW_HEIGHT + 2.0)
+	_stack.position = Vector2(PADDING, PADDING + NAME_ROW_HEIGHT + 2.0)
 	_stack.size = Vector2(STACK_WIDTH, STACK_HEIGHT)
 	var y := 0.0
 	for row_name in ["HP", "Stamina", "Mana"]:
@@ -152,13 +163,23 @@ func _layout() -> void:
 		row.size = Vector2(STACK_WIDTH, BAR_ROW_HEIGHT)
 		row.queue_redraw()
 		y += BAR_ROW_HEIGHT + BAR_ROW_GAP
-	_badge.position = Vector2(STACK_WIDTH + GAP + 2.0,
-			NAME_ROW_HEIGHT + 2.0 + (STACK_HEIGHT - BADGE_HEIGHT) / 2.0)
+	_badge.position = Vector2(PADDING + STACK_WIDTH + GAP + 2.0,
+			PADDING + NAME_ROW_HEIGHT + 2.0 + (STACK_HEIGHT - BADGE_HEIGHT) / 2.0)
 	_badge.size = Vector2(BADGE_WIDTH, BADGE_HEIGHT)
+	_badge_label.position = Vector2.ZERO
+	_badge_label.size = _badge.size
 	var skull_right := _skull.position.x + _skull.custom_minimum_size.x
-	var root_width := maxf(skull_right, _badge.position.x + _badge.size.x)
-	custom_minimum_size = Vector2(root_width, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT)
+	var root_width := maxf(skull_right, _badge.position.x + _badge.size.x) + PADDING
+	custom_minimum_size = Vector2(root_width, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT + 2.0 * PADDING)
 	reset_size()
+	queue_redraw()
+
+
+func _draw() -> void:
+	var full := Rect2(Vector2.ZERO, size)
+	draw_rect(full, CAST_BAND)
+	draw_rect(full.grow(-2.0), BADGE_BRASS)
+	draw_rect(full.grow(-3.0), WOOD)
 
 
 # A quiet rotated square. A Control rather than a texture because it is one polygon of the

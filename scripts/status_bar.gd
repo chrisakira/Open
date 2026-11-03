@@ -1,6 +1,6 @@
 # The shared status bar: one row — a role label, a sunken beveled bar, and a readout.
 #
-# Both views use it: the player plaque passes a role name and the `90.00 / 100.00` readout,
+# Both views use it: the player plaque passes a role name and the `90/100` readout,
 # the world overhead passes empty strings and gets a bare bar. It stores only render values —
 # the latest ratio, color, and text — never a pool it could call its own, and it fills
 # immediately: whatever `present` is told is what the next draw shows, with no tween, drain,
@@ -25,7 +25,7 @@ const STAMINA_COLOR := Color("#4E7A4A")
 const MANA_COLOR := Color("#4A6690")
 
 const ROLE_WIDTH := 62.0
-const VALUE_WIDTH := 100.0
+const VALUE_WIDTH := 126.0
 const BAR_HEIGHT := 10.0
 const GAP := 6.0
 
@@ -43,13 +43,19 @@ var _value: Label
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(340.0, 16.0)
+	custom_minimum_size = Vector2(0.0, 0.0)
+	var serif := SystemFont.new()
+	serif.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])
 	_role = Label.new()
 	_role.name = "Role"
-	_role.custom_minimum_size = Vector2(ROLE_WIDTH, 0.0)
+	_role.add_theme_font_override("font", serif)
+	_role.add_theme_font_size_override("font_size", 13)
+	_role.add_theme_color_override("font_color", Color("#E0D0AE"))
 	_value = Label.new()
 	_value.name = "Value"
-	_value.custom_minimum_size = Vector2(VALUE_WIDTH, 0.0)
+	_value.add_theme_font_override("font", serif)
+	_value.add_theme_font_size_override("font_size", 13)
+	_value.add_theme_color_override("font_color", Color("#F0D3A0"))
 	_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_role)
 	add_child(_value)
@@ -73,10 +79,19 @@ static func ignore_input_tree(node: Node) -> void:
 func present(current: float, maximum: float, text: String) -> void:
 	ratio = Presenter.pool_fraction(current, maximum) if maximum > 0.0 else 0.0
 	_value.text = text
+	if value_width > 0.0:
+		value_width = maxf(VALUE_WIDTH, _value.get_combined_minimum_size().x)
+		_layout_row()
 	queue_redraw()
 
 
 func _layout_row() -> void:
+	if _role == null or _value == null:
+		return
+	_role.visible = role_width > 0.0
+	_value.visible = value_width > 0.0
+	_role.size = Vector2(role_width, size.y) if _role.visible else Vector2.ZERO
+	_value.size = Vector2(value_width, size.y) if _value.visible else Vector2.ZERO
 	_role.position = Vector2(0.0, maxf(0.0, (size.y - _role.size.y) / 2.0))
 	_value.position = Vector2(size.x - value_width, maxf(0.0, (size.y - _value.size.y) / 2.0))
 

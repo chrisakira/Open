@@ -4,7 +4,7 @@ extends SceneTree
 #
 # `status_presenter.gd` is the one place the status views read a sheet, and it owns exactly two
 # thoughts: what a sheet currently says (a fresh, disposable dictionary mirroring the bridge
-# getters) and how a pool prints (two decimals, ties half-up per the human's G5 decision). It is
+# getters) and how a pool prints (whole numbers, ties half-up). It is
 # never authority — this suite pins that snapshots mirror getters, that writing into a snapshot
 # cannot write into the sheet, and that death is the sheet's own `is_alive()`, never an
 # inference from the HP number.
@@ -127,26 +127,24 @@ func _fractions_follow_their_own_maximum() -> void:
 	_check(tiny > 0.0 and tiny == 0.001 / 100.0, "a tiny positive stays positive")
 
 
-func _the_readout_prints_two_honest_decimals() -> void:
+func _the_readout_prints_whole_numbers() -> void:
 	var presenter = _presenter()
 	if presenter == null:
 		return
-	_check(presenter.pool_text("HP", 99.96, 100.0) == "HP 99.96 / 100.00",
-			"99.96 prints as the spec's example")
-	_check(presenter.pool_text("Stamina", 85.0, 100.0) == "Stamina 85.00 / 100.00",
-			"85 keeps two decimals")
-	_check(presenter.pool_text("Mana", 12.344, 100.0) == "Mana 12.34 / 100.00",
-			"12.344 rounds down")
-	_check(presenter.pool_text("Mana", 12.346, 100.0) == "Mana 12.35 / 100.00",
-			"12.346 rounds up")
-	_check(presenter.pool_text("HP", 0.001, 100.0) == "HP 0.00 / 100.00",
-			"a tiny positive prints 0.00 while the pool stays where it is")
-	# G5 ties, decided by the human half-up: 0.125 is exactly representable and sits exactly
-	# between 0.12 and 0.13, so this pins the approved design against an engine default.
-	_check(presenter.pool_text("Stamina", 0.125, 100.0) == "Stamina 0.13 / 100.00",
-			"a tie rounds half-up")
-	_check(presenter.pool_text("HP", 100.125, 100.375) == "HP 100.13 / 100.38",
-			"the maximum rounds half-up too")
+	_check(presenter.pool_text("HP", 99.96, 100.0) == "HP 100/100", "99.96 rounds up")
+	_check(presenter.pool_text("Stamina", 85.0, 100.0) == "Stamina 85/100", "85 stays 85")
+	_check(presenter.pool_text("Mana", 12.344, 100.0) == "Mana 12/100", "12.344 rounds down")
+	_check(presenter.pool_text("Mana", 12.6, 100.0) == "Mana 13/100", "12.6 rounds up")
+	_check(presenter.pool_text("HP", 0.001, 100.0) == "HP 0/100", "a tiny positive prints zero")
+	_check(presenter.pool_text("Stamina", 0.5, 100.0) == "Stamina 1/100", "a tie rounds half-up")
+	_check(presenter.pool_text("HP", 100.5, 101.5) == "HP 101/102", "maximum rounds half-up too")
+
+
+func _readouts_use_whole_numbers() -> void:
+	var presenter = _presenter()
+	_check(presenter.pool_amounts(100.0, 100.0) == "100/100", "full pools use integer values")
+	_check(presenter.pool_amounts(12.49, 99.5) == "12/100", "values round to nearest whole number")
+	_check(presenter.pool_amounts(12.5, 100.0) == "13/100", "half values round up")
 
 
 func _death_is_the_sheets_answer_never_the_number() -> void:
@@ -175,9 +173,9 @@ func _death_is_the_sheets_answer_never_the_number() -> void:
 	_check(h > 0.0 and h < 0.005, "main health is tiny and positive, read as a real float")
 	_check(bool(tiny_snap["alive"]), "and the sheet is alive because C++ says so")
 	_check(presenter.pool_text("HP", h, float(tiny.get_max_health()))
-			== "HP 0.00 / 100.00", "the text shows 0.00 while the living fraction stays positive")
+			== "HP 0/100", "the text shows 0 while the living fraction stays positive")
 	_check(presenter.pool_fraction(h, float(tiny.get_max_health())) > 0.0,
-			"the fraction knows 0.00 is not empty")
+			"the fraction knows displayed zero is not necessarily empty")
 
 	var drained := _player(24, "Drained", 1)
 	_check(drained.apply_damage(4, 200.0), "one hit takes everything the leg had and the main pool too")
@@ -235,7 +233,8 @@ func _run() -> void:
 	_case("a configured sheet reads into an honest snapshot", 36,
 			_a_configured_sheet_reads_into_an_honest_snapshot)
 	_case("fractions follow their own maximum", 7, _fractions_follow_their_own_maximum)
-	_case("the readout prints two honest decimals", 7, _the_readout_prints_two_honest_decimals)
+	_case("the readout prints whole numbers", 7, _the_readout_prints_whole_numbers)
+	_case("readouts use whole numbers", 3, _readouts_use_whole_numbers)
 	_case("death is the sheet's answer, never the number", 18,
 			_death_is_the_sheets_answer_never_the_number)
 	_case("a new maximum shows in a new snapshot", 9, _a_new_maximum_shows_in_a_new_snapshot)

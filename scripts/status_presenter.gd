@@ -2,8 +2,8 @@
 #
 # It owns exactly two thoughts and no node, no clock, and no state. `read_sheet` takes a fresh,
 # disposable mirror of what one `OpenCharacter` currently says — the bridge getters, once each,
-# on demand — and the pool formatters decide how a value prints (two decimals, ties half-up,
-# the human's G5 decision) and how a bar fills (current over *its own* maximum, never a fixed
+# on demand — and the pool formatters decide how a value prints (whole numbers, ties half-up)
+# and how a bar fills (current over *its own* maximum, never a fixed
 # 100). A snapshot is never authority: nothing here can write into a sheet, and every view must
 # re-read instead of caching, so a changed maximum shows in the very next frame.
 #
@@ -36,7 +36,7 @@ static func pool_fraction(current: float, maximum: float) -> float:
 	return current / maximum
 
 
-# The player readout, e.g. `HP 99.96 / 100.00`: both numbers through the same half-up formatter
+# The player readout, e.g. `HP 100/100`: both numbers through the same half-up formatter
 # so a tie can never round differently on one side of the slash than the other.
 static func pool_text(label: String, current: float, maximum: float) -> String:
 	return "%s %s" % [label, pool_amounts(current, maximum)]
@@ -44,7 +44,7 @@ static func pool_text(label: String, current: float, maximum: float) -> String:
 
 # The same readout without the leading label, for rows whose name lives in its own column.
 static func pool_amounts(current: float, maximum: float) -> String:
-	return "%s / %s" % [_amount(current), _amount(maximum)]
+	return "%s/%s" % [_amount(current), _amount(maximum)]
 
 
 # The locked name policy (human G3, 2026-11-01), one rule for both views: the sheet's own name,
@@ -57,8 +57,6 @@ static func display_name(sheet_name: String, fallback_name: String) -> String:
 	return chosen
 
 
-# Two decimals, half-up: 12.346 → 12.35, 0.125 → 0.13. Deliberately not the engine's default
-# formatting — an engine tie outcome would be an engine decision, and the human made this one.
+# Whole numbers, half-up: 12.4 → 12, 12.5 → 13. This affects text only, not the fill.
 static func _amount(value: float) -> String:
-	var scaled := int(floorf(absf(value) * 100.0 + 0.5))
-	return "%d.%02d" % [int(scaled / 100.0), scaled % 100]
+	return "%d" % int(floorf(value + 0.5))
