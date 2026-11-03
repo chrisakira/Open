@@ -237,6 +237,19 @@ func _on_attack_requested(target_id: int) -> void:
 		_marker.visible = false
 
 
+func _on_recruit_requested(target_id: int) -> void:
+	# The same door the attack uses, with the same shape: the id of who to ask, and
+	# nothing else. C++ decides whether the target may be asked, walks whoever it
+	# commands into range, and resolves the attempt on a later frame - so this cannot
+	# promise a join, only an ask, and a refusal here leaves the order the player had.
+	if _combat == null or _player == null or _player.sheet == null:
+		return
+	if _combat.issue_recruit(_player.sheet.get_character_id(), target_id):
+		# The walk that the ask replaced goes with it, marker and all: standing down a
+		# click-to-move to walk to someone is not a move to a place on the ground.
+		_marker.visible = false
+
+
 func _try_character_or_floor_click(screen_pos: Vector2) -> void:
 	# One ray, both masks: a character in front of the floor wins the pick, and a
 	# body never falls through to the ground behind it.
@@ -275,7 +288,12 @@ func _try_character_or_floor_click(screen_pos: Vector2) -> void:
 		# Living or dead is C++'s answer, and so is the faction gate there is not
 		# one: any living character offers its action.
 		if dummy.sheet != null and dummy.sheet.is_alive():
-			_attack_popup.open_for_target(dummy.sheet.get_character_id(), screen_pos)
+			# And the popup asks C++ one more question before it decides what to show:
+			# whether this character may be asked to join at all. The flag is the sheet's,
+			# so a popup cannot invent an action the coordinator would refuse, and a
+			# character without it keeps the Attack-only panel it had before recruiting.
+			_attack_popup.open_for_target(dummy.sheet.get_character_id(), screen_pos,
+					dummy.sheet.is_recruitable())
 		return
 	_try_move_to_click(screen_pos)
 
@@ -398,6 +416,15 @@ func _build_standing_dummies() -> void:
 	friend.model_scene = FEMALE_MODEL
 	friend.position = Vector3(-6.0, 0.1, -2.0)
 	friend.setup(0, 1, 2, 2002, "Jane Doe 1")
+	# Jane starts as the scene's one recruit target: the flag set, and the dummy
+	# condition that always answers yes (docs/recruiting.md, "Jane Doe 1, for now").
+	# This is scene setup, like `set_can_move`, and it is the only place the flag is
+	# written from Godot: membership and faction stay C++'s, so nothing here can call
+	# itself a member. The enemy below keeps no flag, which is the same answer as any
+	# other unaskable character - not a rule that enemies can never carry one.
+	if friend.sheet != null:
+		friend.sheet.set_recruitable(true)
+		friend.sheet.set_recruit_condition(1)
 	add_child(friend)
 	_actors.append(friend)
 
@@ -406,6 +433,9 @@ func _build_standing_dummies() -> void:
 	enemy.model_scene = FEMALE_MODEL
 	enemy.position = Vector3(6.0, 0.1, -2.0)
 	enemy.setup(1, 1, 3, 3003, "John Doe 1")
+	# The enemy is asked for nothing: no flag, so her popup stays Attack-only and the
+	# condition stays the one that always fails. The player is the asker, not a
+	# recruit target, and is left unflagged for the same reason.
 	add_child(enemy)
 	_actors.append(enemy)
 
@@ -616,6 +646,7 @@ func _build_hud() -> void:
 	_attack_popup.visible = false
 	layer.add_child(_attack_popup)
 	_attack_popup.attack_requested.connect(_on_attack_requested)
+	_attack_popup.recruit_requested.connect(_on_recruit_requested)
 
 	_technique_popup = TechniquePopup.new()
 	_technique_popup.name = "TechniquePopup"

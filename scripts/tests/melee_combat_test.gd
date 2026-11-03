@@ -88,6 +88,43 @@ func _covers(popup: Control, point: Vector2) -> bool:
 	return bool(popup.call("covers", point))
 
 
+# The panel is no longer one button tall: a recruitable character's popup stacks a
+# second action, so "press Attack" means that button's own rectangle rather than the
+# middle of the panel - which, with two buttons, belongs to neither.
+func _named_button(popup: Control, button_name: String) -> Button:
+	if popup == null:
+		return null
+	var found: Array = popup.find_children(button_name, "Button", true, false)
+	if found.size() != 1:
+		_check(false, "the popup carries exactly one %s, got %d" % [button_name, found.size()])
+		return null
+	return found[0] as Button
+
+
+func _visible_actions(popup: Control) -> Array:
+	var shown: Array = []
+	if popup == null:
+		return shown
+	for child in popup.find_children("*", "Button", true, false):
+		if child is Button and child.visible:
+			shown.append(child)
+	return shown
+
+
+# Pressing means the button's own rectangle, which is only true after the panel has
+# laid its children out: on the frame a popup opens, its children still carry the
+# rectangle of the last thing it showed, and a panel that grew a second action would
+# otherwise be pressed on the wrong action. So this coroutine takes that frame, and the
+# tests await it.
+func _press_attack(popup: Control) -> void:
+	var attack := _named_button(popup, "AttackButton")
+	if attack == null:
+		_check(false, "the popup has an Attack button to press")
+		return
+	await process_frame
+	_click_at(attack.get_global_rect().get_center())
+
+
 func _tick(node: Node, delta: float) -> void:
 	if not node.has_method("_physics_process"):
 		_check(false, "%s has a physics tick to drive" % node.name)
@@ -219,14 +256,30 @@ func _living_dummy_click_opens_attack() -> void:
 		_check(popup.mouse_filter == Control.MOUSE_FILTER_STOP, "the action popup stops input inside it")
 		_check(popup.size.x <= 240.0 and popup.size.y <= 120.0,
 			"the action popup is a tiny panel, not a second sheet")
-		var buttons: Array = popup.find_children("*", "Button", true, false)
-		_check(buttons.size() == 1, "%s's popup carries exactly one action" % dummy.name)
-		var attack_button: Button = buttons[0] if buttons.size() == 1 else null
-		_check(attack_button != null and String(attack_button.text).to_lower().contains("attack"),
-			"%s's popup offers an Attack action" % dummy.name)
+		# Attack is the action every living character offers. A second action may
+		# appear beside it for a character whose flag says she can be asked to join;
+		# that is recruiting's own test (`recruit_joining_test.gd`), and the one thing
+		# it must never do here is replace or hide the fight.
+		var attack_button := _named_button(popup, "AttackButton")
+		_check(attack_button != null, "%s's popup carries an Attack action" % dummy.name)
 
 		_click_at(_dummy_screen(camera, dummy))
 		_check(popup.visible, "clicking the living %s opens its action popup" % dummy.name)
+		_check(attack_button != null and attack_button.visible,
+				"and the open popup still offers Attack")
+		# The second action is recruiting's, and this suite keeps its own ground:
+		# an unaskable dummy is offered exactly the one action it always was, and a
+		# askable one gains the ask without the fight being replaced.
+		var expected := 2 if dummy == ally else 1
+		var offered := _visible_actions(popup)
+		_check(offered.size() == expected,
+				"%s's popup offers %d action(s), got %d" % [dummy.name, expected, offered.size()])
+		var names: Array = []
+		for action in offered:
+			names.append(String((action as Button).text).to_lower())
+		_check(names.has("attack"), "%s's popup never lost its Attack" % dummy.name)
+		_check(names.has("recruit") == (dummy == ally),
+				"%s's popup offers Recruit only where the flag says it may" % dummy.name)
 		_check(not marker.visible, "a character click shows no move marker")
 		_check(_attack_target_id(player.sheet) == 0, "a character click issues no attack yet")
 		_check(player.sheet.velocity_at(player.global_position).length() > 0.0,
@@ -285,7 +338,7 @@ func _attack_button_is_not_floor_input() -> void:
 		_click_at(_dummy_screen(camera, enemy))
 		_check(popup.visible, "the Enemy click opened its popup")
 		_check(_covers(popup, popup.get_global_rect().get_center()), "the popup covers its own area")
-		_click_at(popup.get_global_rect().get_center())
+		await _press_attack(popup)
 
 		_check(_emissions.size() == 1, "pressing Attack emits exactly once")
 		_check(_emissions.size() == 1 and int(_emissions[0]) == 3, "and carries the pending character id")
@@ -382,7 +435,7 @@ func _second_dummy_replaces_pending_target() -> void:
 		_click_at(_dummy_screen(camera, ally))
 		_check(popup.visible, "the second dummy keeps one popup open")
 		_check(_emissions.is_empty(), "choosing a target never emits Attack")
-		_click_at(popup.get_global_rect().get_center())
+		await _press_attack(popup)
 		_check(_emissions.size() == 1 and int(_emissions[0]) == 2,
 			"the last dummy chosen is the one confirmed")
 		_check(_attack_target_id(player.sheet) == 2, "so C++ holds the Friendly as the target")
@@ -407,7 +460,7 @@ func _killed_target_is_not_a_fight() -> void:
 		_check(popup.visible, "the popup is open for the Enemy")
 		_check(enemy.sheet.apply_damage(1, 100.0), "the target dies after the popup opened")
 		_check(not enemy.sheet.is_alive(), "C++ agrees it is dead")
-		_click_at(popup.get_global_rect().get_center())
+		await _press_attack(popup)
 		_check(_emissions.size() == 1, "the stale confirmation still emits once")
 		_check(not popup.visible, "and closes")
 		_check(_attack_target_id(player.sheet) == 0, "C++ refused the dead target")
@@ -497,7 +550,7 @@ func _approach_then_auto_swing() -> void:
 
 	_click_at(_dummy_screen(camera, enemy))
 	_check(popup.visible, "the Enemy click opened its popup")
-	_click_at(popup.get_global_rect().get_center())
+	await _press_attack(popup)
 	_check(_attack_target_id(player.sheet) == 3, "Attack ordered the player through C++")
 	_check(combat.is_in_combat(1), "the coordinator says the attacker is fighting")
 
@@ -603,7 +656,7 @@ func _friendly_target_proves_no_faction_gate() -> void:
 
 	_click_at(_dummy_screen(camera, ally))
 	_check(popup.visible, "clicking the Friendly dummy opens the same popup")
-	_click_at(popup.get_global_rect().get_center())
+	await _press_attack(popup)
 	_check(_attack_target_id(player.sheet) == 2, "C++ holds the Friendly as the target")
 	_check(combat.is_in_combat(1) and combat.is_in_combat(2), "both are in combat")
 
@@ -832,7 +885,7 @@ func _marker_follows_attack_acceptance() -> void:
 
 	_click_at(_dummy_screen(camera, enemy))
 	_check(popup.visible, "the Enemy click opened its popup")
-	_click_at(popup.get_global_rect().get_center())
+	await _press_attack(popup)
 	_check(_attack_target_id(player.sheet) == 3, "that Attack was accepted")
 	_check(not marker.visible, "and an accepted attack cleared the marker")
 
@@ -844,7 +897,7 @@ func _marker_follows_attack_acceptance() -> void:
 	_click_at(_dummy_screen(camera, ally))
 	_check(popup.visible, "the Friendly click opened its popup")
 	_check(ally.sheet.apply_damage(1, 500.0), "the pending target dies before confirmation")
-	_click_at(popup.get_global_rect().get_center())
+	await _press_attack(popup)
 	_check(_attack_target_id(player.sheet) == 0, "that confirmation was refused")
 	_check(marker.visible, "and a refused attack left the marker up")
 	await _free_world(world)
@@ -959,7 +1012,7 @@ func _the_hud_chat_hears_the_worlds_first_swing() -> void:
 		await _free_world(world)
 		return
 	_check(popup.visible, "clicking the Enemy opened its action")
-	_click_at(popup.get_global_rect().get_center())
+	await _press_attack(popup)
 	var guard := 0
 	while guard < 240 and _chat_lines(chat).is_empty():
 		await physics_frame
