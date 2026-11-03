@@ -13,13 +13,26 @@ dialogue trees, or lore here.
 
 ## Current
 
-Nobody is in a squad. The scene has the player (`John Doe`, friendly), a standing
-friendly dummy (`Jane Doe 1`), and a standing enemy dummy (`John Doe 1`). Both
-dummies call `set_can_move(false)`. Left-click a living character opens the Attack
-popup; there is no recruit action. Faction is `Friendly` / `Enemy` only; neutral
-does not exist. `characters.md` already says player and NPC are the same type, and
-the player is the character you currently issue orders to — that is selection after
-joining, not how someone joins.
+Jane Doe 1 starts recruitable and her condition is the dummy that always succeeds;
+the enemy dummy and the player do not carry the flag. Left-click a living character
+opens the popup with Attack, and with Recruit beside it when that character's
+recruitable flag is set - `attack_popup.gd` shows the second button and issues
+nothing itself. Choosing Recruit issues a recruit order on the currently commanded
+character: C++ walks them to the unarmed melee 1.5 (a held weapon's reach does not
+replace it), and the attempt runs on a later frame, in range, never on the click. A
+yes puts the target in the squad and sets faction Friendly; a no spends the flag and
+moves nothing else, and either answer stands the recruiter down. A new move order, a
+chosen attack, the target's death, or a blow landed on the recruiter all end the ask
+without an answer: no flag spent, nobody joined. Death is the only way a member
+leaves.
+
+Still nobody to recruit a second time - the flag is spent by the first answer,
+and there is no way back. Nobody is in a squad at the start, Jane stays unable to
+walk after joining (`set_can_move(false)` is hers still), and there is no roster,
+no switching who you command, no item or title condition language, and no cost.
+Faction is `Friendly` / `Enemy` only; neutral does not exist. `characters.md` already
+says player and NPC are the same type, and the player is the character you currently
+issue orders to — that is selection after joining, not how someone joins.
 
 ## Slice order — locked
 
