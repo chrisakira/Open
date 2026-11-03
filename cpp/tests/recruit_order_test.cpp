@@ -129,6 +129,47 @@ bool same_pools(const open::Character &before, const open::Character &who) {
 		   close(who.pool(open::PoolKind::Mana).current, before.pool(open::PoolKind::Mana).current);
 }
 
+// An attacker whose bare hands fill a stagger meter in a few blows rather than a few
+// hundred: the rank the combat-session fixtures already train for the same reason, and
+// the only route to a stun that exists outside a sheet.
+open::Character blunt_master(std::uint64_t id) {
+	open::Character made = make_character(id);
+	while (made.basic(open::BasicSkill::UnarmedCombat).rank < 100u) {
+		made.record_use(open::BasicSkill::UnarmedCombat, std::nullopt, true);
+	}
+	return made;
+}
+
+// Leaves a sheet with no bar to answer with, so no blow is turned aside whole and the
+// meter is the only thing deciding when this fight changes shape.
+void exhaust_defence(open::Character &who) {
+	const float available = who.pool(open::PoolKind::Stamina).current;
+	if (available > 0.0f) {
+		expect_true("the defence is drained", who.spend_stamina(available));
+	}
+}
+
+// Stuns `down` through `attacker`, whose order and reach are already set, and stops the
+// moment the sheet is down. `down` still stands and still holds its own clocks, so the
+// caller can then ask it to do something - which is the only way the state exists: a
+// landed blow is also the one thing that takes an ask away.
+void stun_through(open::CombatSession &session, std::span<const open::Combatant> world,
+				  open::Character &attacker, open::Character &down) {
+	const int kFrameLimit = 2000;
+	for (int frame = 0; frame < kFrameLimit && !down.is_stunned(); ++frame) {
+		exhaust_defence(down);
+		expect_true("a tenth of a second passes", session.step(0.1f, world));
+	}
+	expect_true("the sheet is stunned before it died", down.is_stunned() && down.alive());
+	// Both sheets stand down: an order left on either would keep the fight going, and a
+	// blow landing on the recruiter takes the ask away.
+	attacker.clear_order();
+	down.clear_order();
+	expect_true("the attacker stands down", !attacker.attack_target().has_value());
+	expect_true("and the stunned sheet holds no fight of its own",
+				!down.attack_target().has_value());
+}
+
 }  // namespace
 
 int main() {
@@ -452,6 +493,145 @@ int main() {
 		expect_true("death took her out of the squad", !asked.in_squad());
 		expect_true("no step puts her back", session.step(0.1f, world));
 		expect_true("still out", !asked.in_squad());
+	}
+	{
+		// always_succeed_on_an_enemy_joins_and_makes_them_friendly: the join is the
+		// one answer that moves a faction, and it moves it for the sheet that is
+		// Friendly already exactly as much as for the one that is not - docs/recruiting
+		// .md "Success — locked" says so in both halves, and the Enemy half is the one
+		// that can be quietly deleted.
+		open::Character recruiter = make_character(1);
+		open::Character hostile = make_character(2, open::Faction::Enemy);
+		expect_true("the enemy takes the flag", hostile.set_recruitable(true));
+		expect_true("and a condition that says yes",
+					hostile.set_recruit_condition(open::RecruitCondition::AlwaysSucceed));
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)}, {&hostile, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(83);
+		expect_true("the enemy is asked in reach", session.issue_recruit(world, 1, 2));
+
+		expect_true("one positive step runs", session.step(0.1f, world));
+		expect_true("yes joins", hostile.in_squad());
+		expect_true("and a join sets the faction Friendly",
+					hostile.faction() == open::Faction::Friendly);
+		expect_true("the flag is spent", !hostile.recruitable());
+		expect_true("the recruiter is stood down", !recruiter.recruit_target().has_value());
+	}
+	{
+		// clear_order_ends_the_ask_without_answering: standing down is not an answer.
+		// The flag stays for whoever asks next, and no walk comes with the standing
+		// down.
+		open::Character recruiter = make_character(1);
+		open::Character asked = jane(2);
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)}, {&asked, at(10.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(89);
+		expect_true("Jane is asked from far away", session.issue_recruit(world, 1, 2));
+		const Membership before_stand_down = Membership::read(asked);
+
+		recruiter.clear_order();
+		expect_true("the ask is gone", !recruiter.recruit_target().has_value());
+		expect_true("and no walk took its place", !recruiter.destination().has_value());
+		expect_true("Jane was not answered",
+					before_stand_down.as_before("standing down spends nobody's flag", asked));
+
+		// The same sheet can be asked again, because nothing refused it.
+		expect_true("an ended ask can be asked again", session.issue_recruit(world, 1, 2));
+		expect_true("and the ask is held", is_target(recruiter.recruit_target(), 2));
+	}
+	{
+		// death_ends_the_recruiter_s_own_ask_without_answering: a recruiter that dies
+		// on the way leaves no order behind, and the sheet it was walking to keeps the
+		// flag it was walking to.
+		open::Character recruiter = make_character(1);
+		open::Character asked = jane(2);
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)}, {&asked, at(10.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(97);
+		expect_true("Jane is asked from far away", session.issue_recruit(world, 1, 2));
+		const Membership before_death = Membership::read(asked);
+
+		expect_true("the recruiter dies on the road", recruiter.damage(open::BodyPart::Torso, 500.0f));
+		expect_true("a corpse keeps no ask", !recruiter.recruit_target().has_value());
+		expect_true("and Jane was not answered",
+					before_death.as_before("a recruiter's death is not an answer", asked));
+		expect_true("the ask did not walk a corpse", !recruiter.destination().has_value());
+
+		expect_true("a step runs with the corpse in the roster", session.step(0.1f, world));
+		expect_true("the ask is still gone", !recruiter.recruit_target().has_value());
+		expect_true("and Jane says what she said before",
+					before_death.as_before("the reconciliation asked her, too", asked));
+	}
+	{
+		// a_hit_in_range_ends_the_ask_before_any_attempt_runs: the recruiter standing
+		// in reach of its target is the case the frame order exists for. The blow lands,
+		// so the ask ends - and the attempt the same frame would otherwise have answered
+		// never runs.
+		open::Character recruiter = make_character(1);
+		open::Character asked = jane(2);
+		open::Character attacker = make_character(3, open::Faction::Enemy);
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&asked, at(1.0f, 0.0f, 0.0f)},
+					{&attacker, at(0.2f, 0.0f, 0.0f)}});
+		open::CombatSession session(101);
+		expect_true("Jane is asked in reach", session.issue_recruit(world, 1, 2));
+		const bool in_range = open::melee_in_range(at(0.0f, 0.0f, 0.0f), at(1.0f, 0.0f, 0.0f));
+		expect_true("the recruiter stands inside the recruit range", in_range);
+		const Membership before_hit = Membership::read(asked);
+		expect_true("the attacker is ordered at the recruiter", session.issue_attack(world, 3, 1));
+
+		expect_true("one step runs", session.step(0.1f, world));
+		expect_true("the ask was cancelled", !recruiter.recruit_target().has_value());
+		expect_true("the attempt did not answer for it",
+					before_hit.as_before("a blow landed before the ask could, so nothing joined",
+										 asked));
+		expect_true("the recruiter took no attack order back",
+					!recruiter.attack_target().has_value());
+	}
+	{
+		// a_stunned_recruiter_keeps_the_ask_and_answers_it_in_range: the stun holds the
+		// sheet where it stands and keeps the order it was given. The ledger's call is
+		// that a stun does not gate the answer either - docs/recruiting.md never says an
+		// ask waits for the sheet to stand up - so this pins which way it went.
+		open::Character recruiter = make_character(1);
+		open::Character attacker = blunt_master(3);
+		open::Character asked = jane(2);
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&attacker, at(1.0f, 0.0f, 0.0f)},
+					{&asked, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(103);
+		expect_true("the attacker is ordered at the recruiter", session.issue_attack(world, 3, 1));
+		stun_through(session, world, attacker, recruiter);
+
+		// The ask is out of reach here, so a walk is the only answer `velocity_at` can
+		// give - and the stun is the reason it gives none.
+		const std::vector<open::Combatant> far =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&attacker, at(1.0f, 0.0f, 0.0f)},
+					{&asked, at(20.0f, 0.0f, 0.0f)}});
+		expect_true("the recruiter is asked while it is down", session.issue_recruit(far, 1, 2));
+		expect_true("the ask is kept through a stun", is_target(recruiter.recruit_target(), 2));
+		expect_true("a stunned recruiter is told to stand still even out of reach",
+					stopped(session.velocity_at(1, far)));
+		expect_true("and the sheet's own door agrees",
+					stopped(recruiter.recruit_velocity_at(at(0.0f, 0.0f, 0.0f),
+														 at(20.0f, 0.0f, 0.0f))));
+		expect_true("and the stun is still running", recruiter.is_stunned());
+
+		// The same sheet, standing where the caller sees it next to Jane: the answer is
+		// not stun-gated.
+		const std::vector<open::Combatant> close =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&attacker, at(1.0f, 0.0f, 0.0f)},
+					{&asked, at(1.0f, 0.0f, 0.0f)}});
+		expect_true("Jane was not asked yet", !asked.in_squad());
+		expect_true("one step runs while the stun is running", session.step(0.1f, close));
+		expect_true("and the stun is still running", recruiter.is_stunned());
+		expect_true("the ask answered anyway", asked.in_squad());
+		expect_true("the recruiter was stood down with it", !recruiter.recruit_target().has_value());
+		expect_true("and Jane stays Friendly", asked.faction() == open::Faction::Friendly);
 	}
 	{
 		// a_sheet_asked_twice_joins_once: two asks on one sheet resolve in roster
