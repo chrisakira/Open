@@ -14,6 +14,16 @@ enum class Faction {
 	Enemy = 1,
 };
 
+// How a recruit attempt is answered, before any real condition exists. `AlwaysFail`
+// is the sheet default and the only way to test the locked fail path without
+// publishing a second playable recruit; `AlwaysSucceed` is Jane's placeholder.
+// Neither is a join - docs/recruiting.md owns what success and failure do, and the
+// skill/item/title condition language stays Open.
+enum class RecruitCondition {
+	AlwaysFail = 0,
+	AlwaysSucceed = 1,
+};
+
 enum class Attribute {
 	Strength,
 	Dexterity,

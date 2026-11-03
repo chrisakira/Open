@@ -430,4 +430,45 @@ Vec3 Character::attack_velocity_at(const Vec3 &self, const Vec3 &target) const {
 	return pursuit_velocity(self, target, attack->stats.max_reach, walk_speed());
 }
 
+bool Character::recruitable() const {
+	return recruitable_;
+}
+
+bool Character::set_recruitable(bool recruitable) {
+	if (!alive()) {
+		// A corpse is not someone you can ask, and it is not someone you can un-ask:
+		// the flag it carried into death stays on the body.
+		return false;
+	}
+	recruitable_ = recruitable;
+	return true;
+}
+
+RecruitCondition Character::recruit_condition() const {
+	return recruit_condition_;
+}
+
+bool Character::set_recruit_condition(RecruitCondition condition) {
+	if (!alive()) {
+		return false;
+	}
+	recruit_condition_ = condition;
+	return true;
+}
+
+bool Character::in_squad() const {
+	return in_squad_;
+}
+
+bool Character::recruit_condition_passes() const {
+	if (!alive()) {
+		// The dead answer nothing - and this is not a failed attempt either, which is
+		// the coordinator's to make. It is a corpse's popup that cannot offer Recruit.
+		return false;
+	}
+	// Reading the check recruits nobody: no flag is cleared, no faction moves, nothing
+	// is spent. The attempt that applies all of that is Task 2's.
+	return recruit_condition_ == RecruitCondition::AlwaysSucceed;
+}
+
 }  // namespace open

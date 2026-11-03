@@ -134,6 +134,11 @@ target_link_libraries(weapon_combat_tests PRIVATE open_sim)
 target_compile_options(weapon_combat_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME weapon_combat COMMAND weapon_combat_tests)
 
+add_executable(recruit_sheet_tests tests/recruit_sheet_test.cpp)
+target_link_libraries(recruit_sheet_tests PRIVATE open_sim)
+target_compile_options(recruit_sheet_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME recruit_sheet COMMAND recruit_sheet_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)

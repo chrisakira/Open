@@ -146,6 +146,29 @@ bool can_move() const;
 	// the move-order query.
 	Vec3 attack_velocity_at(const Vec3 &self, const Vec3 &target) const;
 
+	// --- recruiting ---------------------------------------------------------------
+	//
+	// Who may be asked, and what answers the ask. The flag is character state, not a
+	// node property (docs/recruiting.md): faction never implies it and never forbids
+	// it, so a Friendly sheet can be recruitable and an Enemy sheet can be asked.
+	// `in_squad()` is read-only here - joining, leaving and the faction a success
+	// sets belong to `CombatSession`, and no public `set_in_squad` or `set_faction`
+	// exists to route around them.
+	//
+	// A dead sheet refuses both setters: a corpse is not a recruit target, and no
+	// popup can flip what it died as.
+	bool recruitable() const;
+	bool set_recruitable(bool recruitable);
+	RecruitCondition recruit_condition() const;
+	bool set_recruit_condition(RecruitCondition condition);
+	bool in_squad() const;
+
+	// What the check answers, and nothing else: AlwaysSucceed is true, AlwaysFail is
+	// false, a dead sheet is false. Passing does not join, does not clear the flag,
+	// does not change faction and spends nothing - the attempt that applies all of
+	// that is the coordinator's.
+	bool recruit_condition_passes() const;
+
 	// Each sheet owns its own attack and defence clocks, in seconds still to
 	// wait: both start ready at 0, only time moves them, and an order change
 	// never resets one. Advancing by a finite nonnegative duration is accepted;
@@ -218,6 +241,12 @@ private:
 	bool can_move_ = true;
 	MoveOrder order_;
 	std::optional<std::uint64_t> attack_target_;
+	// Who may be asked and what answers the ask. Neither is a join: `in_squad_` is
+	// written only by the coordinator's own success (it is a friend here), so a
+	// script or a popup can never declare someone a member.
+	bool recruitable_ = false;
+	RecruitCondition recruit_condition_ = RecruitCondition::AlwaysFail;
+	bool in_squad_ = false;
 	// Seconds still to wait, per sheet and per role: 0 is ready. A defender's
 	// clock belongs to the defender, so two characters fighting each other are
 	// never gated by one shared timer.
