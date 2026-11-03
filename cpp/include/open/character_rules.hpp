@@ -266,6 +266,7 @@ enum class HandUse {
 // Checked before any conversion or array index. Callers that cannot throw (the
 // Godot bridge) use these instead of catching.
 bool valid(Faction faction);
+bool valid(RecruitCondition condition);
 bool valid(Attribute attribute);
 bool valid(BasicSkill skill);
 bool valid(AdvancedSkill skill);

@@ -43,6 +43,13 @@ public:
 	bool remove_character(int64_t id);
 	bool set_position(int64_t id, const godot::Vector3 &position);
 	bool issue_attack(int64_t actor_id, int64_t target_id);
+
+	// The recruit order, and the only door the scene has to it: C++ decides the flag, the
+	// range, the attempt, membership and faction, and this forwards ids. Refused with the
+	// same answers C++ gives - an id that is not a positive registered sheet, the same
+	// sheet at both ends, a dead actor or a dead target, or a target without the
+	// recruitable flag - and never by an exception.
+	bool issue_recruit(int64_t actor_id, int64_t target_id);
 	bool step(float seconds);
 	bool is_in_combat(int64_t id) const;
 	godot::Vector3 velocity_at(int64_t id) const;

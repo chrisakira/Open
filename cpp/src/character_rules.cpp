@@ -209,6 +209,10 @@ bool valid(Faction faction) {
 	return faction == Faction::Friendly || faction == Faction::Enemy;
 }
 
+bool valid(RecruitCondition condition) {
+	return condition == RecruitCondition::AlwaysFail || condition == RecruitCondition::AlwaysSucceed;
+}
+
 bool valid(Attribute attribute) {
 	return in_range(attribute);
 }

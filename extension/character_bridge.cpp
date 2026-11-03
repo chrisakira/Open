@@ -178,6 +178,16 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "position"), &OpenCharacter::velocity_at);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_attack_target_id"),
 							   &OpenCharacter::get_attack_target_id);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_recruitable"), &OpenCharacter::is_recruitable);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_recruitable", "recruitable"),
+							   &OpenCharacter::set_recruitable);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_recruit_condition"),
+							   &OpenCharacter::get_recruit_condition);
+	godot::ClassDB::bind_method(godot::D_METHOD("set_recruit_condition", "condition"),
+							   &OpenCharacter::set_recruit_condition);
+	godot::ClassDB::bind_method(godot::D_METHOD("is_in_squad"), &OpenCharacter::is_in_squad);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_recruit_target_id"),
+							   &OpenCharacter::get_recruit_target_id);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_equipment_snapshot"),
 							   &OpenCharacter::get_equipment_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_weapon_snapshot", "item_id"),
@@ -493,6 +503,58 @@ int64_t OpenCharacter::get_attack_target_id() const {
 		return 0;
 	}
 	const std::optional<std::uint64_t> target = c->attack_target();
+	return target.has_value() ? static_cast<int64_t>(*target) : 0;
+}
+
+bool OpenCharacter::is_recruitable() const {
+	const open::Character *c = sheet();
+	return c != nullptr && c->recruitable();
+}
+
+bool OpenCharacter::set_recruitable(bool recruitable) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	// A dead sheet refuses it in C++, which is where the rule belongs: this adapter
+	// cannot decide on its own that a corpse keeps the flag it died carrying.
+	return c->set_recruitable(recruitable);
+}
+
+int OpenCharacter::get_recruit_condition() const {
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return static_cast<int>(open::RecruitCondition::AlwaysFail);
+	}
+	return static_cast<int>(c->recruit_condition());
+}
+
+bool OpenCharacter::set_recruit_condition(int condition) {
+	open::Character *c = sheet();
+	if (c == nullptr) {
+		return false;
+	}
+	// Checked before it narrows: a number that only becomes a condition after
+	// truncation is refused rather than reinterpreted, and refused with the sheet's
+	// condition still whatever it was.
+	if (!enum_id_is_valid<open::RecruitCondition>(condition)) {
+		report_bad_id("recruit condition", condition);
+		return false;
+	}
+	return c->set_recruit_condition(static_cast<open::RecruitCondition>(condition));
+}
+
+bool OpenCharacter::is_in_squad() const {
+	const open::Character *c = sheet();
+	return c != nullptr && c->in_squad();
+}
+
+int64_t OpenCharacter::get_recruit_target_id() const {
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return 0;
+	}
+	const std::optional<std::uint64_t> target = c->recruit_target();
 	return target.has_value() ? static_cast<int64_t>(*target) : 0;
 }
 

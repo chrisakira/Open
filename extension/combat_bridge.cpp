@@ -98,6 +98,8 @@ void OpenCombat::_bind_methods() {
 							   &OpenCombat::set_position);
 	godot::ClassDB::bind_method(godot::D_METHOD("issue_attack", "actor_id", "target_id"),
 							   &OpenCombat::issue_attack);
+	godot::ClassDB::bind_method(godot::D_METHOD("issue_recruit", "actor_id", "target_id"),
+							   &OpenCombat::issue_recruit);
 	godot::ClassDB::bind_method(godot::D_METHOD("step", "seconds"), &OpenCombat::step);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_in_combat", "id"), &OpenCombat::is_in_combat);
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "id"), &OpenCombat::velocity_at);
@@ -230,6 +232,21 @@ bool OpenCombat::issue_attack(int64_t actor_id, int64_t target_id) {
 	}
 	return session_.issue_attack(roster, static_cast<std::uint64_t>(actor_id),
 								 static_cast<std::uint64_t>(target_id));
+}
+
+bool OpenCombat::issue_recruit(int64_t actor_id, int64_t target_id) {
+	if (!usable_id(actor_id) || !usable_id(target_id)) {
+		return false;
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	// The ask and every reason it might be refused are C++'s, including that faction is
+	// not one of them: this door adds no filter of its own, only the id shape the
+	// boundary asks for.
+	return session_.issue_recruit(roster, static_cast<std::uint64_t>(actor_id),
+								  static_cast<std::uint64_t>(target_id));
 }
 
 bool OpenCombat::step(float seconds) {

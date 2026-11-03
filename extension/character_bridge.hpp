@@ -76,6 +76,28 @@ public:
 	// attack or was never configured. Ids keep their full 64-bit width.
 	int64_t get_attack_target_id() const;
 
+	// --- recruiting ---------------------------------------------------------------
+	//
+	// The scene's reads and writes for docs/recruiting.md: who may be asked, and which
+	// dummy condition answers the ask. Both are character state, so a node property is
+	// not offered - and both are refused on a dead sheet, which is C++'s answer rather
+	// than one this adapter keeps.
+	//
+	// Membership and faction are what an answered ask *does*, which is the coordinator's
+	// and nothing else's: there is no `set_in_squad` and no `set_faction` here, because a
+	// popup that could declare somebody a member would be a second place where joining
+	// is decided. `get_recruit_condition` answers the bridge's two ints - 0 always fails,
+	// 1 always succeeds - and an int outside them is refused rather than trusted.
+	bool is_recruitable() const;
+	bool set_recruitable(bool recruitable);
+	int get_recruit_condition() const;
+	bool set_recruit_condition(int condition);
+	bool is_in_squad() const;
+
+	// The sheet this one is walking to ask: 0 when it holds no ask, because a sheet with
+	// no ask is not asking a character whose id is 0. The order itself stays C++'s.
+	int64_t get_recruit_target_id() const;
+
 	// --- equipment (Task 14a) -------------------------------------------------
 	//
 	// The equipment popup's two reads and two commands. Nothing here decides where an
