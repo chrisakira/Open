@@ -10,4 +10,5 @@ Design lives here. Code and tests still win when they disagree with an older par
 | [style.md](style.md) | Visual and interaction style for menus and popups |
 | [combat_log.md](combat_log.md) | On-screen overlay: bottom-left action chat |
 | [status_UID.md](status_UID.md) | Player HUD and world-character status displays |
+| [recruiting.md](recruiting.md) | How a character joins the player's squad |
 | [superpowers/plans/](superpowers/plans/) | Implementation plans, newest first |

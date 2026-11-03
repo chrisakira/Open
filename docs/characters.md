@@ -567,7 +567,7 @@ these change the rank curves, pools, blessings, frozen-parent resolution or limb
 
 ## Open (not attributes)
 
-Death: main HP, head, or torso at `0`. Combat math lives in `docs/combat.md`. Not numbered here: recruiting, item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
+Death: main HP, head, or torso at `0`. Combat math lives in `docs/combat.md`. Joining a squad lives in `docs/recruiting.md` (not built). Not numbered here: item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
 
 ## Ownership
 
