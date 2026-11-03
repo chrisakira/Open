@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  .scene {
+    width: 100%;
+    height: 240px;
+    background: linear-gradient(180deg, #3a4a33 0%, #46543b 55%, #57634a 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  .chat {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    width: 380px;
+    background: rgba(36, 27, 22, 0.9);
+    border: 1px solid #806343;
+    border-radius: 4px;
+    padding: 8px 10px;
+    box-sizing: border-box;
+  }
+  .chat .line { color: #E0D0AE; font-size: 12px; line-height: 1.5; }
+  .hud {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 16px;
+    width: 300px;
+    padding: 8px 12px 10px 12px;
+    box-sizing: border-box;
+  }
+  .hud.plain  { background: rgba(36,27,22,0.75); border: 1px solid #806343; border-radius: 4px; }
+  .hud.bare   { background: transparent; border: none; }
+  .hud.solid  { background: #241B16; border: 2px solid #806343; border-radius: 4px;
+                box-shadow: 0 0 0 4px #493326; }
+  .identity { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+  .pname { color: #F4E6C6; font-size: 15px; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.9); }
+  .plvl  { color: #BD9862; font-size: 12px; text-shadow: 1px 1px 2px rgba(0,0,0,0.9); }
+  .row { display: flex; align-items: center; gap: 6px; margin-top: 3px; }
+  .lbl { width: 48px; color: #E0D0AE; font-size: 11px; text-shadow: 1px 1px 2px rgba(0,0,0,0.9); }
+  .track { flex: 1; height: 10px; background: #493326; border: 1px solid #806343; border-radius: 2px; overflow: hidden; }
+  .fill { height: 100%; }
+  .hp { background: #A4534E; } .st { background: #5F8F5A; } .mn { background: #5879A6; }
+  .val { width: 92px; text-align: right; color: #F0D3A0; font-size: 10px; text-shadow: 1px 1px 2px rgba(0,0,0,0.9); }
+  .bare .track { box-shadow: 0 0 3px rgba(0,0,0,0.7); }
+  .note { color: #BD9862; font-size: 11px; margin-top: 6px; font-style: italic; }
+</style>
+</head>
+<body>
+<h2>D1 — How much panel behind the player HUD?</h2>
+<p class="subtitle">Bottom-center, always on, clicks pass through, sitting beside the (unchanged) action chat. Same data in all three: only the surface treatment changes. World is a stand-in for the outdoor look.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="translucent" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="chat">
+          <div class="line">Player attacks Enemy and deals 12.4 damage</div>
+          <div class="line">Enemy blocks Player</div>
+          <div class="line">Player attacks Enemy and deals 9.1 damage</div>
+        </div>
+        <div class="hud plain">
+          <div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track"><span class="fill hp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div>
+          <div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill st" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div>
+          <div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill mn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Translucent panel (recommended)</h3>
+      <p>Dark wood at 75% opacity with the thin brass border. Reads on any background, stays popup-family, world still glows through. Matches the chat's weight without competing with it.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="bare" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="chat">
+          <div class="line">Player attacks Enemy and deals 12.4 damage</div>
+          <div class="line">Enemy blocks Player</div>
+          <div class="line">Player attacks Enemy and deals 9.1 damage</div>
+        </div>
+        <div class="hud bare">
+          <div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track"><span class="fill hp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div>
+          <div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill st" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div>
+          <div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill mn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Bare</h3>
+      <p>No panel at all — just the bars and shadowed text floating over the world. Least intrusive, most "diegetic", but readability depends entirely on what is behind it (bright sand, snow, blood-red floors).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="solid" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="chat">
+          <div class="line">Player attacks Enemy and deals 12.4 damage</div>
+          <div class="line">Enemy blocks Player</div>
+          <div class="line">Player attacks Enemy and deals 9.1 damage</div>
+        </div>
+        <div class="hud solid">
+          <div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track"><span class="fill hp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div>
+          <div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill st" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div>
+          <div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill mn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Solid plaque</h3>
+      <p>Fully opaque wood with a heavier double frame, like a miniature popup nailed to the screen. Always perfectly readable, feels chunkier and claims more screen; the plan warns against popup chrome creeping onto a status surface.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">Click a card to select — then tell me here (or just answer "A" in the terminal).</p>
+</body>
+</html>

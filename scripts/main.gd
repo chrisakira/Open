@@ -6,6 +6,7 @@ const CAMERA_FOLLOW := 6.0
 const FLOOR_SIZE := 40.0
 const MALE_MODEL := preload("res://scenes/characters/male.tscn")
 const FEMALE_MODEL := preload("res://scenes/characters/female.tscn")
+const STATUS_OVERLAY_SCRIPT := preload("res://scripts/status_overlay.gd")
 
 # Collision layers: 1 is world geometry, 2 is a character body, 4 is a weapon pick area.
 const FLOOR_MASK := 1
@@ -34,6 +35,7 @@ var _workbench_popup: WorkbenchPopup
 var _combat: OpenCombat
 var _feedback: CombatFeedback
 var _log: CombatLog
+var _status_overlay: Control
 
 # The two benches the starter scene places, per docs/weapons.md: one clearly visible
 # Smithing Workbench and one clearly visible Enchanting Workbench. Ids and types are the
@@ -383,6 +385,7 @@ func _build_player() -> void:
 	_player.name = "Player"
 	_player.model_scene = MALE_MODEL
 	_player.character_id = 1
+	_player.character_name = "John Doe"
 	_player.blessing = player_blessing
 	_player.position = Vector3(0.0, 0.1, 0.0)
 	add_child(_player)
@@ -551,6 +554,18 @@ func _build_hud() -> void:
 	_log.bind_actors(_actors)
 	if _feedback != null and not _feedback.swing_reported.is_connected(_log.append_swing):
 		_feedback.swing_reported.connect(_log.append_swing)
+
+	# The status overlay is the scene's one owner of status views: the player plaque and the
+	# dummies' overheads. It joins the layer after the chat and before every popup - later
+	# siblings draw on top - so a status can never sit over a panel the player opened, it
+	# ignores the mouse, and it refreshes on a deliberately late process priority so the
+	# camera has already followed. Overheads follow the human's 2026-11-01 "ship now, cover
+	# later" decision: in range (50 units, feet, 3D, behind-camera hidden) means shown, and
+	# wall coverage does not hide them until the exact pass is ratified (docs/status_UID.md).
+	_status_overlay = STATUS_OVERLAY_SCRIPT.new()
+	_status_overlay.name = "StatusOverlay"
+	layer.add_child(_status_overlay)
+	_status_overlay.bind_scene(_player, _actors, _camera)
 
 	_popup = CharacterPopup.new()
 	_popup.name = "CharacterPopup"

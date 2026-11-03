@@ -23,18 +23,30 @@ Player intent enters as an order (click → destination). Presentation draws the
 | `cpp/include/open/` | Simulation headers |
 | `cpp/src/` | Simulation implementation |
 | `cpp/tests/` | Headless C++ tests |
-| `extension/` | GDExtension (`OpenMoveOrder`, `OpenCharacter`) |
+| `extension/` | GDExtension (`OpenMoveOrder`, `OpenCharacter`, `OpenCombat`) |
 | `extension/open.gdextension` | Loader; library key is `linux.x86_64` |
 | `scripts/*.gd` | Godot presentation |
 | `scripts/tests/` | Headless Godot tests |
 | `scripts/build_and_run.sh` | Build, test, launch |
 | `scenes/main.tscn` | Main scene |
 | `project.godot` | Godot 4.7 project |
-| `docs/` | Design. `docs/characters.md` owns character intent. Code/tests win if they disagree. |
+| `docs/` | Design. `docs/README.md` is the index; ownership per file below |
 | `docs/superpowers/plans/` | Implementation plans |
 | `assets/` | Art packs; keep each pack's license files |
 
 Godot is **4.7.2**. godot-cpp is pinned at **godot-4.5-stable** (FetchContent). Optional: `GODOT_CPP_DIR` for a local checkout.
+
+## Design documents
+
+Each doc owns its domain and points at the others rather than restating them:
+
+- `docs/characters.md` — the sheet: attributes, skills, titles, blessings, limbs, equipment slots. Owns character intent.
+- `docs/combat.md` — attack orders, range, swings, attack speed, damage, defense, body parts, combat state and XP.
+- `docs/weapons.md` — items: starter equipment, typed damage, techniques, durability, and the workbench actions (craft, repair, enchant).
+- `docs/style.md` — visual and interaction style for menus and popups; the rustic/medieval reference implementation is `scripts/character_popup.gd`.
+- `docs/combat_log.md` — the bottom-left action chat. Presentation only; it must never become a second simulation.
+
+Code/tests win if they disagree with an older paragraph. Respect each file's Current / Locked / Open markers: do not build what is merely Locked, and never what is Open.
 
 ## Build and verify
 
@@ -61,13 +73,15 @@ ctest --test-dir cpp/build --output-on-failure
 godot --path . --headless --import --quit
 ```
 
-A stale extension looks like missing classes (`OpenMoveOrder`, `OpenCharacter`) or old behavior. A skipped import keeps old GDScript method signatures.
+A stale extension looks like missing classes (`OpenMoveOrder`, `OpenCharacter`, `OpenCombat`) or old behavior. A skipped import keeps old GDScript method signatures.
 
-Godot headless checks (after import):
+Godot headless checks (after import) — run at least the tests covering what you changed; `scripts/tests/` holds them all (sheet, visuals, animation, popups, melee combat, bridges, combat feedback and log, workbench):
 
 ```
 godot --path . --headless --script scripts/tests/character_sheet_test.gd
 godot --path . --headless --script scripts/tests/character_visuals_test.gd
+godot --path . --headless --script scripts/tests/melee_combat_test.gd
+godot --path . --headless --script scripts/tests/workbench_test.gd
 ```
 
 New `class_name` GDScript needs that import once or the editor will not see the name.
@@ -80,7 +94,7 @@ Do not commit `cpp/build/`, `extension/bin/`, `.godot/`, or `*.so`.
 - Do not implement walk math, stats, or faction in GDScript if it belongs in `cpp/`.
 - Do not add Godot types to `open_sim`.
 - Do not treat the visual scene as the finished game. Keep new work small and visible unless the human asks for a system.
-- Do not invent world lore, UI, or extra cameras (tabletop) unless asked. Camera is 3D third person for now.
+- Do not invent world lore, UI, or extra cameras (tabletop) unless asked. Any new UI follows `docs/style.md`. Camera is 3D third person for now.
 - Ask when a design choice would change what gets built (combat, recruiting, bases, limbs as gameplay). Do not decide those silently.
 - C++ simulation changes need a failing test first, then the code, then `ctest` green.
 

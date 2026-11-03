@@ -186,18 +186,42 @@ func _run() -> void:
 		await physics_frame
 	_check(killed.global_position.distance_to(killed_before) < 0.001, "a dead character does not move")
 
-	# The standing label is presentation, and it must follow the C++ numbers.
-	var ally_label := _find_label(ally)
-	_check(ally_label != null, "the standing character still has its label")
-	if ally_label != null:
-		_check(ally_label.text.contains("HP 100"), "the label starts at full health")
-		var before := ally_label.text
+	# The legacy floating label is gone; the world status overlay is its replacement, and it
+	# must follow the C++ numbers just as strictly.
+	var overlays: Array = world.find_children("StatusOverlay", "", true, false)
+	_check(overlays.size() == 1, "the scene carries the status overlay")
+	var ally_view: Node = null
+	if overlays.size() == 1:
+		ally_view = (overlays[0] as Node).find_child(
+				"WorldStatus_%d" % int(ally.sheet.get_character_id()), true, false)
+	_check(_find_label(world) == null, "the faction/HP/strength label is gone for good")
+	_check(ally_view != null, "the standing character has exactly one world status")
+	if ally_view != null:
+		var status_name := (ally_view as Node).find_child("CharacterName", true, false) as Label
+		_check(status_name != null and status_name.text == "Friendly",
+				"the status names the ally through the locked fallback")
+		var diamond := (ally_view as Node).find_child("RelationshipDiamond", true, false)
+		_check(diamond != null and (diamond as CanvasItem).visible,
+				"the relationship diamond shows")
+		var badge := (ally_view as Node).get_node_or_null("LevelBadge/Value") as Label
+		_check(badge != null and badge.text == "Lv %d" % int(ally.sheet.get_level()),
+				"the badge reads the sheet's level")
+		var bar := (ally_view as Node).get_node_or_null("BarStack/HP")
+		_check(bar != null and _close(float(bar.get("ratio")), 1.0), "the HP bar starts full")
+		var stamina_bar := (ally_view as Node).get_node_or_null("BarStack/Stamina")
+		var mana_bar := (ally_view as Node).get_node_or_null("BarStack/Mana")
+		_check((ally_view as Node).get_node_or_null("BarStack/HP/Value").text == ""
+				and (ally_view as Node).get_node_or_null("BarStack/HP/Role").text == "",
+				"world bars carry neither numbers nor labels")
 		_check(ally.sheet.apply_damage(1, 10.0), "a torso hit lands on the standing character")
-		await physics_frame
-		_check(ally_label.text != before, "the label refreshes when health changes")
-		_check(ally_label.text.contains("HP 90"), "the label shows the new health")
-		_check(ally_label.text.contains("Friendly") or ally_label.text.contains("Lv"),
-			"the label keeps its identity text")
+		await process_frame
+		await process_frame
+		_check(bar != null and _close(float(bar.get("ratio")), 90.0 / 100.0),
+				"the fill follows the new main HP without being told")
+		_check(stamina_bar != null and mana_bar != null
+				and _close(float(stamina_bar.get("ratio")),
+						float(ally.sheet.get_stamina()) / float(ally.sheet.get_max_stamina()), 0.02),
+				"the other resources keep mirroring their own pools")
 		_check(_close(ally.sheet.get_health(), 90.0), "and C++ agrees")
 
 	world.queue_free()

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  .scene {
+    width: 100%;
+    height: 190px;
+    background: linear-gradient(180deg, #3a4a33 0%, #46543b 55%, #57634a 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: Georgia, 'Times New Roman', serif;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: 16px;
+    box-sizing: border-box;
+  }
+  .hud {
+    width: 330px;
+    padding: 9px 13px 11px 13px;
+    background: #241B16;
+    border: 2px solid #806343;
+    box-shadow: 0 0 0 4px #493326;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .identity { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+  .pname { color: #F4E6C6; font-size: 15px; font-weight: bold; }
+  .plvl  { color: #BD9862; font-size: 12px; }
+  .row { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
+  .lbl { width: 50px; color: #E0D0AE; font-size: 11px; }
+  .track { flex: 1; height: 10px; border-radius: 2px; overflow: hidden; position: relative; }
+  .t1 { background: #493326; border: 1px solid #806343; }
+  .t2 { background: #2E231C; border: 1px solid #6E5539; }
+  .fill { height: 100%; display: block; }
+  .t2 .fill { background-image: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,0.12) 100%); }
+  .p1hp { background-color: #A4534E; } .p1st { background-color: #5F8F5A; } .p1mn { background-color: #5879A6; }
+  .p2hp { background-color: #8F423D; } .p2st { background-color: #4E7A4A; } .p2mn { background-color: #4A6690; }
+  .val { width: 92px; text-align: right; color: #F0D3A0; font-size: 10px; }
+  .swatches { display: flex; gap: 6px; margin-top: 9px; }
+  .sw { width: 26px; height: 12px; border-radius: 2px; }
+  .caption { font-size: 12px; color: #999; margin-top: 4px; }
+  .note { color: #BD9862; font-size: 11px; margin-top: 6px; font-style: italic; }
+</style>
+</head>
+<body>
+<h2>D3 / D4 — Bar look and resource shades</h2>
+<p class="subtitle">Both use the locked order (HP, stamina, mana), each pool filling against its own maximum, empty state = plain dark track. Pick the treatment + palette pair; say the word if you want them crossed (e.g. flat but deep).</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="bright-flat" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="hud">
+          <div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track t1"><span class="fill p1hp" style="width:38%"></span></span><span class="val">38.20 / 100.00</span></div>
+          <div class="row"><span class="lbl">Stamina</span><span class="track t1"><span class="fill p1st" style="width:72%"></span></span><span class="val">72.00 / 100.00</span></div>
+          <div class="row"><span class="lbl">Mana</span><span class="track t1"><span class="fill p1mn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track t1"><span class="fill p1hp" style="width:0%"></span></span><span class="val">0.00 / 100.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Bright & flat (recommended)</h3>
+      <p>Muted but clearly legible fills straight off the style palette's family — HP <code>#A4534E</code>, stamina <code>#5F8F5A</code>, mana <code>#5879A6</code>. Flat color, leather track, standard brass frame. Diamonds clone these exact shades (your B4).</p>
+      <div class="swatches"><span class="sw" style="background:#A4534E"></span><span class="sw" style="background:#5F8F5A"></span><span class="sw" style="background:#5879A6"></span><span class="sw" style="background:#493326"></span><span class="sw" style="background:#806343"></span></div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="deep-bevel" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="hud">
+          <div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track t2"><span class="fill p2hp" style="width:38%"></span></span><span class="val">38.20 / 100.00</span></div>
+          <div class="row"><span class="lbl">Stamina</span><span class="track t2"><span class="fill p2st" style="width:72%"></span></span><span class="val">72.00 / 100.00</span></div>
+          <div class="row"><span class="lbl">Mana</span><span class="track t2"><span class="fill p2mn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div>
+          <div class="row"><span class="lbl">HP</span><span class="track t2"><span class="fill p2hp" style="width:0%"></span></span><span class="val">0.00 / 100.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Deep & beveled</h3>
+      <p>Deeper, wineier fills — HP <code>#8F423D</code>, stamina <code>#4E7A4A</code>, mana <code>#4A6690</code> — sunk into a darker recessed track with a subtler frame and a soft top highlight. More period-enameled, slightly less scanisible at a glance.</p>
+      <div class="swatches"><span class="sw" style="background:#8F423D"></span><span class="sw" style="background:#4E7A4A"></span><span class="sw" style="background:#4A6690"></span><span class="sw" style="background:#2E231C"></span><span class="sw" style="background:#6E5539"></span></div>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">Each card shows a near-full, a mid, and a dead-empty bar so you can judge fill, track and frame together. Click to select, or answer here.</p>
+</body>
+</html>

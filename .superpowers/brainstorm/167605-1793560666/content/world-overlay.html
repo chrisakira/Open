@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  .scene {
+    width: 100%;
+    height: 300px;
+    background: linear-gradient(180deg, #3a4a33 0%, #46543b 55%, #57634a 100%);
+    position: relative;
+    font-family: Georgia, 'Times New Roman', serif;
+    overflow: hidden;
+  }
+  .who { position: absolute; width: 46px; height: 110px; bottom: 40px; }
+  .who .head { width: 22px; height: 22px; border-radius: 50%; background: #1a1712; margin: 0 auto; }
+  .who .body { width: 34px; height: 74px; border-radius: 14px 14px 6px 6px; background: #1a1712; margin: 3px auto 0; }
+  .who.ally .body { background: #23402c; }
+  .who.foe  .body { background: #4a2320; }
+  .ov { position: absolute; width: 170px; }
+  .name { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 3px; white-space: nowrap; }
+  .diamond { width: 8px; height: 8px; transform: rotate(45deg); flex: none; }
+  .dg { background: #4E7A4A; } .dr { background: #8F423D; }
+  .ntxt { color: #F4E6C6; font-size: 13px; font-weight: bold; text-shadow: 1px 1px 2px #000, 0 0 4px #000; }
+  .skull { font-size: 11px; color: #F4E6C6; text-shadow: 1px 1px 2px #000; margin-left: 4px; letter-spacing: 0; }
+  .barsandbadge { display: flex; align-items: center; gap: 6px; }
+  .bars { width: 122px; }
+  .track { height: 6px; background: #2E231C; border: 1px solid #6E5539; border-radius: 2px; overflow: hidden; margin-top: 3px; }
+  .fill { height: 100%; display: block; background-image: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,0.12) 100%); }
+  .fhp { background-color: #8F423D; } .fst { background-color: #4E7A4A; } .fmn { background-color: #4A6690; }
+  .plate {
+    background: #493326; border: 1px solid #806343; box-shadow: 0 0 0 2px #2E231C;
+    color: #F4E6C6; font-size: 10px; font-weight: bold; padding: 3px 5px; border-radius: 3px;
+    text-shadow: 1px 1px 1px #000;
+  }
+  .medal {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #5a4030, #3a2a1e 70%);
+    border: 2px solid #806343; box-shadow: 0 0 0 2px #2E231C;
+    color: #F0D3A0; font-size: 8px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center; text-shadow: 1px 1px 1px #000;
+    line-height: 1;
+  }
+  .medal small { display: block; font-size: 6px; }
+  .label { position: absolute; bottom: 8px; width: 100%; text-align: center; color: #E0D0AE; font-size: 11px; opacity: 0.85; text-shadow: 1px 1px 2px #000; }
+  .note { color: #BD9862; font-size: 11px; margin-top: 6px; font-style: italic; }
+</style>
+</head>
+<body>
+<h2>D7 — Level badge styling</h2>
+<p class="subtitle">Full overhead anatomy as now decided: diamond left of name, skull trailing the name when truly dead, three unlabeled beveled bars in the deep palette, badge right of the stack. Same scene in both cards — only the badge differs. Left figure: living ally. Right: dead enemy (note the skull, and that its bars keep their real fills).</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="plate" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="ov" style="left: 60px; bottom: 165px;">
+          <div class="name"><span class="diamond dg"></span><span class="ntxt">Friendly</span></div>
+          <div class="barsandbadge"><div class="bars"><div class="track"><span class="fill fhp" style="width:100%"></span></div><div class="track"><span class="fill fst" style="width:100%"></span></div><div class="track"><span class="fill fmn" style="width:100%"></span></div></div><div class="plate">Lv 1</div></div>
+        </div>
+        <div class="who ally" style="left: 122px;"><div class="head"></div><div class="body"></div></div>
+        <div class="ov" style="left: 250px; bottom: 165px;">
+          <div class="name"><span class="diamond dr"></span><span class="ntxt">Enemy</span><span class="skull">&#9760;</span></div>
+          <div class="barsandbadge"><div class="bars"><div class="track"><span class="fill fhp" style="width:50%"></span></div><div class="track"><span class="fill fst" style="width:31%"></span></div><div class="track"><span class="fill fmn" style="width:85%"></span></div></div><div class="plate">Lv 1</div></div>
+        </div>
+        <div class="who foe" style="left: 312px;"><div class="head"></div><div class="body"></div></div>
+        <div class="label">rectangular plate</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Brass-framed plate (recommended)</h3>
+      <p>Small wooden rectangle, brass edge, dark cast shadow, parchment <code>Lv 1</code>. Cheapest to render at distance, stretches fine if levels ever pass 9, reads as a tag nailed beside the bars.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="medallion" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div class="scene">
+        <div class="ov" style="left: 60px; bottom: 165px;">
+          <div class="name"><span class="diamond dg"></span><span class="ntxt">Friendly</span></div>
+          <div class="barsandbadge"><div class="bars"><div class="track"><span class="fill fhp" style="width:100%"></span></div><div class="track"><span class="fill fst" style="width:100%"></span></div><div class="track"><span class="fill fmn" style="width:100%"></span></div></div><div class="medal"><span><small>Lv</small>1</span></div></div>
+        </div>
+        <div class="who ally" style="left: 122px;"><div class="head"></div><div class="body"></div></div>
+        <div class="ov" style="left: 250px; bottom: 165px;">
+          <div class="name"><span class="diamond dr"></span><span class="ntxt">Enemy</span><span class="skull">&#9760;</span></div>
+          <div class="barsandbadge"><div class="bars"><div class="track"><span class="fill fhp" style="width:50%"></span></div><div class="track"><span class="fill fst" style="width:31%"></span></div><div class="track"><span class="fill fmn" style="width:85%"></span></div></div><div class="medal"><span><small>Lv</small>1</span></div></div>
+        </div>
+        <div class="who foe" style="left: 312px;"><div class="head"></div><div class="body"></div></div>
+        <div class="label">brass medallion</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Brass medallion</h3>
+      <p>Round wax-seal coin with the number set inside (<code>Lv</code> stacked, smaller). More heraldic and distinctive at a glance, but the circle wastes space around a short string and the stacked text is small to read far away.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">The skull here is a placeholder glyph for the mockup only — the shipped version is the authored SVG from C1 (parchment silhouette, name-text sized). Click to select or answer here.</p>
+</body>
+</html>

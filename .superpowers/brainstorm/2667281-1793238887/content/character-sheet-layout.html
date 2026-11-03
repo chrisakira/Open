@@ -1,0 +1,34 @@
+<h2>Character screen — layout sketch</h2>
+<p class="subtitle">A simple example using your character’s starting values. Press I to open or close; the skill list scrolls. This is a mockup, not the game.</p>
+<style>
+.game-preview { background: linear-gradient(135deg,#495750,#242c29); padding: 30px; border-radius: 10px; }
+.sheet { max-width: 850px; margin: auto; background: #242820; color: #ece8d9; border: 2px solid #777661; box-shadow: 0 14px 35px #0009; font: 15px sans-serif; }
+.sheet-head { display:flex; justify-content:space-between; align-items:center; padding:18px 22px; border-bottom:1px solid #626554; }
+.sheet-head strong { font-size:22px; } .sheet-head span { color:#b8baaa; font-size:13px; }
+.sheet-cols { display:grid; grid-template-columns: 260px 1fr; gap: 24px; padding: 20px 22px; }
+.sheet h3 { color:#d6cda6; font-size:15px; margin:0 0 12px; letter-spacing:.05em; }
+.rows { display:grid; gap: 2px; } .row { display:flex; justify-content:space-between; gap:15px; padding:5px 8px; background:#ffffff08; }
+.value { color:#f3d99d; font-variant-numeric:tabular-nums; } .group { margin:14px 0 6px; color:#aab29b; font-size:12px; text-transform:uppercase; letter-spacing:.1em; }
+.scroll { max-height:360px; overflow-y:auto; padding-right:8px; } .hint { color:#aab29b; font-size:12px; margin:12px 0 0; }
+@media(max-width:650px){.sheet-cols{grid-template-columns:1fr}.game-preview{padding:10px}}
+</style>
+<div class="game-preview"><div class="sheet">
+  <div class="sheet-head"><strong>Character</strong><span>Press I to close &nbsp; ×</span></div>
+  <div class="sheet-cols">
+    <section><h3>ATTRIBUTES</h3><div class="rows">
+      <div class="row"><span>Strength</span><span class="value">1.25</span></div><div class="row"><span>Dexterity</span><span class="value">1</span></div>
+      <div class="row"><span>Agility</span><span class="value">1</span></div><div class="row"><span>Toughness</span><span class="value">1</span></div>
+      <div class="row"><span>Constitution</span><span class="value">1</span></div><div class="row"><span>Perception</span><span class="value">1</span></div>
+      <div class="row"><span>Intelligence</span><span class="value">1</span></div><div class="row"><span>Charisma</span><span class="value">1</span></div>
+      <div class="row"><span>Luck</span><span class="value">1</span></div><div class="row"><span>Profanity</span><span class="value">1</span></div>
+    </div></section>
+    <section><h3>SKILLS</h3><div class="scroll">
+      <div class="group">Combat</div><div class="rows"><div class="row"><span>One-Handed Weapons</span><span class="value">1</span></div><div class="row"><span>Two-Handed Weapons</span><span class="value">1</span></div><div class="row"><span>Polearms</span><span class="value">1</span></div><div class="row"><span>Unarmed Combat</span><span class="value">1</span></div><div class="row"><span>Archery</span><span class="value">1</span></div><div class="row"><span>Blocking</span><span class="value">1</span></div><div class="row"><span>Dodging</span><span class="value">1</span></div></div>
+      <div class="group">Physical &amp; survival</div><div class="rows"><div class="row"><span>Athletics</span><span class="value">1</span></div><div class="row"><span>Acrobatics</span><span class="value">1</span></div><div class="row"><span>Swimming</span><span class="value">1</span></div><div class="row"><span>Endurance</span><span class="value">1</span></div><div class="row"><span>Hunting</span><span class="value">1</span></div><div class="row"><span>Foraging</span><span class="value">1</span></div><div class="row"><span>Medicine</span><span class="value">1</span></div><div class="row"><span>Animal Handling</span><span class="value">1</span></div></div>
+      <div class="group">Crafting &amp; labour</div><div class="rows"><div class="row"><span>Smithing</span><span class="value">1</span></div><div class="row"><span>Construction</span><span class="value">1</span></div><div class="row"><span>Cooking</span><span class="value">1</span></div><div class="row"><span>Alchemy</span><span class="value">1</span></div><div class="row"><span>Research</span><span class="value">1</span></div><div class="row"><span>Mining</span><span class="value">1</span></div><div class="row"><span>Farming</span><span class="value">1</span></div></div>
+      <div class="group">Social</div><div class="rows"><div class="row"><span>Persuasion</span><span class="value">1</span></div><div class="row"><span>Intimidation</span><span class="value">1</span></div><div class="row"><span>Trading</span><span class="value">1</span></div><div class="row"><span>Leadership</span><span class="value">1</span></div></div>
+      <div class="group">Magic</div><div class="rows"><div class="row"><span>Spellcasting</span><span class="value">1</span></div><div class="row"><span>Casting Speed</span><span class="value">1</span></div><div class="row"><span>Mana Control</span><span class="value">1</span></div><div class="row"><span>Elemental Magic</span><span class="value">1</span></div><div class="row"><span>Restoration</span><span class="value">1</span></div><div class="row"><span>Enchanting</span><span class="value">1</span></div></div>
+      <div class="group">Utility</div><div class="rows"><div class="row"><span>Lockpicking</span><span class="value">1</span></div><div class="row"><span>Thievery</span><span class="value">1</span></div><div class="row"><span>Stealth</span><span class="value">1</span></div></div>
+    </div><p class="hint">Scroll to see the rest of the skills.</p></section>
+  </div>
+</div></div>

@@ -1,0 +1,70 @@
+<style>
+.preview-intro { margin: 0 auto 20px; max-width: 870px; color: #c6beaf; }
+.preview-world { padding: clamp(20px, 5vw, 55px); min-height: 610px; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at 70% 10%, #8d9e96, transparent 52%), linear-gradient(160deg,#71817a 0%, #626e60 48%, #3f483e 100%); border: 1px solid #655c4e; }
+.sheet { width: min(100%, 780px); color: #e0d0ae; background: rgba(36, 27, 22, .9); border: 2px solid #806343; outline: 1px solid #1d1714; box-shadow: 0 15px 38px #100d0acc, inset 0 0 0 3px #30251c, inset 0 0 0 4px #59452f; font-family: Georgia, 'Times New Roman', serif; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 23px 15px; background: linear-gradient(90deg, #4a3425dd, #30241ddd); border-bottom: 1px solid #7b5c3a; cursor: move; }
+.identity { display: flex; gap: 14px; align-items: center; }
+.crest { width: 34px; height: 34px; display: grid; place-items: center; color: #d0a96b; border: 1px solid #92734d; font-size: 21px; }
+.name { font-size: 23px; color: #f4e6c6; letter-spacing: .04em; line-height: 1.1; }
+.level { margin-top: 3px; color: #bda278; font: 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .2em; }
+.close-sheet { display: grid; place-items: center; width: 30px; height: 30px; color: #cfb995; border: 1px solid #755c41; font: 24px Georgia, serif; }
+.sheet-body { display: grid; grid-template-columns: .85fr 1.2fr; padding: 24px; gap: 30px; }
+.sheet-col + .sheet-col { border-left: 1px solid #675038; padding-left: 28px; }
+.section-title { display: flex; align-items: center; gap: 10px; color: #e3c590; font-size: 16px; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 17px; }
+.section-title:after { content: ''; height: 1px; flex: 1; background: #6e5539; }
+.stat-row { display: flex; justify-content: space-between; gap: 18px; padding: 6px 4px; border-bottom: 1px solid #ffffff0c; font-size: 14px; }
+.stat-row span:last-child { color: #f0d3a0; font-variant-numeric: tabular-nums; }
+.group-name { color: #bd9862; font: 10px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .19em; margin: 15px 0 7px; }
+.group-name:first-of-type { margin-top: 0; }
+.scroll { max-height: 353px; overflow-y: auto; padding-right: 12px; scrollbar-color: #8c6b45 #2c211a; scrollbar-width: thin; }
+.sheet-foot { border-top: 1px solid #5d4832; color: #9c886d; padding: 10px 24px; font: 10px system-ui, sans-serif; letter-spacing: .08em; }
+@media (max-width: 620px) { .sheet-body { gap: 15px; padding: 16px; } .sheet-col + .sheet-col { padding-left: 15px; } .stat-row { font-size: 12px; } .section-title { font-size: 13px; } }
+</style>
+<h2>Medieval character sheet</h2>
+<p class="preview-intro">A dark, weathered wood and leather palette with warm parchment-colored text and restrained brass details. This is a visual mockup; the in-game sheet would keep its current data and behavior.</p>
+<div class="preview-world">
+  <div class="sheet">
+    <div class="sheet-head">
+      <div class="identity"><div class="crest">✦</div><div><div class="name">Character</div><div class="level">Level 1</div></div></div>
+      <div class="close-sheet">×</div>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-col">
+        <div class="section-title">Attributes</div>
+        <div class="stat-row"><span>Strength</span><span>1.25</span></div>
+        <div class="stat-row"><span>Dexterity</span><span>1</span></div>
+        <div class="stat-row"><span>Agility</span><span>1</span></div>
+        <div class="stat-row"><span>Toughness</span><span>1</span></div>
+        <div class="stat-row"><span>Constitution</span><span>1</span></div>
+        <div class="stat-row"><span>Perception</span><span>1</span></div>
+        <div class="stat-row"><span>Intelligence</span><span>1</span></div>
+        <div class="stat-row"><span>Charisma</span><span>1</span></div>
+        <div class="stat-row"><span>Luck</span><span>1</span></div>
+        <div class="stat-row"><span>Profanity</span><span>1</span></div>
+      </div>
+      <div class="sheet-col">
+        <div class="section-title">Skills</div>
+        <div class="scroll">
+          <div class="group-name">Combat</div>
+          <div class="stat-row"><span>One-Handed Weapons</span><span>1.125</span></div>
+          <div class="stat-row"><span>Two-Handed Weapons</span><span>1.125</span></div>
+          <div class="stat-row"><span>Polearms</span><span>1.125</span></div>
+          <div class="stat-row"><span>Unarmed Combat</span><span>1.125</span></div>
+          <div class="stat-row"><span>Archery</span><span>1</span></div>
+          <div class="stat-row"><span>Blocking</span><span>1.125</span></div>
+          <div class="stat-row"><span>Dodging</span><span>1</span></div>
+          <div class="group-name">Physical</div>
+          <div class="stat-row"><span>Athletics</span><span>1</span></div>
+          <div class="stat-row"><span>Acrobatics</span><span>1</span></div>
+          <div class="stat-row"><span>Swimming</span><span>1.125</span></div>
+          <div class="stat-row"><span>Endurance</span><span>1</span></div>
+          <div class="group-name">Survival</div>
+          <div class="stat-row"><span>Hunting</span><span>1</span></div>
+          <div class="stat-row"><span>Foraging</span><span>1</span></div>
+          <div class="stat-row"><span>Medicine</span><span>1</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-foot">DRAG HEADER TO MOVE &nbsp; · &nbsp; I TO CLOSE</div>
+  </div>
+</div>

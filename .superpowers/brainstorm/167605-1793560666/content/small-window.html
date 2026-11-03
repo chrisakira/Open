@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  .winlabel { font-size: 11px; color: #BD9862; margin-bottom: 3px; }
+  .scene {
+    width: 100%;
+    max-width: 460px;
+    aspect-ratio: 720 / 420;
+    background: linear-gradient(180deg, #3a4a33 0%, #46543b 55%, #57634a 100%);
+    position: relative;
+    overflow: hidden;
+    font-family: Georgia, 'Times New Roman', serif;
+    border: 1px solid #555;
+    margin-bottom: 8px;
+  }
+  .scene.wide { max-width: 560px; }
+  .chat {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    width: calc(42% - 16px);
+    background: rgba(36, 27, 22, 0.9);
+    border: 1px solid #806343;
+    border-radius: 4px;
+    padding: 6px 8px;
+    box-sizing: border-box;
+    z-index: 1;
+  }
+  .chat .line { color: #E0D0AE; font-size: 9px; line-height: 1.5; }
+  .hud {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 16px;
+    width: 45.8%;
+    padding: 6px 8px 8px 8px;
+    box-sizing: border-box;
+    background: #241B16;
+    border: 2px solid #806343;
+    box-shadow: 0 0 0 3px #2E231C;
+    border-radius: 4px;
+    z-index: 2;
+  }
+  .hud .identity { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .hud .pname { color: #F4E6C6; font-size: 10px; font-weight: bold; }
+  .hud .plvl { color: #BD9862; font-size: 8px; }
+  .hud .row { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+  .hud .lbl { width: 26px; color: #E0D0AE; font-size: 7px; }
+  .hud .track { flex: 1; height: 5px; background: #2E231C; border: 1px solid #6E5539; border-radius: 1px; overflow: hidden; }
+  .hud .fill { height: 100%; display: block; background-image: linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0) 45%, rgba(0,0,0,0.12) 100%); }
+  .fhp { background-color: #8F423D; } .fst { background-color: #4E7A4A; } .fmn { background-color: #4A6690; }
+  .hud .val { width: 52px; text-align: right; color: #F0D3A0; font-size: 6.5px; }
+  .hud.raised { bottom: calc(16px + 118px); }
+  .note { color: #BD9862; font-size: 11px; margin-top: 6px; font-style: italic; }
+</style>
+</head>
+<body>
+<h2>D8 — What happens when the window gets small?</h2>
+<p class="subtitle">Both cards behave identically at 1280&#215;720 (top strip). They differ at 720&#215;420 (bottom strip): the chat is locked to 42% of the width, and your HUD is a solid plaque, so whatever overlaps wins the pixels underneath it. Actual game supports live-resize; a stretch mode also scales everything a bit. What should happen at the squeeze?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="float-up" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="padding:8px">
+        <div class="winlabel">1280 &#215; 720 — same in both options</div>
+        <div class="scene wide">
+          <div class="chat"><div class="line">Player attacks Enemy and deals 12.4 damage</div><div class="line">Enemy blocks Player</div><div class="line">Player attacks Enemy and deals 9.1 damage</div></div>
+          <div class="hud"><div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div><div class="row"><span class="lbl">HP</span><span class="track"><span class="fill fhp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div><div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill fst" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div><div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill fmn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div></div>
+        </div>
+        <div class="winlabel">720 &#215; 420 — HUD lifts above the chat</div>
+        <div class="scene">
+          <div class="chat"><div class="line">Player attacks Enemy and deals 12.4 damage</div><div class="line">Enemy blocks Player</div><div class="line">Player attacks Enemy and deals 9.1 damage</div></div>
+          <div class="hud raised"><div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div><div class="row"><span class="lbl">HP</span><span class="track"><span class="fill fhp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div><div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill fst" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div><div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill fmn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Float above the chat when they'd collide (recommended)</h3>
+      <p>Bottom-center until it would overlap the chat, then a single step up above it. Nothing ever hides anything; one breakpoint rule, easy to test, survives even absurd window shapes. Cost: the HUD no longer touches the bottom edge in tiny windows.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="overlap" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:0">
+      <div style="padding:8px">
+        <div class="winlabel">1280 &#215; 720 — same in both options</div>
+        <div class="scene wide">
+          <div class="chat"><div class="line">Player attacks Enemy and deals 12.4 damage</div><div class="line">Enemy blocks Player</div><div class="line">Player attacks Enemy and deals 9.1 damage</div></div>
+          <div class="hud"><div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div><div class="row"><span class="lbl">HP</span><span class="track"><span class="fill fhp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div><div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill fst" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div><div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill fmn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div></div>
+        </div>
+        <div class="winlabel">720 &#215; 420 — HUD stays, covers chat text</div>
+        <div class="scene">
+          <div class="chat"><div class="line">Player attacks Enemy and deals 12.4 damage</div><div class="line">Enemy blocks Player</div><div class="line">Player attacks Enemy and deals 9.1 damage</div></div>
+          <div class="hud"><div class="identity"><span class="pname">John Doe</span><span class="plvl">Level 1</span></div><div class="row"><span class="lbl">HP</span><span class="track"><span class="fill fhp" style="width:99%"></span></span><span class="val">99.96 / 100.00</span></div><div class="row"><span class="lbl">Stamina</span><span class="track"><span class="fill fst" style="width:61%"></span></span><span class="val">61.20 / 100.00</span></div><div class="row"><span class="lbl">Mana</span><span class="track"><span class="fill fmn" style="width:85%"></span></span><span class="val">85.00 / 100.00</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Always bottom-center, overlap allowed</h3>
+      <p>Simplest possible rule: the plaque just sits on top of the chat in tiny windows and swallows the chat text underneath. Zero reflow logic to build or test. Honest downside: at 720&#215;420 a solid plaque covering log lines looks like a bug even though it technically isn't.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="note">Mockups are at true relative proportions for each window size. Click to select or answer here.</p>
+</body>
+</html>
