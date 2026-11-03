@@ -56,6 +56,16 @@ public:
 	// Friendly.
 	bool issue_attack(std::span<const Combatant> actors, std::uint64_t actor_id, std::uint64_t target_id);
 
+	// Orders `actor_id` to walk to `target_id` and ask them to join. Both ids resolve
+	// against this snapshot. Refused, leaving the actor's existing order untouched, when
+	// the snapshot is invalid, either id is absent or zero, the ids are the same, either
+	// sheet is dead, or the target's recruitable flag is not set. Faction is not a filter
+	// here either: an Enemy with the flag is askable, and a Friendly without it is not.
+	// The answer is not decided at the click - the ask resolves on a later frame, in
+	// range, and can still fail (docs/recruiting.md).
+	bool issue_recruit(std::span<const Combatant> actors, std::uint64_t actor_id,
+					   std::uint64_t target_id);
+
 	// One frame of the fight. Negative or non-finite time is refused before
 	// anything is read or written. A valid frame first drops orders that this
 	// snapshot cannot honour; with zero seconds that is all it does, so a
@@ -150,6 +160,14 @@ private:
 	// this frame through the sheet's own (private, session-friended) advance_work.
 	static void advance_all_work(std::span<const Combatant> actors, WorkContext &work,
 								 float seconds);
+
+	// The ask's reconciliation and its answer, both named for the same reason
+	// `advance_all_work` is named privately: writing a join, spending a flag and
+	// standing a recruiter down are the sheet's private doors, reachable only through the
+	// friendship this class already holds. Nothing else can join anybody - not a script,
+	// not a popup, and not a sheet that reads its own flag.
+	static void drop_dead_recruit_orders(std::span<const Combatant> actors);
+	static void run_recruit_attempts(std::span<const Combatant> actors);
 
 	// Part draws only. The swing, its clocks and its stamina belong to the sheets.
 	std::mt19937_64 rng_;

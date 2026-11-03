@@ -115,6 +115,34 @@ void drop_dead_orders(std::span<const Combatant> actors) {
 	}
 }
 
+// Can this actor still carry out the ask it holds, given this snapshot? Death, an
+// absent or dead target, and a target that cannot be asked any more all end it. The
+// distance the walk answers to is the sheet's own (the unarmed 1.5), and legs are not
+// asked about here: an actor with nothing to stand on keeps the order it was given,
+// the same way the scene's standing dummies keep theirs - being unable to walk is not
+// having been stood down.
+bool recruit_order_is_live(const Combatant &actor, std::span<const Combatant> actors) {
+	Character *sheet = actor.character;
+	const std::optional<std::uint64_t> target_id = sheet->recruit_target();
+	if (!target_id.has_value() || !sheet->alive()) {
+		return false;
+	}
+	const Combatant *target = find_actor(actors, *target_id);
+	if (target == nullptr || target->character == sheet || !target->character->alive()) {
+		return false;
+	}
+	// One join, or one refusal, and the flag is spent: this sheet is no longer anyone's
+	// recruit target, and an ask pointed at it is over rather than answered.
+	if (!target->character->recruitable()) {
+		return false;
+	}
+	return true;
+}
+
+// Reconciliation for the ask, and its answer, live below as `CombatSession`'s own
+// statics: the doors they use are the sheet's private ones. Only `recruit_order_is_live`
+// can be read here, because it asks about a snapshot and writes nothing.
+
 // One frame's bench pass: every busy sheet gets exactly one reading of this frame -
 // engaged or free, bench standing or gone, arrived or still walking, finished or not -
 // through the sheet's own advance_work. Zero seconds interrupts but never starts, ticks
@@ -133,6 +161,51 @@ void CombatSession::advance_all_work(std::span<const Combatant> actors, WorkCont
 		}
 		const bool engaged = is_engaged(actor, actors);
 		actor.character->advance_work(seconds, actor.position, work, engaged);
+	}
+}
+
+// Reconciliation for the ask, next to the one for the attack: an order nobody can
+// honour any more is dropped, and dropped with no answer of any kind. Nobody was
+// refused, so nobody's flag is spent, nobody joined, and nobody's faction moved.
+void CombatSession::drop_dead_recruit_orders(std::span<const Combatant> actors) {
+	for (const Combatant &actor : actors) {
+		if (actor.character->recruit_target().has_value() && !recruit_order_is_live(actor, actors)) {
+			actor.character->clear_recruit_order();
+		}
+	}
+}
+
+// The ask resolves here and nowhere else: not on the click that issued it, and not on
+// a hair of distance that the walk has not closed. An ordered actor standing within
+// the unarmed 1.5 of a sheet it can still ask gets exactly one attempt this frame, in
+// roster order. Success joins; failure spends the flag and nothing else; both stand
+// the recruiter down, because one ask is one ask. Out of range, the order simply
+// keeps walking. This runs only on a positive frame - a zero-time step reconciles and
+// never asks - and it runs after the swings, so a blow landed in this same frame
+// already took the ask away and no attempt answers for it.
+void CombatSession::run_recruit_attempts(std::span<const Combatant> actors) {
+	for (const Combatant &actor : actors) {
+		if (!actor.character->recruit_target().has_value()) {
+			continue;
+		}
+		if (!recruit_order_is_live(actor, actors)) {
+			// The ask ended between this reading and that one - the sheet it was pointed
+			// at joined whoever asked first - or it ended with a death.
+			actor.character->clear_recruit_order();
+			continue;
+		}
+		const Combatant *target = find_actor(actors, *actor.character->recruit_target());
+		if (target == nullptr || !melee_in_range(actor.position, target->position)) {
+			continue;  // still walking: no ask, no answer, no flag spent
+		}
+		// The answer is the target's own condition. An ask is not a swing: neither sheet
+		// spends stamina, mana, an item or a cooldown, and no clock of anyone's moves.
+		if (target->character->recruit_condition_passes()) {
+			target->character->apply_recruit_success();
+		} else {
+			target->character->apply_recruit_failure();
+		}
+		actor.character->clear_recruit_order();
 	}
 }
 
@@ -164,6 +237,33 @@ bool CombatSession::issue_attack(std::span<const Combatant> actors, std::uint64_
 	// order that only became live as positions moved, for instance.
 	target->character->interrupt_work(open::WorkFailure::Combat);
 	return true;
+}
+
+bool CombatSession::issue_recruit(std::span<const Combatant> actors, std::uint64_t actor_id,
+								  std::uint64_t target_id) {
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	const Combatant *target = find_actor(actors, target_id);
+	if (actor == nullptr || target == nullptr || target->character == actor->character) {
+		return false;
+	}
+	if (!actor->character->alive() || !target->character->alive()) {
+		return false;
+	}
+	// The flag decides who may be asked, and nothing else does: faction is never
+	// consulted, because Friendly does not imply recruitable and Enemy does not forbid
+	// it. A sheet without the flag is Attack-only, the popup being the other half of
+	// that same answer.
+	if (!target->character->recruitable()) {
+		return false;
+	}
+	// The order itself stays on the sheet, which refuses zero, self and a dead actor.
+	// Unlike an issued attack, no work is interrupted on the target: being asked is not
+	// being attacked, and nothing in docs/recruiting.md begins a combat at the sheet
+	// that has not answered yet.
+	return actor->character->set_recruit_target(target_id);
 }
 
 bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
@@ -198,6 +298,7 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors, WorkC
 bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 							  WorkContext *work) {
 	drop_dead_orders(actors);
+	drop_dead_recruit_orders(actors);
 	if (seconds == 0.0f) {
 		// The reconciliation frame still notices a bench that is gone or a fight that
 		// started - interrupting is reconciliation, not progress - but it never starts,
@@ -243,7 +344,15 @@ bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 			// walk or bench the retaliation replaces is cleared by that same setter.
 			// Roster order is untouched: a victim asked later returns the blow inside
 			// this step, a victim asked earlier does it in the next.
-			if (!target->character->attack_target().has_value()) {
+			//
+			// One exception, and it is the recruiter's: a sheet that was walking to ask
+			// somebody does not take this blow as its own attack order. The ask ends, and
+			// nothing else begins - no order, no fight, and no answer written on the sheet
+			// it was walking to (docs/recruiting.md "Hit while recruiting"). Everything
+			// else about the provocation stands as `combat.md` says.
+			if (target->character->recruit_target().has_value()) {
+				target->character->clear_recruit_order();
+			} else if (!target->character->attack_target().has_value()) {
 				target->character->set_attack_target(actor.character->id());
 			}
 		}
@@ -252,6 +361,15 @@ bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 	// its combat state, and a fighter who just lost its target does not get a
 	// replacement.
 	drop_dead_orders(actors);
+	// The ask reconciles in the same breath: a sheet that died under a swing is not
+	// someone's recruit target any more, and neither is one that walked away from the
+	// roster between two frames.
+	drop_dead_recruit_orders(actors);
+	// And now, once and only on a positive frame, the asks that reached their sheets get
+	// their answer. After the swings and the reconciliation is deliberate: a blow landed
+	// this frame ended the ask before it could run, and a target that died this frame
+	// ends it without an answer either.
+	run_recruit_attempts(actors);
 	// The bench gets this frame after the fight has had all of it: engagement and death are
 	// already on the sheets, so work that "finishes" now knows combat arrived first, which
 	// is the fifteenth-second rule stated as an order of operations.
@@ -380,6 +498,19 @@ Vec3 CombatSession::velocity_at(std::uint64_t id, std::span<const Combatant> act
 	const Combatant *self = find_actor(actors, id);
 	if (self == nullptr) {
 		return {};
+	}
+	// The ask walks first, because the sheet cannot hold both at once: an accepted
+	// attack cleared the ask and an accepted ask cleared the attack. A target that is
+	// gone, dead or no longer anyone's to ask yields zero rather than a walk to a
+	// distance nobody can close - the next reconciliation ends the order.
+	const std::optional<std::uint64_t> recruit_id = self->character->recruit_target();
+	if (recruit_id.has_value()) {
+		const Combatant *asked = find_actor(actors, *recruit_id);
+		if (asked == nullptr || asked->character == self->character || !self->character->alive() ||
+			!asked->character->alive() || !asked->character->recruitable()) {
+			return {};
+		}
+		return self->character->recruit_velocity_at(self->position, asked->position);
 	}
 	const std::optional<std::uint64_t> target_id = self->character->attack_target();
 	if (!target_id.has_value()) {

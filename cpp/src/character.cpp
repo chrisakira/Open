@@ -223,6 +223,15 @@ bool Character::damage(BodyPart part, float amount) {
 	// Death ends the fight: a corpse keeps no attack intent.
 	if (was_alive && !alive()) {
 		attack_target_.reset();
+		// And it ends the ask: nobody recruits a corpse, and the sheet that died while
+		// walking to ask leaves no order behind. Nor is death an answer - the flag of
+		// whoever it was asking stays as it was, because nobody refused.
+		recruit_target_.reset();
+		// A member leaves the squad the only way a member can: docs/recruiting.md says
+		// death is the one ending, no dismiss and no desert. Death writes membership
+		// and nothing else - what faction a corpse is, and whether it can be asked
+		// again, stay exactly as they were.
+		in_squad_ = false;
 		// And it ends the bench too, paid or not: the dead cannot finish a repair, and no
 		// resurrection of the schedule is on offer.
 		interrupt_work(WorkFailure::Dead);
@@ -366,7 +375,10 @@ bool Character::set_destination(float x, float y, float z) {
 	}
 	attack_target_.reset();
 	// A walk is a changed mind about the bench, wherever the new destination is - even the
-	// square the smith is already standing on.
+	// square the smith is already standing on. And it is a changed mind about the ask:
+	// walking somewhere else ends the walk-to-ask without ever reaching it, which is not
+	// a failed attempt - docs/recruiting.md "New move while recruiting".
+	recruit_target_.reset();
 	interrupt_work(WorkFailure::Movement);
 	return true;
 }
@@ -374,6 +386,10 @@ bool Character::set_destination(float x, float y, float z) {
 void Character::clear_order() {
 	order_.clear();
 	attack_target_.reset();
+	// Standing down is standing down from any order, and an ask is no exception. It is
+	// not an attempt either: the flag of whoever was being asked stays set to whoever
+	// asks next.
+	recruit_target_.reset();
 	interrupt_work(WorkFailure::Movement);
 }
 
@@ -403,6 +419,9 @@ bool Character::set_attack_target(std::uint64_t target_id) {
 	// bench, paid or not: swinging is not hammering.
 	attack_target_ = target_id;
 	order_.clear();
+	// Choosing a fight over an ask ends the ask, and ends it without one: nobody was
+	// refused, so nobody's flag is spent and nobody's faction moved.
+	recruit_target_.reset();
 	interrupt_work(WorkFailure::Combat);
 	return true;
 }
@@ -454,6 +473,70 @@ bool Character::set_recruit_condition(RecruitCondition condition) {
 	}
 	recruit_condition_ = condition;
 	return true;
+}
+
+bool Character::set_recruit_target(std::uint64_t target_id) {
+	if (!alive()) {
+		return false;
+	}
+	if (target_id == 0 || target_id == id_) {
+		return false;
+	}
+	// An accepted ask owns the actor's intent the way an accepted attack does: the
+	// walk it was doing and the bench it was paid for both go with the ask, because
+	// walking up to someone to ask is not the same errand either one was.
+	recruit_target_ = target_id;
+	attack_target_.reset();
+	order_.clear();
+	interrupt_work(WorkFailure::Movement);
+	return true;
+}
+
+std::optional<std::uint64_t> Character::recruit_target() const {
+	return recruit_target_;
+}
+
+Vec3 Character::recruit_velocity_at(const Vec3 &self, const Vec3 &target) const {
+	if (!recruit_target_.has_value() || !can_walk() || is_stunned()) {
+		// A stun holds the sheet where it stands and keeps the ask: the walk resumes
+		// when the stun does, which is the same rule `attack_velocity_at` follows.
+		return {};
+	}
+	// The distance this walk answers to is the bare-hand 1.5, read from the same
+	// measurement as a bare-hand swing. A weapon's reach is a different question:
+	// asking someone across a spear's 2.0 is not standing next to them.
+	if (melee_in_range(self, target)) {
+		return {};
+	}
+	return pursuit_velocity(self, target, kMeleeRange, walk_speed());
+}
+
+bool Character::apply_recruit_success() {
+	if (!alive()) {
+		return false;
+	}
+	// A join is membership plus faction plus a spent flag - not the check, which was
+	// answered a moment ago, and not a new friend: an Enemy that said yes becomes
+	// Friendly because it is now on this side.
+	in_squad_ = true;
+	faction_ = Faction::Friendly;
+	recruitable_ = false;
+	return true;
+}
+
+bool Character::apply_recruit_failure() {
+	if (!alive()) {
+		return false;
+	}
+	// A no is a spent flag and nothing else: nobody joins, nobody's faction moves,
+	// and the sheet that refused is not thereby hostile - it is simply no longer
+	// askable.
+	recruitable_ = false;
+	return true;
+}
+
+void Character::clear_recruit_order() {
+	recruit_target_.reset();
 }
 
 bool Character::in_squad() const {

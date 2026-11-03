@@ -169,6 +169,21 @@ bool can_move() const;
 	// that is the coordinator's.
 	bool recruit_condition_passes() const;
 
+	// The recruit order is an intent, like the attack order: the id of the sheet to be
+	// asked, never a pointer or a position. Zero, self and a dead actor are refused
+	// without touching the order the actor already has, and the sheet does not look
+	// the target up - resolving the id against a roster is the coordinator's. An
+	// accepted ask owns the actor's intent the way an accepted attack does: the walk
+	// goes with it, and so does the bench.
+	bool set_recruit_target(std::uint64_t target_id);
+	std::optional<std::uint64_t> recruit_target() const;
+
+	// The walk toward the ask. Zero when there is no recruit order, when the actor
+	// cannot walk or is stunned, or when it already stands within the unarmed melee
+	// 1.5. A held weapon's reach never enters here: asking is not swinging, and a
+	// spear at 2.0 has not closed the distance a recruit attempt answers to.
+	Vec3 recruit_velocity_at(const Vec3 &self, const Vec3 &target) const;
+
 	// Each sheet owns its own attack and defence clocks, in seconds still to
 	// wait: both start ready at 0, only time moves them, and an order change
 	// never resets one. Advancing by a finite nonnegative duration is accepted;
@@ -247,6 +262,20 @@ private:
 	bool recruitable_ = false;
 	RecruitCondition recruit_condition_ = RecruitCondition::AlwaysFail;
 	bool in_squad_ = false;
+	std::optional<std::uint64_t> recruit_target_;
+
+	// What an answered ask does to the sheet that was asked, and the only door to
+	// membership and to the faction a join sets. Success joins and spends the flag;
+	// failure spends the flag and moves nothing else. The coordinator applies one or
+	// the other and then stands the recruiter down: an ask is answered once.
+	bool apply_recruit_success();
+	bool apply_recruit_failure();
+
+	// Ends this sheet's own ask, and only the ask: the flag and faction of the sheet
+	// it was pointed at are not this sheet's to write. Reconciliation calls it when
+	// the order cannot be honoured any more, and a landed blow calls it when the ask
+	// was interrupted - both without a failed attempt.
+	void clear_recruit_order();
 	// Seconds still to wait, per sheet and per role: 0 is ready. A defender's
 	// clock belongs to the defender, so two characters fighting each other are
 	// never gated by one shared timer.
