@@ -59,7 +59,7 @@ the sheet owns it. `power_up()` is the playtest lever, not progression: it raise
 every base to ten and trains every combat job to a hundred on a living sheet
 (`Character::playtest_power_up`), and the scene binds it to **P**.
 
-Not built: earning levels or attribute bases, healing, crit and drop rolls, backpack capacity, the encumbrance formula, recruiting, squads, hunger/bleed, prosthetics and save/load. Combat resolution is the typed model `weapons.md` owns and `combat.md` sequences: an item catalog with owned instances, attack and defence profiles resolved from what a sheet actually holds, cut/pierce/blunt damage resisted by armour, percentage mitigation with a defence that costs its own stamina, durability and wear, and a stagger meter that stuns. Built and running, in other words. So are the techniques and the workbench actions, with the equipment and technique panels: the `OpenCharacter` bridge reads and moves real catalog instances, the player starts with the five-item backpack, held models and damage feedback draw from the same state, and the benches forge, mend and enchant through the coordinator. The scene's standing dummies fight bare hands because the starter setup is the player's, not because the bridge cannot dress them. `OpenMoveOrder` stays
+Not built: earning levels or attribute bases, healing, crit and drop rolls, backpack capacity, the encumbrance formula, the roster and switching who you command, hunger/bleed, prosthetics and save/load. Built and running beside the sheet: the recruitable flag, each sheet's own recruit condition, squad membership, and the ask that walks someone into range and answers there — `docs/recruiting.md` owns those rules, and this file owns the fields. Combat resolution is the typed model `weapons.md` owns and `combat.md` sequences: an item catalog with owned instances, attack and defence profiles resolved from what a sheet actually holds, cut/pierce/blunt damage resisted by armour, percentage mitigation with a defence that costs its own stamina, durability and wear, and a stagger meter that stuns. Built and running, in other words. So are the techniques and the workbench actions, with the equipment and technique panels: the `OpenCharacter` bridge reads and moves real catalog instances, the player starts with the five-item backpack, held models and damage feedback draw from the same state, and the benches forge, mend and enchant through the coordinator. The scene's standing dummies fight bare hands because the starter setup is the player's, not because the bridge cannot dress them. `OpenMoveOrder` stays
 registered as a utility, but it is no longer the player's sheet.
 
 ## 1. Attributes — locked
@@ -563,11 +563,15 @@ these change the rank curves, pools, blessings, frozen-parent resolution or limb
 - id, name (name may be empty)
 - faction `Friendly` / `Enemy`
 - `can_move` and the current move order
+- the recruitable flag, this sheet's own recruit condition, squad membership, and the
+  ask in flight (which sheet it is walking to). Who may be asked, what answers the ask,
+  and what a join does to all four: `docs/recruiting.md` owns those, as
+  `docs/combat.md` owns the attack order.
 - hunger / bleed: parked from earlier, not attributes
 
 ## Open (not attributes)
 
-Death: main HP, head, or torso at `0`. Combat math lives in `docs/combat.md`. Joining a squad lives in `docs/recruiting.md` (not built). Not numbered here: item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
+Death: main HP, head, or torso at `0`. Combat math lives in `docs/combat.md`. Joining a squad lives in `docs/recruiting.md`. Not numbered here: item catalog/weights, squads, prosthetics, neutral faction, hunger/bleed.
 
 ## Ownership
 
