@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; characters carry them out. Planned later: the roster and switching who you command, bases, crafting, a switchable 3D / tabletop camera.
+This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; characters carry them out. Planned later: the roster and switching who you command, bases, and a switchable 3D / tabletop camera.
 
 This repo is **not** `Project_OPEN`. Do not copy that architecture, docs, or code unless the human asks.
 
