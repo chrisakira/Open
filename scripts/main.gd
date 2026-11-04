@@ -13,6 +13,12 @@ const FLOOR_MASK := 1
 const CHARACTER_MASK := 2
 const WEAPON_MASK := 4
 
+# The two recruit conditions, exactly as `OpenCharacter` names them: 0 always fails and
+# 1 always succeeds (`docs/recruiting.md`'s placeholders until a real condition exists).
+# The scene writes Jane's as a name, because a bare `1` beside a bare `2002` two lines
+# away is a number the reader has to look up.
+const RECRUIT_ALWAYS_SUCCEED := 1
+
 # Under Godot's default 0, so this tick publishes every actor's position and runs
 # the one combat/regeneration clock before any actor's physics callback asks for
 # a velocity.
@@ -424,7 +430,7 @@ func _build_standing_dummies() -> void:
 	# other unaskable character - not a rule that enemies can never carry one.
 	if friend.sheet != null:
 		friend.sheet.set_recruitable(true)
-		friend.sheet.set_recruit_condition(1)
+		friend.sheet.set_recruit_condition(RECRUIT_ALWAYS_SUCCEED)
 	add_child(friend)
 	_actors.append(friend)
 
