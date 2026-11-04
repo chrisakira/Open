@@ -169,6 +169,14 @@ bool can_move() const;
 	// by death keeps the answer it gave - leaving rewrites membership, not history.
 	std::optional<std::uint64_t> answered_to() const;
 
+	// What that answer said: accepted, or not. Empty until an attempt stamps it, exactly like
+	// `answered_to()` - the two are the two halves of one stamp, because *whose* ask got an
+	// answer and *what* the answer said are different questions and a display that conflates
+	// them prints "recruited" over a refusal. A sheet seated before it was ever asked (a
+	// founder keeps its flag, a member of another squad can be asked) still refuses visibly:
+	// membership was already there, and membership is not what an answer writes.
+	std::optional<bool> answered_accepted() const;
+
 	// What the check answers, and nothing else: AlwaysSucceed is true, AlwaysFail is
 	// false, a dead sheet is false. Passing does not join, does not clear the flag,
 	// does not change faction and spends nothing - the attempt that applies all of
@@ -272,6 +280,9 @@ private:
 	// Whose ask this sheet answered. Written by the two private doors below and read by
 	// `answered_to()`; a seat (below) is not an answer and never writes it.
 	std::optional<std::uint64_t> answered_to_;
+	// And what that answer said, written by the same two doors and read by
+	// `answered_accepted()`. Never one without the other: an attempt stamps both halves.
+	std::optional<bool> answered_accepted_;
 
 	// The founder's seat: membership and nothing else. A seat is not an answer, so it
 	// writes no stamp, spends no flag, and leaves the faction whoever was seated to

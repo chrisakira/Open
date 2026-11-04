@@ -524,6 +524,7 @@ bool Character::apply_recruit_success(std::uint64_t recruiter_id) {
 	faction_ = Faction::Friendly;
 	recruitable_ = false;
 	answered_to_ = recruiter_id;
+	answered_accepted_ = true;
 	return true;
 }
 
@@ -537,6 +538,7 @@ bool Character::apply_recruit_failure(std::uint64_t recruiter_id) {
 	// so a refusal is readable as one answer rather than as an ask nobody resolved.
 	recruitable_ = false;
 	answered_to_ = recruiter_id;
+	answered_accepted_ = false;
 	return true;
 }
 
@@ -564,6 +566,10 @@ bool Character::in_squad() const {
 
 std::optional<std::uint64_t> Character::answered_to() const {
 	return answered_to_;
+}
+
+std::optional<bool> Character::answered_accepted() const {
+	return answered_accepted_;
 }
 
 bool Character::recruit_condition_passes() const {

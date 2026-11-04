@@ -56,6 +56,20 @@ bool is_answered_to(const std::optional<std::uint64_t> &got, std::uint64_t want)
 	return got.has_value() && *got == want;
 }
 
+// The answer's own content: who it was answered to says *whose* ask got an answer, and whether
+// it was accepted says what that answer said. A display that guessed the content by reading
+// membership afterwards would print "recruited" for a seated sheet that refused, so the stamp
+// carries both.
+bool answers_yes(const open::Character &sheet) {
+	const std::optional<bool> answer = sheet.answered_accepted();
+	return answer.has_value() && *answer;
+}
+
+bool answers_no(const open::Character &sheet) {
+	const std::optional<bool> answer = sheet.answered_accepted();
+	return answer.has_value() && !*answer;
+}
+
 }  // namespace
 
 int main() {
@@ -66,6 +80,8 @@ int main() {
 		open::Character fresh = make_character(1);
 		expect_true("a fresh sheet is not seated", !fresh.in_squad());
 		expect_true("a fresh sheet answered to nobody", !fresh.answered_to().has_value());
+		expect_true("and it neither accepted nor refused anybody",
+					!fresh.answered_accepted().has_value());
 	}
 	{
 		// found_squad_seats_the_founder: the coordinator seats one sheet, and seating writes
@@ -86,6 +102,8 @@ int main() {
 					founder.recruit_condition() == open::RecruitCondition::AlwaysFail);
 		expect_true("seating stamped no answer, because nobody was asked",
 					!founder.answered_to().has_value());
+		expect_true("and stamped no content either, because there was nothing to say",
+					!founder.answered_accepted().has_value());
 
 		// Founding twice seats once: the second call answers the same and moves nothing.
 		expect_true("founding the seated founder again is accepted",
@@ -132,9 +150,11 @@ int main() {
 		expect_true("the yes joined", asked.in_squad());
 		expect_true("and the yes was answered to the recruiter",
 					is_answered_to(asked.answered_to(), 1));
+		expect_true("and the yes said yes, not merely somebody answered", answers_yes(asked));
 		expect_true("a second step changes nobody's answer", session.step(0.1f, world));
 		expect_true("the answer is still the recruiter's",
 					is_answered_to(asked.answered_to(), 1));
+		expect_true("and still the same yes", answers_yes(asked));
 	}
 	{
 		// a_no_is_answered_too: a refusal is an answer too, and the sheet that refused
@@ -153,6 +173,8 @@ int main() {
 		expect_true("the answer was no, so nobody joined", !hostile.in_squad());
 		expect_true("the refused sheet still answers to the recruiter who asked it",
 					is_answered_to(hostile.answered_to(), 1));
+		expect_true("and its stamp says no, which is the whole content of a refusal",
+					answers_no(hostile));
 		expect_true("and a no still spends the flag", !hostile.recruitable());
 	}
 	{
@@ -199,6 +221,8 @@ int main() {
 		expect_true("a positive step still runs after the cancel", session.step(0.1f, world));
 		expect_true("and it stamps nothing, because nobody refused",
 					!asked.answered_to().has_value());
+		expect_true("so there is no yes-or-no to read either",
+					!asked.answered_accepted().has_value());
 	}
 	{
 		// death_leaves_the_stamped_answer_behind: a member leaves the squad the only way a
@@ -219,6 +243,7 @@ int main() {
 		expect_true("death leaves the squad", !asked.in_squad());
 		expect_true("death does not take the answer away",
 					is_answered_to(asked.answered_to(), 1));
+		expect_true("nor does it turn a yes into a no", answers_yes(asked));
 	}
 	{
 		// founding_is_not_an_answer_for_the_seated: a founder seated by the coordinator is
@@ -231,6 +256,8 @@ int main() {
 		expect_true("the coordinator seats its founder", session.found_squad(world, 1));
 		expect_true("the founder is seated", founder.in_squad());
 		expect_true("and the founder answered to nobody", !founder.answered_to().has_value());
+		expect_true("which means there is no answer content on a founder either",
+					!founder.answered_accepted().has_value());
 	}
 
 	return test_summary();
