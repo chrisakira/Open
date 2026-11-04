@@ -511,27 +511,46 @@ Vec3 Character::recruit_velocity_at(const Vec3 &self, const Vec3 &target) const 
 	return pursuit_velocity(self, target, kMeleeRange, walk_speed());
 }
 
-bool Character::apply_recruit_success() {
+bool Character::apply_recruit_success(std::uint64_t recruiter_id) {
 	if (!alive()) {
 		return false;
 	}
 	// A join is membership plus faction plus a spent flag - not the check, which was
 	// answered a moment ago, and not a new friend: an Enemy that said yes becomes
-	// Friendly because it is now on this side.
+	// Friendly because it is now on this side. And it is whose ask it answered: the
+	// answer belongs to one recruiter, and a second ask pointed at this sheet reads
+	// that stamp rather than its own hope.
 	in_squad_ = true;
 	faction_ = Faction::Friendly;
 	recruitable_ = false;
+	answered_to_ = recruiter_id;
 	return true;
 }
 
-bool Character::apply_recruit_failure() {
+bool Character::apply_recruit_failure(std::uint64_t recruiter_id) {
 	if (!alive()) {
 		return false;
 	}
 	// A no is a spent flag and nothing else: nobody joins, nobody's faction moves,
 	// and the sheet that refused is not thereby hostile - it is simply no longer
-	// askable.
+	// askable. It is still an answer, and it is stamped to the recruiter who heard it,
+	// so a refusal is readable as one answer rather than as an ask nobody resolved.
 	recruitable_ = false;
+	answered_to_ = recruiter_id;
+	return true;
+}
+
+bool Character::apply_found_seat() {
+	if (!alive()) {
+		// A corpse is nobody's founder. Death is the one way a member leaves, and a
+		// seat cannot bring anybody back - the sheet keeps whatever membership it died
+		// out of, and seating it would be a resurrection wearing another name.
+		return false;
+	}
+	// A seat, not a join: faction, flag, condition and the answer stamp all stay exactly
+	// as they were. Joining is what an answer does; being the one who asks is not, and
+	// the founder of a squad has never been asked to join it.
+	in_squad_ = true;
 	return true;
 }
 
@@ -541,6 +560,10 @@ void Character::clear_recruit_order() {
 
 bool Character::in_squad() const {
 	return in_squad_;
+}
+
+std::optional<std::uint64_t> Character::answered_to() const {
+	return answered_to_;
 }
 
 bool Character::recruit_condition_passes() const {

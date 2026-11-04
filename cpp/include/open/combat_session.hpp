@@ -66,6 +66,15 @@ public:
 	bool issue_recruit(std::span<const Combatant> actors, std::uint64_t actor_id,
 					   std::uint64_t target_id);
 
+	// Seats the founder of the squad before anybody has asked anybody anything: the sheet
+	// under this id becomes a member, and nothing else about it changes. Faction stays as
+	// configured, the recruitable flag stays as configured, and no answer is stamped -
+	// this is not a join, it is the reason the squad has someone in it on day one. An
+	// absent id, a zero id, a broken roster and a dead sheet are refused; seating a sheet
+	// that is already a member is accepted, because a seat is a seat and founding twice
+	// cannot seat anybody twice (docs/recruiting.md "Founder seated - locked").
+	bool found_squad(std::span<const Combatant> actors, std::uint64_t actor_id);
+
 	// One frame of the fight. Negative or non-finite time is refused before
 	// anything is read or written. A valid frame first drops orders that this
 	// snapshot cannot honour; with zero seconds that is all it does, so a

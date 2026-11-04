@@ -163,6 +163,12 @@ bool can_move() const;
 	bool set_recruit_condition(RecruitCondition condition);
 	bool in_squad() const;
 
+	// Whose ask this sheet answered, once it has answered one. Empty while nobody has been
+	// asked, and while nobody has refused: the stamp belongs to an attempt, not to a seat.
+	// A founder seated by the coordinator has answered to nobody, and a member who leaves
+	// by death keeps the answer it gave - leaving rewrites membership, not history.
+	std::optional<std::uint64_t> answered_to() const;
+
 	// What the check answers, and nothing else: AlwaysSucceed is true, AlwaysFail is
 	// false, a dead sheet is false. Passing does not join, does not clear the flag,
 	// does not change faction and spends nothing - the attempt that applies all of
@@ -263,13 +269,21 @@ private:
 	RecruitCondition recruit_condition_ = RecruitCondition::AlwaysFail;
 	bool in_squad_ = false;
 	std::optional<std::uint64_t> recruit_target_;
+	// Whose ask this sheet answered. Written by the two private doors below and read by
+	// `answered_to()`; a seat (below) is not an answer and never writes it.
+	std::optional<std::uint64_t> answered_to_;
+
+	// The founder's seat: membership and nothing else. A seat is not an answer, so it
+	// writes no stamp, spends no flag, and leaves the faction whoever was seated to
+	// keep. The coordinator founds a squad; nothing else seats a member.
+	bool apply_found_seat();
 
 	// What an answered ask does to the sheet that was asked, and the only door to
 	// membership and to the faction a join sets. Success joins and spends the flag;
 	// failure spends the flag and moves nothing else. The coordinator applies one or
 	// the other and then stands the recruiter down: an ask is answered once.
-	bool apply_recruit_success();
-	bool apply_recruit_failure();
+	bool apply_recruit_success(std::uint64_t recruiter_id);
+	bool apply_recruit_failure(std::uint64_t recruiter_id);
 
 	// Ends this sheet's own ask, and only the ask: the flag and faction of the sheet
 	// it was pointed at are not this sheet's to write. Reconciliation calls it when

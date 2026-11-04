@@ -200,10 +200,12 @@ void CombatSession::run_recruit_attempts(std::span<const Combatant> actors) {
 		}
 		// The answer is the target's own condition. An ask is not a swing: neither sheet
 		// spends stamina, mana, an item or a cooldown, and no clock of anyone's moves.
+		// The recruiter's id travels with the answer, because the answer belongs to it:
+		// a second ask pointed at this sheet must be able to read that it never got one.
 		if (target->character->recruit_condition_passes()) {
-			target->character->apply_recruit_success();
+			target->character->apply_recruit_success(actor.character->id());
 		} else {
-			target->character->apply_recruit_failure();
+			target->character->apply_recruit_failure(actor.character->id());
 		}
 		actor.character->clear_recruit_order();
 	}
@@ -264,6 +266,22 @@ bool CombatSession::issue_recruit(std::span<const Combatant> actors, std::uint64
 	// being attacked, and nothing in docs/recruiting.md begins a combat at the sheet
 	// that has not answered yet.
 	return actor->character->set_recruit_target(target_id);
+}
+
+bool CombatSession::found_squad(std::span<const Combatant> actors, std::uint64_t actor_id) {
+	if (!usable_roster(actors)) {
+		return false;
+	}
+	const Combatant *actor = find_actor(actors, actor_id);
+	if (actor == nullptr) {
+		// Absent, and zero: `find_actor` keeps no id of 0, because no sheet is ever
+		// seated by an id nobody carries.
+		return false;
+	}
+	// The seat itself belongs to the sheet, which keeps its own rule about corpses.
+	// Nothing else is read or written here: no flag, no faction, no stamp, no cancel of
+	// anybody's order. Founding a squad is not asking anyone to join it.
+	return actor->character->apply_found_seat();
 }
 
 bool CombatSession::step(float seconds, std::span<const Combatant> actors) {
