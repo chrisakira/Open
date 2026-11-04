@@ -7,6 +7,7 @@ const FLOOR_SIZE := 40.0
 const MALE_MODEL := preload("res://scenes/characters/male.tscn")
 const FEMALE_MODEL := preload("res://scenes/characters/female.tscn")
 const STATUS_OVERLAY_SCRIPT := preload("res://scripts/status_overlay.gd")
+const SQUAD_LIST_SCRIPT := preload("res://scripts/squad_list.gd")
 
 # Collision layers: 1 is world geometry, 2 is a character body, 4 is a weapon pick area.
 const FLOOR_MASK := 1
@@ -42,6 +43,7 @@ var _combat: OpenCombat
 var _feedback: CombatFeedback
 var _log: CombatLog
 var _status_overlay: Control
+var _squad_list: Control
 
 # The two benches the starter scene places, per docs/weapons.md: one clearly visible
 # Smithing Workbench and one clearly visible Enchanting Workbench. Ids and types are the
@@ -471,6 +473,13 @@ func _build_combat() -> void:
 			and not _combat.setup_starter_player(_player.sheet.get_character_id()):
 		push_error("The player's starter backpack could not be given")
 
+	# The squad has a founder before anybody has been asked for anything, and the scene cannot
+	# invent one: the coordinator seats whoever it commands, which is the player, and nothing
+	# else about that sheet changes (docs/recruiting.md "Founder seated - locked").
+	if _player != null and _player.sheet != null \
+			and not _combat.found_squad(_player.sheet.get_character_id()):
+		push_error("The squad could not be founded with its player")
+
 	# The one thing in the scene that knows which sheet a human drives: this is the player, so
 	# this is the sheet whose configured sequence chooses its attacks. A configured sequence on
 	# a simulation-driven sheet is kept but not followed - which is what makes the handover the
@@ -619,6 +628,16 @@ func _build_hud() -> void:
 	_status_overlay.name = "StatusOverlay"
 	layer.add_child(_status_overlay)
 	_status_overlay.bind_scene(_player, _actors, _camera)
+
+	# The squad plaque is a view of membership and nothing else: it re-reads every sheet's own
+	# `is_in_squad` each drawn frame, so a name joins the list when C++ says it joined and leaves
+	# when C++ says the member died, with no display asked to notice either. It is on the layer
+	# with the other views that must never sit over an open panel - later siblings draw on top -
+	# and it ignores the mouse, because a squad list you cannot click into is the point.
+	_squad_list = SQUAD_LIST_SCRIPT.new()
+	_squad_list.name = "SquadList"
+	layer.add_child(_squad_list)
+	_squad_list.call("bind_squad", _actors, _player)
 
 	_popup = CharacterPopup.new()
 	_popup.name = "CharacterPopup"

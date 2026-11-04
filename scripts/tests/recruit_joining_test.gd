@@ -216,8 +216,13 @@ func _jane_starts_recruitable_and_nobody_else_does() -> void:
 	_check(_recruit_condition_of(enemy.sheet) == 0, "and keeps the default failing condition")
 	_check(not _recruitable_of(player.sheet), "the player is the asker, not a recruit target")
 	_check(_recruit_condition_of(player.sheet) == 0, "and asks nobody, so keeps no condition of her own")
+	# Founding the squad is the scene's own first move, and it seats exactly one sheet: the
+	# player. Jane keeps her flag and the enemy keeps her faction, because a seat is not a join
+	# and never was one (`docs/recruiting.md`, "Founder seated - locked").
+	_check(_in_squad_of(player.sheet), "the player starts in the squad it commands")
+	_check(not _in_squad_of(jane.sheet), "Jane starts outside the squad")
+	_check(not _in_squad_of(enemy.sheet), "and so does the enemy")
 	for sheet in [jane.sheet, enemy.sheet, player.sheet]:
-		_check(not _in_squad_of(sheet), "nobody starts in a squad")
 		_check(_recruit_target_of(sheet) == 0, "and nobody starts walking to ask")
 
 	await _free_world(world)
