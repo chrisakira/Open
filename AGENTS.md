@@ -1,10 +1,10 @@
 # AGENTS.md
 
-This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; characters carry them out. Planned later: recruit, bases, crafting, a switchable 3D / tabletop camera.
+This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; characters carry them out. Planned later: the roster and switching who you command, bases, crafting, a switchable 3D / tabletop camera.
 
 This repo is **not** `Project_OPEN`. Do not copy that architecture, docs, or code unless the human asks.
 
-The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. A performed swing provokes: an unordered victim takes the attacker as its attack order and turns to face it (`docs/combat.md` section 1). The player owns the five starter items (C++ setup command), and the scene walks, fights with the typed model, performs techniques, shows held models, swing motion and damage numbers, and carries the character, equipment, technique and workbench panels. Crafting, repair and enchanting run through the coordinator's queue; the scene places the two benches.
+The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. A performed swing provokes: an unordered victim takes the attacker as its attack order and turns to face it (`docs/combat.md` section 1). The player owns the five starter items (C++ setup command), and the scene walks, fights with the typed model, performs techniques, shows held models, swing motion and damage numbers, and carries the character, equipment, technique and workbench panels. Crafting, repair and enchanting run through the coordinator's queue; the scene places the two benches. Jane Doe 1 starts recruitable: the character popup grows a Recruit action wherever the flag says so, the ask walks whoever is commanded into the unarmed melee 1.5, and a yes puts that sheet in the squad (`docs/recruiting.md`). Nobody can be commanded but the player yet - the roster is not built.
 
 ## Language split
 
@@ -45,6 +45,7 @@ Each doc owns its domain and points at the others rather than restating them:
 - `docs/weapons.md` — items: starter equipment, typed damage, techniques, durability, and the workbench actions (craft, repair, enchant).
 - `docs/style.md` — visual and interaction style for menus and popups; the rustic/medieval reference implementation is `scripts/character_popup.gd`.
 - `docs/combat_log.md` — the bottom-left action chat. Presentation only; it must never become a second simulation.
+- `docs/recruiting.md` — how a character joins the player's squad: the recruitable flag, each sheet's own recruit condition, the recruit order and its range, what a yes and a no do, and the only way a member leaves. C++ owns all of it; the roster and switching who you command are not this file's and are not built.
 
 Code/tests win if they disagree with an older paragraph. Respect each file's Current / Locked / Open markers: do not build what is merely Locked, and never what is Open.
 
