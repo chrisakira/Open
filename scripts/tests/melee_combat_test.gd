@@ -267,10 +267,15 @@ func _living_dummy_click_opens_attack() -> void:
 		_check(popup.visible, "clicking the living %s opens its action popup" % dummy.name)
 		_check(attack_button != null and attack_button.visible,
 				"and the open popup still offers Attack")
-		# The second action is recruiting's, and this suite keeps its own ground:
-		# an unaskable dummy is offered exactly the one action it always was, and a
-		# askable one gains the ask without the fight being replaced.
-		var expected := 2 if dummy == ally else 1
+		# The second action is recruiting's, and this suite keeps its own ground: it asks
+		# the sheet who may be asked rather than naming which dummy is Jane, so changing
+		# the scene's flags - un-flagging her, flagging the enemy, or dropping recruiting
+		# altogether - reddens recruiting's suite and not this combat one. What this
+		# suite owns is that Attack is never replaced or hidden, and that the panel is
+		# still a panel and not a second sheet.
+		var askable: bool = dummy.sheet != null and dummy.sheet.has_method("is_recruitable") \
+				and bool(dummy.sheet.call("is_recruitable"))
+		var expected := 2 if askable else 1
 		var offered := _visible_actions(popup)
 		_check(offered.size() == expected,
 				"%s's popup offers %d action(s), got %d" % [dummy.name, expected, offered.size()])
@@ -278,7 +283,7 @@ func _living_dummy_click_opens_attack() -> void:
 		for action in offered:
 			names.append(String((action as Button).text).to_lower())
 		_check(names.has("attack"), "%s's popup never lost its Attack" % dummy.name)
-		_check(names.has("recruit") == (dummy == ally),
+		_check(names.has("recruit") == askable,
 				"%s's popup offers Recruit only where the flag says it may" % dummy.name)
 		_check(not marker.visible, "a character click shows no move marker")
 		_check(_attack_target_id(player.sheet) == 0, "a character click issues no attack yet")
