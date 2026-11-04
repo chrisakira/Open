@@ -166,7 +166,7 @@ private:
 	// standing a recruiter down are the sheet's private doors, reachable only through the
 	// friendship this class already holds. Nothing else can join anybody - not a script,
 	// not a popup, and not a sheet that reads its own flag.
-	static void drop_dead_recruit_orders(std::span<const Combatant> actors);
+	static void drop_hopeless_recruit_orders(std::span<const Combatant> actors);
 	static void run_recruit_attempts(std::span<const Combatant> actors);
 
 	// Part draws only. The swing, its clocks and its stamina belong to the sheets.

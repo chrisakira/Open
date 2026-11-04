@@ -167,7 +167,7 @@ void CombatSession::advance_all_work(std::span<const Combatant> actors, WorkCont
 // Reconciliation for the ask, next to the one for the attack: an order nobody can
 // honour any more is dropped, and dropped with no answer of any kind. Nobody was
 // refused, so nobody's flag is spent, nobody joined, and nobody's faction moved.
-void CombatSession::drop_dead_recruit_orders(std::span<const Combatant> actors) {
+void CombatSession::drop_hopeless_recruit_orders(std::span<const Combatant> actors) {
 	for (const Combatant &actor : actors) {
 		if (actor.character->recruit_target().has_value() && !recruit_order_is_live(actor, actors)) {
 			actor.character->clear_recruit_order();
@@ -298,7 +298,7 @@ bool CombatSession::step(float seconds, std::span<const Combatant> actors, WorkC
 bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 							  WorkContext *work) {
 	drop_dead_orders(actors);
-	drop_dead_recruit_orders(actors);
+	drop_hopeless_recruit_orders(actors);
 	if (seconds == 0.0f) {
 		// The reconciliation frame still notices a bench that is gone or a fight that
 		// started - interrupting is reconciliation, not progress - but it never starts,
@@ -379,7 +379,7 @@ bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 	// The ask reconciles in the same breath: a sheet that died under a swing is not
 	// someone's recruit target any more, and neither is one that walked away from the
 	// roster between two frames.
-	drop_dead_recruit_orders(actors);
+	drop_hopeless_recruit_orders(actors);
 	// And now, once and only on a positive frame, the asks that reached their sheets get
 	// their answer. After the swings and the reconciliation is deliberate: a blow landed
 	// this frame ended the ask before it could run, and a target that died this frame
