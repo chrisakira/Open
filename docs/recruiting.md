@@ -22,7 +22,9 @@ character: C++ walks them to the unarmed melee 1.5 (a held weapon's reach does n
 replace it), and the attempt runs on a later frame, in range, never on the click. A
 yes puts the target in the squad and sets faction Friendly; a no spends the flag and
 moves nothing else, and either answer stands the recruiter down. A new move order, a
-chosen attack, the target's death, or a blow landed on the recruiter all end the ask
+chosen attack, the target's death, or a swing performed against the recruiter —
+dodged, blocked or landing, any performed swing counts, the same reading `combat.md`
+makes of a provocation — all end the ask
 without an answer: no flag spent, nobody joined. Death is the only way a member
 leaves.
 
