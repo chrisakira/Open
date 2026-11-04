@@ -8,6 +8,7 @@ const MALE_MODEL := preload("res://scenes/characters/male.tscn")
 const FEMALE_MODEL := preload("res://scenes/characters/female.tscn")
 const STATUS_OVERLAY_SCRIPT := preload("res://scripts/status_overlay.gd")
 const SQUAD_LIST_SCRIPT := preload("res://scripts/squad_list.gd")
+const RECRUIT_BUBBLE_SCRIPT := preload("res://scripts/recruit_bubble.gd")
 
 # Collision layers: 1 is world geometry, 2 is a character body, 4 is a weapon pick area.
 const FLOOR_MASK := 1
@@ -44,6 +45,12 @@ var _feedback: CombatFeedback
 var _log: CombatLog
 var _status_overlay: Control
 var _squad_list: Control
+var _recruit_bubble: Control
+# The ask this scene gave and still has not heard an answer to: the issuer's own notebook, kept
+# only so a report can say whether an answer was its own (docs/recruiting.md). Nothing else
+# reads it, and it is a `Dictionary` rather than a state machine because the one question it
+# answers is whether the order is still held.
+var _ask: Dictionary = {}
 
 # The two benches the starter scene places, per docs/weapons.md: one clearly visible
 # Smithing Workbench and one clearly visible Enchanting Workbench. Ids and types are the
@@ -147,6 +154,48 @@ func _physics_process(delta: float) -> void:
 			_combat.set_position(sheet.get_character_id(), actor.global_position)
 	_combat.step(delta)
 	_face_attack_targets(delta)
+	_report_recruit_answer()
+
+
+# The answer to the ask this scene gave. C++ clears the recruiter's order and stamps the sheet it
+# asked in the same step, so the question after every step is a small one: is that ask still
+# held? If it is, nobody has answered yet, and there is nothing to say. If it went away, this
+# issuer believes only a stamp naming its own asker: a stamp naming somebody else is another
+# recruiter's answer, and no stamp at all is the docs' broken ask - ordered away, a fight chosen
+# instead, or its target died first - and a broken ask is not news about an answer nobody gave.
+func _report_recruit_answer() -> void:
+	if _ask.is_empty():
+		return
+	var asker_id := int(_ask["asker_id"])
+	var target_id := int(_ask["target_id"])
+	var asker := _actor_by_id(asker_id)
+	if asker == null:
+		_ask = {}
+		return
+	var asker_sheet: OpenCharacter = asker.get("sheet")
+	if asker_sheet == null or not asker_sheet.is_configured():
+		_ask = {}
+		return
+	if int(asker_sheet.get_recruit_target_id()) == target_id:
+		return  # still held: the walk is on, and no answer has been given
+	_ask = {}
+	var target := _actor_by_id(target_id)
+	if target == null:
+		return
+	var sheet: OpenCharacter = target.get("sheet")
+	if sheet == null or not sheet.is_configured():
+		return
+	var stamp: Dictionary = sheet.call("get_recruit_answer")
+	if stamp.is_empty() or int(stamp.get("asker_id", 0)) != asker_id:
+		return
+	var accepted := bool(stamp.get("accepted", false))
+	# The chat hears the answer in the voice it already keeps, and the card over her head says
+	# the same word the line says. Both are reports of one C++ answer; neither writes anything
+	# back, and neither is a second way to join.
+	if _log != null:
+		_log.append_recruit({"actor_id": asker_id, "target_id": target_id, "accepted": accepted})
+	if _recruit_bubble != null:
+		_recruit_bubble.call("open_for", target, accepted)
 
 
 # Facing the fight: a character that holds an attack order turns to look at whoever C++
@@ -256,6 +305,11 @@ func _on_recruit_requested(target_id: int) -> void:
 		# The walk that the ask replaced goes with it, marker and all: standing down a
 		# click-to-move to walk to someone is not a move to a place on the ground.
 		_marker.visible = false
+		# And the scene keeps the ask it just gave, because an answer belongs to whoever issued
+		# it (docs/recruiting.md): the report, the chat line and the verdict over her head are
+		# this issuer's news, and an answer to somebody else's ask is not. A sheet holds one
+		# recruit order, so the newest ask is the one still owed an answer.
+		_ask = {"asker_id": int(_player.sheet.get_character_id()), "target_id": target_id}
 
 
 func _try_character_or_floor_click(screen_pos: Vector2) -> void:
@@ -638,6 +692,15 @@ func _build_hud() -> void:
 	_squad_list.name = "SquadList"
 	layer.add_child(_squad_list)
 	_squad_list.call("bind_squad", _actors, _player)
+
+	# The answer bubble: one word, over the head that said it, for as long as it takes to read
+	# and then gone. It never decides what the word is - the issuer brings the answer C++
+	# stamped - and it borrows the overlay's anchor and gate instead of inventing its own, so a
+	# verdict the camera cannot show stays unseen instead of being painted at a guessed place.
+	_recruit_bubble = RECRUIT_BUBBLE_SCRIPT.new()
+	_recruit_bubble.name = "RecruitBubble"
+	layer.add_child(_recruit_bubble)
+	_recruit_bubble.call("bind_view", _status_overlay)
 
 	_popup = CharacterPopup.new()
 	_popup.name = "CharacterPopup"

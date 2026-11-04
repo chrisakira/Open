@@ -89,8 +89,7 @@ func refresh() -> void:
 		var show := show_any and _passes_view_gate(actor)
 		view.visible = show
 		if show:
-			var feet := actor.global_position
-			var anchor := _camera.unproject_position(feet + Vector3(0.0, HEAD_ANCHOR_Y, 0.0))
+			var anchor := head_anchor(entry["actor"] as CharacterBody3D)
 			view.position = anchor - Vector2(view.size.x / 2.0, view.size.y)
 
 
@@ -116,6 +115,18 @@ func _passes_view_gate(actor: CharacterBody3D) -> bool:
 	if _camera.global_position.distance_to(feet) > MAX_VIEW_DISTANCE:
 		return false
 	return _camera.to_local(feet).z < 0.0
+
+
+# The screen point a view hangs from above this actor: the same projection and the same head
+# height the plates already use. Public so a display that stacks over a plate - the answer bubble
+# - asks this one rule instead of writing a second one that can quietly disagree with it. A
+# camera that is not drawing gets the point it would have used: the caller's own gate decides
+# whether anything is shown at all.
+func head_anchor(actor: CharacterBody3D) -> Vector2:
+	var feet := actor.global_position + Vector3(0.0, HEAD_ANCHOR_Y, 0.0)
+	if _camera == null or not is_instance_valid(_camera) or not _camera.is_current():
+		return _camera.unproject_position(feet) if _camera != null else Vector2.ZERO
+	return _camera.unproject_position(feet)
 
 
 func _process(_delta: float) -> void:
