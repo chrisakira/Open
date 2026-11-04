@@ -1,0 +1,135 @@
+<h2>When does the column appear?</h2>
+<p class="subtitle">The player is a squad member in C++ either way — that truth is already decided. This is only about what the right edge <em>draws</em>, from the first frame to the first death.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Same squad, three moments — read each row left to right</div>
+  <div class="mockup-body" style="padding:0">
+    <div style="display:flex;gap:0;width:100%;font-family:Georgia,'DejaVu Serif',serif;">
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#2b2a24;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">frame 1 — you have recruited nobody</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">Option A — the heading is there before there is a squad, only one name under it</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#2b2a24;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">frame 1 — you have recruited nobody</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="font-size:12px;color:#6E5539;font-style:italic;">( nothing )</div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">Option B — the right edge stays quiet until a second name earns it</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;background:#2b2a24;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">frame 1 — you have recruited nobody</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:15px;color:#F4E6C6;">John Doe</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">Option C — the founder is shown, but nothing calls the name a heading</div>
+      </div>
+
+    </div>
+    <div style="display:flex;gap:0;width:100%;font-family:Georgia,'DejaVu Serif',serif;border-top:1px solid #6E5539;">
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">right after a yes</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe<br>Jane Doe 1</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">right after a yes</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe<br>Jane Doe 1</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">right after a yes</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe<br>Jane Doe 1</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div style="display:flex;gap:0;width:100%;font-family:Georgia,'DejaVu Serif',serif;border-top:1px solid #6E5539;">
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#2a2522;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">after Jane dies</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">one name again, heading still claiming a squad</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#2a2522;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">after Jane dies</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="font-size:12px;color:#6E5539;font-style:italic;">( nothing )</div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">the panel goes back to silence, and vanishing is the story</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;background:#2a2522;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:10px;">after Jane dies</div>
+        <div style="min-height:74px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:15px;color:#F4E6C6;">John Doe</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:8px;">the heading withdraws with the name it was heading — the panel keeps the shape of who is left</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:22px;">Which timing?</h3>
+
+<div class="options">
+  <div class="option" data-choice="always" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Always on, heading included</h3>
+      <p>One wood panel from frame one, <code>SQUAD</code> over the founder's name forever. Simplest to reason about: the panel is the squad list, and its rows are the members. But a heading that claims a squad while naming one person, and still claims it after they die alone.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="waits" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Waits for the second name</h3>
+      <p>The right edge draws nothing until a join puts a second name in C++; the heading arrives exactly when the group does, and leaves when the last recruit dies. Nothing is ever shown that the state cannot back up. Costs a start-of-game screen where the feature is invisible — and if recruiting breaks, you cannot tell whether it is broken or simply empty.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="heading-grows" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Founder shown, heading earned</h3>
+      <p>The founder's name is on wood from frame one; <code>SQUAD</code> appears when there is a second member and retracts when there is not. Every pixel means a member, and the heading is the one that says "there is more than you". Two states per moment instead of one, so a test has to pin both.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:14px;">Whichever you pick: no dismiss button, nothing clickable, and a dead member's line closes up. In these drawings the founder stands first and recruits below in join order — that ordering is the question after this one.</p>

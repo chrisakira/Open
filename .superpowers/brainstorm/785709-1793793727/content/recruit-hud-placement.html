@@ -1,0 +1,128 @@
+<h2>What proves a join happened?</h2>
+<p class="subtitle">Three displays at once: a name list on the right edge, a line in the bottom-left chat, and a word over the character who answered. This is the whole screen at the moment Jane says yes — then pick how fancy the list gets.</p>
+
+<div class="mockup">
+  <div class="mockup-header">1280 × 720 play screen — the instant "yes" lands</div>
+  <div class="mockup-body" style="padding:0">
+    <div style="position:relative;aspect-ratio:16/9;width:100%;overflow:hidden;background:linear-gradient(180deg,#3a3628 0%,#2a2720 55%,#1b1915 100%);font-family:Georgia,'DejaVu Serif',serif;border:1px solid #6E5539;">
+
+      <!-- ground hints -->
+      <div style="position:absolute;inset:0;background:
+        radial-gradient(circle at 20% 78%, rgba(120,105,70,.18), transparent 40%),
+        radial-gradient(circle at 70% 70%, rgba(90,80,55,.16), transparent 45%);"></div>
+
+      <!-- ===== characters on the field ===== -->
+      <!-- John Doe (the one you command) -->
+      <div style="position:absolute;left:24%;bottom:30%;width:44px;height:96px;transform:translateX(-50%);">
+        <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:26px;border-radius:50% 50% 45% 45%;background:#c9b28c;"></div>
+        <div style="position:absolute;top:24px;left:50%;transform:translateX(-50%);width:34px;height:54px;border-radius:8px 8px 4px 4px;background:#4a4335;border:2px solid #2e2820;"></div>
+      </div>
+      <!-- overhead: John Doe -->
+      <div style="position:absolute;left:24%;bottom:calc(30% + 100px);transform:translateX(-50%);text-align:center;">
+        <div style="font-size:13px;color:#F4E6C6;text-shadow:0 1px 2px #000;">John Doe</div>
+        <div style="margin-top:3px;width:150px;padding:5px;background:rgba(36,27,22,.82);border:1px solid #6E5539;">
+          <div style="height:6px;background:#2E231C;border:1px solid #6E5539;margin-bottom:2px;"><div style="height:100%;width:92%;background:#8F423D;"></div></div>
+          <div style="height:6px;background:#2E231C;border:1px solid #6E5539;margin-bottom:2px;"><div style="height:100%;width:66%;background:#4E7A4A;"></div></div>
+          <div style="height:6px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:41%;background:#4A6690;"></div></div>
+        </div>
+      </div>
+
+      <!-- Jane Doe 1 (the one who just answered) -->
+      <div style="position:absolute;left:52%;bottom:32%;width:44px;height:96px;transform:translateX(-50%);">
+        <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:26px;border-radius:50% 50% 45% 45%;background:#c9b28c;"></div>
+        <div style="position:absolute;top:24px;left:50%;transform:translateX(-50%);width:34px;height:54px;border-radius:8px 8px 4px 4px;background:#3f5c43;border:2px solid #243325;"></div>
+      </div>
+      <!-- overhead: Jane -->
+      <div style="position:absolute;left:52%;bottom:calc(32% + 100px);transform:translateX(-50%);text-align:center;">
+        <div style="font-size:13px;color:#F4E6C6;text-shadow:0 1px 2px #000;">Jane Doe 1</div>
+        <div style="margin-top:3px;width:150px;padding:5px;background:rgba(36,27,22,.82);border:1px solid #6E5539;">
+          <div style="height:6px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:100%;background:#8F423D;"></div></div>
+        </div>
+      </div>
+
+      <!-- THE ANSWER, floating over her head -->
+      <div style="position:absolute;left:52%;bottom:calc(32% + 168px);transform:translateX(-50%);">
+        <div style="font-size:26px;letter-spacing:1px;color:#FFE06B;text-shadow:0 2px 6px #000, 0 0 14px rgba(255,224,107,.35);">YES</div>
+      </div>
+
+      <!-- enemy dummy, for context -->
+      <div style="position:absolute;left:74%;bottom:26%;width:34px;height:74px;transform:translateX(-50%);opacity:.8;">
+        <div style="position:absolute;top:0;left:50%;transform:translateX(-50%);width:20px;height:20px;border-radius:50% 50% 45% 45%;background:#c9b28c;"></div>
+        <div style="position:absolute;top:19px;left:50%;transform:translateX(-50%);width:26px;height:42px;border-radius:6px 6px 3px 3px;background:#6a312d;border:2px solid #331816;"></div>
+      </div>
+
+      <!-- ===== NEW: squad list, right edge, mid-height ===== -->
+      <div style="position:absolute;right:16px;top:50%;transform:translateY(-50%);text-align:left;">
+        <div style="font-size:17px;color:#F4E6C6;line-height:1.5;text-shadow:0 1px 3px #000;">
+          <div>John Doe</div>
+          <div>Jane Doe 1</div>
+        </div>
+      </div>
+      <div style="position:absolute;right:16px;top:50%;transform:translateY(-50%);width:150px;height:80px;border:1px dashed #D0A96B;pointer-events:none;"></div>
+      <div style="position:absolute;right:16px;top:calc(50% - 108px);font-size:11px;color:#D0A96B;letter-spacing:.5px;">NEW — squad list</div>
+
+      <!-- ===== player plaque, bottom-centre (already built) ===== -->
+      <div style="position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:440px;max-width:34%;background:#241B16;border:2px solid #806343;box-shadow:0 6px 0 #2E231C;padding:8px 12px;">
+        <div style="display:flex;align-items:baseline;gap:10px;">
+          <span style="font-size:17px;color:#F4E6C6;">John Doe</span>
+          <span style="font-size:11px;color:#BD9862;">Level 1</span>
+        </div>
+        <div style="margin-top:4px;height:8px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:92%;background:#8F423D;"></div></div>
+        <div style="margin-top:2px;height:8px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:66%;background:#4E7A4A;"></div></div>
+        <div style="margin-top:2px;height:8px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:41%;background:#4A6690;"></div></div>
+      </div>
+
+      <!-- ===== action chat, bottom-left (already built) ===== -->
+      <div style="position:absolute;left:16px;bottom:16px;width:34%;background:rgba(36,27,22,.86);border:2px solid #806343;padding:8px 10px;font-size:13px;color:#E0D0AE;line-height:1.32;">
+        <div style="opacity:.45;">John Doe swings at Jane Doe 1 and receives 2 damage</div>
+        <div style="opacity:.7;">Jane Doe 1 blocks</div>
+        <div style="color:#D0A96B;">John Doe recruited Jane Doe 1</div>
+      </div>
+      <div style="position:absolute;left:16px;bottom:calc(16px + 108% * 0.30);font-size:11px;color:#D0A96B;"></div>
+      <div style="position:absolute;left:16px;top:calc(50% + 152px);font-size:11px;color:#D0A96B;letter-spacing:.5px;">NEW — chat line (same style, new verb)</div>
+
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:14px;">Solid lines are already in the game. Dashed brass boxes mark what would be new. The answer word floats like the damage numbers do — rises, fades, never blocks a click.</p>
+
+<h3 style="margin-top:26px;">How dressed should the list be?</h3>
+<p class="subtitle">Same three names either way. This is only about whether the list is bare text, text with a heading, or a proper wood panel.</p>
+
+<div class="options">
+  <div class="option" data-choice="bare" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Bare names</h3>
+      <div style="margin-top:8px;padding:10px 14px;background:#2b2a24;border:1px solid #6E5539;font-family:Georgia,serif;font-size:15px;color:#F4E6C6;line-height:1.5;">
+        John Doe<br>Jane Doe 1
+      </div>
+      <p style="margin-top:8px;">Nothing but names: no frame, no heading, no background. Cheapest thing that reads. Matches "not fancy".</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="heading" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Names with a heading</h3>
+      <div style="margin-top:8px;padding:10px 14px;background:#2b2a24;border:1px solid #6E5539;font-family:Georgia,serif;line-height:1.5;">
+        <div style="font-size:11px;letter-spacing:1.5px;color:#BD9862;">SQUAD</div>
+        <div style="font-size:15px;color:#F4E6C6;">John Doe<br>Jane Doe 1</div>
+      </div>
+      <p style="margin-top:8px;">Adds an uppercase muted-gold heading so a stranger knows what the column means. Still no panel.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="plaque" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Wood plaque</h3>
+      <div style="margin-top:8px;padding:10px 14px;background:#241B16;border:2px solid #806343;box-shadow:0 4px 0 #2E231C;font-family:Georgia,serif;line-height:1.5;">
+        <div style="font-size:11px;letter-spacing:1.5px;color:#BD9862;">SQUAD</div>
+        <div style="font-size:15px;color:#F4E6C6;">John Doe<br>Jane Doe 1</div>
+      </div>
+      <p style="margin-top:8px;">The same wood-and-brass family as the player plaque and the chat. Reads as a deliberate HUD, and stays legible over a bright sky.</p>
+    </div>
+  </div>
+</div>

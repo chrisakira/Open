@@ -1,0 +1,101 @@
+<h2>The panel when the squad is empty</h2>
+<p class="subtitle">A row means a member, and a dead member's row goes. The one reachable way to have nobody is your own death — so what sits on the wood then?</p>
+
+<div class="mockup">
+  <div class="mockup-header">First, the case you already decided: Jane dies</div>
+  <div class="mockup-body" style="padding:0">
+    <div style="display:flex;gap:0;width:100%;font-family:Georgia,'DejaVu Serif',serif;">
+
+      <div style="flex:1;padding:16px 12px;border-right:1px solid #6E5539;background:#2b2a24;text-align:center;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:12px;">her overhead plate, today</div>
+        <div style="display:inline-block;text-align:left;">
+          <div style="font-size:13px;color:#F4E6C6;">Jane Doe 1 &#9760;</div>
+          <div style="margin-top:3px;width:150px;padding:5px;background:rgba(36,27,22,.82);border:1px solid #6E5539;">
+            <div style="height:6px;background:#2E231C;border:1px solid #6E5539;"><div style="height:100%;width:0%;background:#8F423D;"></div></div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:10px;">death already has a place to be told: the skull on her own plate<br><span style="color:#9C886D;">(world_status.gd:136 — a corpse is drawn, not hidden)</span></div>
+      </div>
+
+      <div style="flex:1;padding:16px 12px;background:#2b2a24;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:12px;">the squad panel, same moment</div>
+        <div style="display:flex;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#F4E6C6;margin-top:4px;">John Doe</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:10px;">her line closes up; nothing explains it<br><span style="color:#9C886D;">(and you are alive, so there is always somebody under the heading)</span></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top:22px;">
+  <div class="mockup-header">Now the real question: you die with an empty squad — three drawings</div>
+  <div class="mockup-body" style="padding:0">
+    <div style="display:flex;gap:0;width:100%;font-family:Georgia,'DejaVu Serif',serif;">
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:12px;">Option A — always on, literally</div>
+        <div style="min-height:64px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:10px;">Heading over nothing. The panel behaves the way you told it to — always there, rows are members, there are no members. The wood is <em>not</em> claiming anybody.</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;border-right:1px solid #6E5539;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:12px;">Option B — silence when nobody</div>
+        <div style="min-height:64px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="font-size:12px;color:#6E5539;font-style:italic;">( nothing )</div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:10px;">The panel hides the one time the state has nobody in it, and returns for a fresh launch. "Always on" becomes "always on while somebody exists" — a second rule for one panel.</div>
+      </div>
+
+      <div style="flex:1;padding:14px 12px;background:#242220;">
+        <div style="font-size:11px;color:#9C886D;margin-bottom:12px;">Option C — say nobody</div>
+        <div style="min-height:64px;display:flex;align-items:center;justify-content:flex-end;">
+          <div style="background:#241B16;border:2px solid #806343;padding:8px 12px;box-shadow:0 4px 0 #2E231C;">
+            <div style="font-size:10px;letter-spacing:1.6px;color:#BD9862;">SQUAD</div>
+            <div style="font-size:15px;color:#6E5539;margin-top:4px;">&#8212;</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:#E0D0AE;margin-top:10px;">Heading plus an em dash where a name would go. It reads <em>empty on purpose</em> — but nothing else in the HUD ever announces a dead player, so this would be the first place the game says "you died".</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:22px;">Which drawing?</h3>
+
+<div class="options">
+  <div class="option" data-choice="empty-wood" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Heading over nothing</h3>
+      <p>Always on means always on: one rule, one shape, no branch about who is alive. The panel's meaning stays exactly "rows are members", and an empty panel is the honest picture of a squad of nobody. Cheapest thing that keeps the rule you already picked.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="hide" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Hide the panel</h3>
+      <p>No wood, no heading, right edge blank exactly once in the game — when you are dead and alone. Keeps the heading from sitting over a squad of nobody, but "always on" now has an exception, and a panel that can be absent is a panel you have to explain.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="dash" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Heading plus a dash</h3>
+      <p>The panel says the truth plainly: the squad is empty. Reads as designed rather than broken. But there is no locked player-death display — the plaque keeps no skull and the dead player gets no overhead plate at all — so this line would be your death notice before any death UI is designed.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:14px;">Nothing here is yours until you say it: no respawn, no death overlay, no "game over". Player death today is undisplayed anywhere — the squad panel would simply be one more thing that goes on working over a corpse.</p>
