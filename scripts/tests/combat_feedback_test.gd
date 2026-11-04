@@ -880,9 +880,10 @@ func _a_performed_swing_is_reported_once_to_every_view() -> void:
 		var lines := _chat_lines(chat)
 		_check(lines.size() == 2, "and the chat shows both swings, got %s" % str(lines))
 		if lines.size() == 2:
-			_check(String(lines[0]) == "Player attacks but Enemy dodges",
-					"the line names the dodge the event named: got [%s]" % String(lines[0]))
-			_check(String(lines[1]) == "Enemy attacks but Player dodges",
+			_check(String(lines[0]) == "John Doe attacks but John Doe 1 dodges",
+					"the line names the dodge the event named, in the names the sheets carry: got [%s]"
+							% String(lines[0]))
+			_check(String(lines[1]) == "John Doe 1 attacks but John Doe dodges",
 					"and the retaliation reads as truthfully: got [%s]" % String(lines[1]))
 	# An empty poll afterwards reports nothing, to anybody.
 	_tick(world, 0.05)
@@ -947,14 +948,15 @@ func _a_blow_that_lands_reaches_the_clip_the_number_and_the_line() -> void:
 	if lines.size() != 3:
 		await _free(world)
 		return
-	_check(String(lines[0]) == "Player attacks but Enemy dodges", "the answered swing reads true")
+	_check(String(lines[0]) == "John Doe attacks but John Doe 1 dodges",
+			"the answered swing reads true: got [%s]" % String(lines[0]))
 	# The number over the body and the number in the sentence are the same reported amount,
 	# formatted the same way: two views of one event, not two arithmetic.
 	var amount := String(labels[0].text)
-	_check(String(lines[1]) == "Friendly attacks Enemy and deals %s damage" % amount,
+	_check(String(lines[1]) == "Jane Doe 1 attacks John Doe 1 and deals %s damage" % amount,
 			"the line carries the very figure the label shows: [%s] against [%s]" % [
 					String(lines[1]), amount])
-	_check(String(lines[2]) == "Enemy attacks but Player dodges",
+	_check(String(lines[2]) == "John Doe 1 attacks but John Doe dodges",
 			"and the retaliation line names the player's own dodge")
 	await _free(world)
 
@@ -1050,13 +1052,13 @@ func _reports_of_every_shape_the_bridge_sends() -> void:
 	if lines.size() != 4:
 		await _free(world)
 		return
-	_check(String(lines[0]) == "Player attacks but Enemy blocks and receives 1.5 damage",
+	_check(String(lines[0]) == "John Doe attacks but John Doe 1 blocks and receives 1.5 damage",
 			"a block that let some through: got [%s]" % String(lines[0]))
-	_check(String(lines[1]) == "Player attacks but Enemy dodges",
+	_check(String(lines[1]) == "John Doe attacks but John Doe 1 dodges",
 			"a dodge that let none through: got [%s]" % String(lines[1]))
-	_check(String(lines[2]) == "Player attacks Enemy and deals 0.04 damage",
+	_check(String(lines[2]) == "John Doe attacks John Doe 1 and deals 0.04 damage",
 			"an unanswered chip keeps its decimals: got [%s]" % String(lines[2]))
-	_check(String(lines[3]) == "Player attacks Enemy and deals 2 damage",
+	_check(String(lines[3]) == "John Doe attacks John Doe 1 and deals 2 damage",
 			"a dictionary from before the field existed reads as no defence: got [%s]"
 			% String(lines[3]))
 	await _free(world)

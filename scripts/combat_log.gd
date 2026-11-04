@@ -14,6 +14,10 @@ extends Control
 # way. Nothing here can be clicked into an order, and no line fades on a timer.
 
 const CombatText := preload("res://scripts/combat_text.gd")
+# The name policy lives with the status views that share it: this chat reads the same rule the
+# plaque and the overhead plates read, so a character is not called one name on her plate and
+# another in the line about her.
+const Presenter := preload("res://scripts/status_presenter.gd")
 
 # docs/style.md: the main panel's dark warm brown, the muted-brass frame, and the warm parchment
 # body text. The panel is translucent so the fight it describes stays visible behind it, and the
@@ -86,6 +90,22 @@ func append_swing(event: Dictionary) -> void:
 	_layout()
 
 
+# One answered recruit order, one line. The event comes from the node that issued the ask and it
+# carries what C++ said (`accepted` is the answer, not a guess): this control adds no third
+# sentence to the two the answer can have, and it never writes into a sheet. A join that was
+# ordered away, attacked instead, or lost its target never reaches here at all - the reporter only
+# reports answers, and a broken ask is not one.
+func append_recruit(event: Dictionary) -> void:
+	_build()
+	var recruiter := _name_of(int(event.get("actor_id", 0)))
+	var asked := _name_of(int(event.get("target_id", 0)))
+	_entries.append(_recruit_sentence(recruiter, asked, bool(event.get("accepted", false))))
+	while _entries.size() > MAX_ENTRIES:
+		_entries.remove_at(0)
+	_rebuild()
+	_layout()
+
+
 # --- the sentences -------------------------------------------------------------
 
 # The four locked shapes, each of them half of a pair the numbers cannot tell apart. The verb is
@@ -107,9 +127,21 @@ func _sentence(attacker: String, target: String, defense: String, damage: float)
 			return "%s attacks %s" % [attacker, target]
 
 
-# Scene names, never sheet names: an empty sheet name is not a thing to read aloud, and the
-# world's node names are what the player is looking at. An id the world cannot answer - unknown,
-# or freed since - prints its id rather than borrowing somebody else's name.
+# The two sentences a recruit order can produce, and the only two. A yes says the recruiter did
+# what a yes means; a no says the ask happened and the answer was no, in a voice that does not
+# dress it up as a join that failed to land. Both say who was involved, and neither says anything
+# about the flag, the faction or the squad: C++ wrote those, and a line here is about what was
+# heard.
+func _recruit_sentence(recruiter: String, asked: String, accepted: bool) -> String:
+	if accepted:
+		return "%s recruited %s" % [recruiter, asked]
+	return "%s failed to recruit %s" % [recruiter, asked]
+
+
+# The sheet's own name, with the scene node name underneath it as the fallback: the one rule
+# the plaque, the overhead plates and the popups already read through `display_name`, so one
+# character is one name across the whole HUD instead of two. An id the world cannot answer -
+# unknown, or freed since - prints its id rather than borrowing somebody else's name.
 func _name_of(actor_id: int) -> String:
 	for actor in _actors:
 		if not is_instance_valid(actor):
@@ -118,7 +150,7 @@ func _name_of(actor_id: int) -> String:
 		if sheet == null or not sheet.is_configured():
 			continue
 		if int(sheet.get_character_id()) == actor_id:
-			return String(actor.name)
+			return Presenter.display_name(String(sheet.get_character_name()), String(actor.name))
 	return "Character %d" % actor_id
 
 

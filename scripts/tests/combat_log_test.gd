@@ -61,7 +61,7 @@ func _log():
 	if control == null:
 		_check(false, "the action chat instantiates")
 		return null
-	for method in ["bind_actors", "append_swing"]:
+	for method in ["bind_actors", "append_swing", "append_recruit"]:
 		_check(control.has_method(method), "the action chat offers %s()" % method)
 	if not control.has_method("append_swing"):
 		return null
@@ -70,11 +70,20 @@ func _log():
 
 func _actor(node_name: String, id: int) -> StandingDummy:
 	# A real actor node type, with a real configured sheet behind it. The sheet is left
-	# unnamed on purpose: the chat prints scene names, and an empty sheet name is the case
-	# that would expose a listener reading the sheet instead.
+	# unnamed on purpose: the chat's fallback is the scene node name, and the node names in
+	# these fixtures are what the sentences print while the sheet has no name of its own.
 	var actor := StandingDummy.new()
 	actor.name = node_name
 	actor.setup(0, 1, id, id * 7 + 1)
+	return actor
+
+
+func _named_actor(node_name: String, sheet_name: String, id: int) -> StandingDummy:
+	# The same actor with a name written on its sheet: the chat reads the sheet name and
+	# keeps the node name underneath it, exactly the rule the plaque and the overheads use.
+	var actor := StandingDummy.new()
+	actor.name = node_name
+	actor.setup(0, 1, id, id * 7 + 1, sheet_name)
 	return actor
 
 
@@ -220,7 +229,7 @@ func _a_zero_without_a_defence_refuses_to_invent_one() -> void:
 	log.free()
 
 
-func _names_come_from_the_scene_and_stay_plain_text() -> void:
+func _names_come_from_the_sheet_and_stay_plain_text() -> void:
 	var log = _log()
 	if log == null:
 		return
@@ -232,32 +241,89 @@ func _names_come_from_the_scene_and_stay_plain_text() -> void:
 	_check(lines.size() == 1, "one swing, one line")
 	if lines.size() == 1:
 		_check(String(lines[0]) == "Player attacks Friendly and deals 1 damage",
-				"the actors are the node names, never the empty sheet names: got [%s]"
+				"a sheet with no name of its own prints the scene node name: got [%s]"
 				% String(lines[0]))
+	# A sheet that does have a name prints its own name, and the node name stays underneath it
+	# as the fallback: the same rule the plaque and the overhead plates follow, so one
+	# character is one name across the whole HUD instead of two.
+	var named := _named_actor("Friendly", "Jane Doe 1", 4)
+	log.bind_actors([player, named])
+	log.append_swing(_event(4, 1, "none", 2.0))
+	lines = _lines_of(log)
+	if lines.size() == 2:
+		_check(String(lines[1]) == "Jane Doe 1 attacks Player and deals 2 damage",
+				"a named sheet is named, not the node it stands on: got [%s]" % String(lines[1]))
+	named.free()
 	# An id nobody in the world owns, and an id whose actor has been freed: both print the
 	# id rather than borrowing another character's name.
 	var doomed := _actor("Doomed", 3)
-	log.bind_actors([player, ally, doomed])
+	log.bind_actors([player, doomed])
 	doomed.free()
 	log.append_swing(_event(3, 999, "none", 0.0))
 	lines = _lines_of(log)
-	if lines.size() == 2:
-		_check(String(lines[1]) == "Character 3 attacks Character 999",
-				"a freed attacker and an unknown target print their ids: got [%s]" % String(lines[1]))
+	if lines.size() == 3:
+		_check(String(lines[2]) == "Character 3 attacks Character 999",
+				"a freed attacker and an unknown target print their ids: got [%s]"
+				% String(lines[2]))
 	# A name that spells markup stays markup-free text. (A node name cannot hold a "/", so the
 	# tag is written the way a scene really would.)
 	var tricky := _actor("[b]Bold", 4)
 	log.bind_actors([player, tricky])
 	log.append_swing(_event(4, 1, "dodge", 0.0))
 	lines = _lines_of(log)
-	if lines.size() == 3:
-		_check(String(lines[2]) == "[b]Bold attacks but Player dodges",
-				"BBCode-looking names are printed literally: got [%s]" % String(lines[2]))
+	if lines.size() == 4:
+		_check(String(lines[3]) == "[b]Bold attacks but Player dodges",
+				"BBCode-looking names are printed literally: got [%s]" % String(lines[3]))
 	_check(log.find_children("*", "RichTextLabel", true, false).is_empty(),
 			"and the chat has no rich-text surface that could read them as markup")
 	player.free()
 	ally.free()
 	tricky.free()
+	log.free()
+
+
+func _the_recruit_answer_is_one_true_line() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var asker := _named_actor("Player", "John Doe", 1)
+	var asked := _named_actor("Friendly", "Jane Doe 1", 2)
+	log.bind_actors([asker, asked])
+	if not log.has_method("append_recruit"):
+		asker.free()
+		asked.free()
+		log.free()
+		return
+	# A join says who recruited whom, in the chat's own plain voice.
+	log.append_recruit({"actor_id": 1, "target_id": 2, "accepted": true})
+	var lines := _lines_of(log)
+	_check(lines.size() == 1, "one answer is one line")
+	if lines.size() == 1:
+		_check(String(lines[0]) == "John Doe recruited Jane Doe 1",
+				"the join line reads:\n  want [John Doe recruited Jane Doe 1]\n  got  [%s]"
+				% String(lines[0]))
+	# A refusal is its own sentence: the ask happened, the answer was no, and the line says
+	# that rather than dressing it up as a join that did not land.
+	log.append_recruit({"actor_id": 1, "target_id": 2, "accepted": false})
+	lines = _lines_of(log)
+	_check(lines.size() == 2, "two answers are two lines")
+	if lines.size() == 2:
+		_check(String(lines[1]) == "John Doe failed to recruit Jane Doe 1",
+				"the refusal reads:\n  want [John Doe failed to recruit Jane Doe 1]\n  got  [%s]"
+				% String(lines[1]))
+	_check(not String(lines[1]).contains("recruited Jane"),
+			"a refusal never says somebody was recruited: got [%s]" % String(lines[1]))
+	# An unknown id prints its id, the way the swing lines do.
+	log.append_recruit({"actor_id": 1, "target_id": 999, "accepted": true})
+	lines = _lines_of(log)
+	if lines.size() == 3:
+		_check(String(lines[2]) == "John Doe recruited Character 999",
+				"an id the world cannot answer prints the id: got [%s]" % String(lines[2]))
+	# And an answer leaves the sheets alone: it is a report about what C++ did, not a second
+	# way to do anything.
+	_uncheck_actors(asker, asked)
+	asker.free()
+	asked.free()
 	log.free()
 
 
@@ -343,7 +409,9 @@ func _the_chat_keeps_the_last_eight_lines() -> void:
 			% MAX_LINES)
 	_check(after.size() == before, "and one more swing is one more entry than a drop, not %d lines"
 			% (before + 2))
-	_check(String(after[after.size() - 1]).contains("but " + "B".repeat(40) + " blocks"),
+	# A name long enough to overflow is truncated by the same rule the plates use - nineteen
+	# characters and an ellipsis - and even so a wrap is one entry, not several.
+	_check(String(after[after.size() - 1]).contains("but " + "B".repeat(19) + "… blocks"),
 			"the newest wrapped entry is the one at the bottom: got [%s]"
 			% String(after[after.size() - 1]))
 	# Nothing about a line disappears on a timer.
@@ -581,7 +649,8 @@ func _run() -> void:
 	await _case("the six sentences", 12, _every_outcome_is_one_true_sentence)
 	await _case("a defence worth nothing", 7, _a_defence_worth_nothing_is_still_named)
 	await _case("a zero without a defence", 7, _a_zero_without_a_defence_refuses_to_invent_one)
-	await _case("names from the scene", 5, _names_come_from_the_scene_and_stay_plain_text)
+	await _case("names from the sheet", 9, _names_come_from_the_sheet_and_stay_plain_text)
+	await _case("the recruit answer", 11, _the_recruit_answer_is_one_true_line)
 	await _case("the shared amount", 25, _the_amount_is_the_number_the_float_prints)
 	await _case("the last eight lines", 9, _the_chat_keeps_the_last_eight_lines)
 	await _case("click-through and bounds", 45,
@@ -593,7 +662,7 @@ func _run() -> void:
 	await _case("no second drain", 12, _the_chat_holds_no_second_drain_of_its_own)
 	await _case("an event comes through untouched", 4, _a_reported_event_comes_through_untouched)
 
-	_check(checks > 170, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 180, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Combat log: all checks passed")
 	quit(1 if failures else 0)
