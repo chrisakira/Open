@@ -188,8 +188,8 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("is_in_squad"), &OpenCharacter::is_in_squad);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_recruit_target_id"),
 							   &OpenCharacter::get_recruit_target_id);
-	godot::ClassDB::bind_method(godot::D_METHOD("get_answered_to_id"),
-							   &OpenCharacter::get_answered_to_id);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_recruit_answer"),
+							   &OpenCharacter::get_recruit_answer);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_equipment_snapshot"),
 							   &OpenCharacter::get_equipment_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_weapon_snapshot", "item_id"),
@@ -560,15 +560,26 @@ int64_t OpenCharacter::get_recruit_target_id() const {
 	return target.has_value() ? static_cast<int64_t>(*target) : 0;
 }
 
-int64_t OpenCharacter::get_answered_to_id() const {
+godot::Dictionary OpenCharacter::get_recruit_answer() const {
 	const open::Character *c = sheet();
 	if (c == nullptr) {
-		return 0;
+		return godot::Dictionary();
 	}
-	// 0 is "nobody has been answered to", never a real sheet id: Character::create
-	// refuses id 0, so an absent answer and an id can never wear the same face here.
 	const std::optional<std::uint64_t> answered = c->answered_to();
-	return answered.has_value() ? static_cast<int64_t>(*answered) : 0;
+	const std::optional<bool> accepted = c->answered_accepted();
+	if (!answered.has_value() || !accepted.has_value()) {
+		// Nobody was answered at all. The two halves of the stamp arrive together in C++, so
+		// there is nothing here for a half to be: a Dictionary that carried an id and no
+		// yes-or-no, or the other way around, would be a report a caller could misread as an
+		// answer. Absence is the whole and only honest answer.
+		return godot::Dictionary();
+	}
+	godot::Dictionary stamp;
+	// Ids keep their full 64-bit width, and `accepted` is the sheet's own answer, never a
+	// display's guess: a refusal says no, it does not stay silent about what it said.
+	stamp["asker_id"] = static_cast<int64_t>(*answered);
+	stamp["accepted"] = static_cast<bool>(*accepted);
+	return stamp;
 }
 
 bool OpenCharacter::apply_damage(int64_t part_id, float amount) {

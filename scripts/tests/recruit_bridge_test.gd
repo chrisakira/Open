@@ -105,11 +105,18 @@ func _found_squad(combat, actor_id: int) -> bool:
 	return bool(combat.call("found_squad", actor_id))
 
 
-# Whose ask this sheet answered, or 0 when nobody has answered to anyone yet.
-func _answered_to_of(sheet: OpenCharacter) -> int:
-	if not _method_on(sheet, "get_answered_to_id", "the sheet bridge"):
-		return -1
-	return int(sheet.call("get_answered_to_id"))
+# The whole stamp at once: whose ask this sheet answered and what it said. An empty Dictionary is
+# "nobody has been answered at all", never a refusal - which is exactly why the two halves come
+# together and not as a bool that a caller could read before asking whether there was an answer.
+func _answer_of(sheet: OpenCharacter) -> Dictionary:
+	if not _method_on(sheet, "get_recruit_answer", "the sheet bridge"):
+		_check(false, "the sheet bridge exposes get_recruit_answer")
+		return {}
+	var stamp = sheet.call("get_recruit_answer")
+	if not (stamp is Dictionary):
+		_check(false, "the recruit answer comes back as a Dictionary")
+		return {}
+	return stamp as Dictionary
 
 
 func _issue_recruit(combat, actor_id: int, target_id: int) -> bool:
@@ -148,6 +155,10 @@ func _safe_defaults() -> void:
 	_check(_recruit_condition_of(sheet) == ALWAYS_FAIL, "a refused int left the condition alone")
 	_check(not _in_squad_of(sheet), "and no reader ever said it joined")
 
+	# An answer stamps two halves together - whose ask it answered, and what it said - so a
+	# sheet nobody answered says so by carrying neither.
+	_check(_answer_of(bare).is_empty(), "an unconfigured sheet is unanswered")
+	_check(_answer_of(sheet).is_empty(), "a fresh sheet is unanswered too")
 	_check(sheet.apply_damage(1, 200.0), "the sheet can be killed through the bridge")
 	_check(not sheet.is_alive(), "dead")
 	_check(not _set_recruitable(sheet, false), "a corpse is unasked and stays so")
@@ -257,12 +268,12 @@ func _the_founder_is_seated_and_no_answer_is_stamped() -> void:
 	_check(_set_recruitable(founder, true), "the founder is askable, as any sheet may be")
 	_check(_set_recruit_condition(founder, ALWAYS_SUCCEED), "and it carries the condition it was given")
 	_check(not _in_squad_of(founder), "a fresh sheet is nobody's founder yet")
-	_check(_answered_to_of(founder) == 0, "and it has answered to nobody")
+	_check(_answer_of(founder).is_empty(), "and it has answered to nobody")
 
 	_check(_found_squad(combat, 1), "the coordinator seats its founder")
 	_check(_in_squad_of(founder), "the founder is in the squad")
 	_check(not _in_squad_of(other), "and only the founder is")
-	_check(_answered_to_of(founder) == 0, "a seat is not an answer, so nobody was answered to")
+	_check(_answer_of(founder).is_empty(), "a seat is not an answer, so nobody was answered to")
 	_check(founder.get_faction() == 1, "the seat keeps the faction it was configured with")
 	_check(_recruitable_of(founder), "and the seat keeps the flag it was configured with")
 	_check(_recruit_condition_of(founder) == ALWAYS_SUCCEED, "and it keeps the condition it was given")
@@ -290,17 +301,19 @@ func _an_answer_remembers_who_it_was_answered_to() -> void:
 	_check(combat.add_character(recruiter, Vector3.ZERO), "the recruiter registers")
 	_check(combat.add_character(yes, Vector3(1.0, 0.0, 0.0)), "the yes registers in reach")
 	_check(combat.add_character(no, Vector3(0.0, 0.0, 1.0)), "the no registers in reach too")
-	_check(_answered_to_of(yes) == 0, "nobody has been answered to before the ask")
+	_check(_answer_of(yes).is_empty(), "nobody has been answered to before the ask")
 
 	_check(_issue_recruit(combat, 1, 2), "the yes is asked in reach")
 	_check(combat.step(0.01), "a frame answers it")
 	_check(_in_squad_of(yes), "it joined")
-	_check(_answered_to_of(yes) == 1, "and its answer belongs to the recruiter who asked it")
+	_check(_answer_of(yes) == {"asker_id": 1, "accepted": true},
+			"the yes says which ask it answered and what it said: got %s" % str(_answer_of(yes)))
 
 	_check(_issue_recruit(combat, 1, 3), "the no is asked in reach")
 	_check(combat.step(0.01), "a frame answers that too")
 	_check(not _in_squad_of(no), "it refused, so nobody joined")
-	_check(_answered_to_of(no) == 1, "and a refusal is still an answer to somebody")
+	_check(_answer_of(no) == {"asker_id": 1, "accepted": false},
+			"a refusal is still an answer somebody gave, and says so: got %s" % str(_answer_of(no)))
 	_check(not _recruitable_of(no), "a refusal spends the flag")
 
 	_check(not _in_squad_of(recruiter), "and no answer seated the recruiter who asked")
