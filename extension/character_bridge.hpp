@@ -98,6 +98,11 @@ public:
 	// no ask is not asking a character whose id is 0. The order itself stays C++'s.
 	int64_t get_recruit_target_id() const;
 
+	// Whose ask this sheet answered, or 0 when it has answered to nobody. A refusal stamps
+	// too, so a 0 means the sheet was never answered at all, not that it was answered
+	// "no": whether anyone joined stays the separate question `is_in_squad` answers.
+	int64_t get_answered_to_id() const;
+
 	// --- equipment (Task 14a) -------------------------------------------------
 	//
 	// The equipment popup's two reads and two commands. Nothing here decides where an

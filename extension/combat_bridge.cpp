@@ -100,6 +100,8 @@ void OpenCombat::_bind_methods() {
 							   &OpenCombat::issue_attack);
 	godot::ClassDB::bind_method(godot::D_METHOD("issue_recruit", "actor_id", "target_id"),
 							   &OpenCombat::issue_recruit);
+	godot::ClassDB::bind_method(godot::D_METHOD("found_squad", "actor_id"),
+							   &OpenCombat::found_squad);
 	godot::ClassDB::bind_method(godot::D_METHOD("step", "seconds"), &OpenCombat::step);
 	godot::ClassDB::bind_method(godot::D_METHOD("is_in_combat", "id"), &OpenCombat::is_in_combat);
 	godot::ClassDB::bind_method(godot::D_METHOD("velocity_at", "id"), &OpenCombat::velocity_at);
@@ -247,6 +249,20 @@ bool OpenCombat::issue_recruit(int64_t actor_id, int64_t target_id) {
 	// boundary asks for.
 	return session_.issue_recruit(roster, static_cast<std::uint64_t>(actor_id),
 								  static_cast<std::uint64_t>(target_id));
+}
+
+bool OpenCombat::found_squad(int64_t actor_id) {
+	if (!usable_id(actor_id)) {
+		return false;
+	}
+	std::vector<open::Combatant> roster;
+	if (!build_roster(roster)) {
+		return false;
+	}
+	// The seat is C++'s decision and C++'s write: this door forwards the id and adds no
+	// rule of its own. A founder that is already a member keeps that one seat, and a
+	// corpse is refused by the sheet itself rather than by anything kept here.
+	return session_.found_squad(roster, static_cast<std::uint64_t>(actor_id));
 }
 
 bool OpenCombat::step(float seconds) {

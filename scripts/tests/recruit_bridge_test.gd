@@ -98,6 +98,20 @@ func _recruit_target_of(sheet: OpenCharacter) -> int:
 	return int(sheet.call("get_recruit_target_id"))
 
 
+# The one door the scene has to its own squad: seat the founder.
+func _found_squad(combat, actor_id: int) -> bool:
+	if not _method_on(combat, "found_squad", "the coordinator"):
+		return false
+	return bool(combat.call("found_squad", actor_id))
+
+
+# Whose ask this sheet answered, or 0 when nobody has answered to anyone yet.
+func _answered_to_of(sheet: OpenCharacter) -> int:
+	if not _method_on(sheet, "get_answered_to_id", "the sheet bridge"):
+		return -1
+	return int(sheet.call("get_answered_to_id"))
+
+
 func _issue_recruit(combat, actor_id: int, target_id: int) -> bool:
 	if not _method_on(combat, "issue_recruit", "the coordinator"):
 		return false
@@ -234,9 +248,69 @@ func _asks_that_are_not_asks() -> void:
 	_check(not _issue_recruit(combat, 1, 2), "a sheet without the flag is not askable")
 
 
+func _the_founder_is_seated_and_no_answer_is_stamped() -> void:
+	var combat = _combat()
+	var founder := _sheet(1, "Founder", 1)
+	var other := _sheet(2, "Other")
+	_check(combat.add_character(founder, Vector3.ZERO), "the founder registers")
+	_check(combat.add_character(other, Vector3(1.0, 0.0, 0.0)), "a second sheet registers")
+	_check(_set_recruitable(founder, true), "the founder is askable, as any sheet may be")
+	_check(_set_recruit_condition(founder, ALWAYS_SUCCEED), "and it carries the condition it was given")
+	_check(not _in_squad_of(founder), "a fresh sheet is nobody's founder yet")
+	_check(_answered_to_of(founder) == 0, "and it has answered to nobody")
+
+	_check(_found_squad(combat, 1), "the coordinator seats its founder")
+	_check(_in_squad_of(founder), "the founder is in the squad")
+	_check(not _in_squad_of(other), "and only the founder is")
+	_check(_answered_to_of(founder) == 0, "a seat is not an answer, so nobody was answered to")
+	_check(founder.get_faction() == 1, "the seat keeps the faction it was configured with")
+	_check(_recruitable_of(founder), "and the seat keeps the flag it was configured with")
+	_check(_recruit_condition_of(founder) == ALWAYS_SUCCEED, "and it keeps the condition it was given")
+
+	_check(_found_squad(combat, 1), "founding the seated founder again is accepted")
+	_check(_in_squad_of(founder), "and it is still the one seat")
+
+	_check(not _found_squad(combat, 99), "an absent id is not seated")
+	_check(not _found_squad(combat, 0), "a zero id is not seated")
+	_check(not _found_squad(combat, -1), "a negative id is not seated")
+	_check(other.apply_damage(1, 200.0), "the second sheet dies")
+	_check(not _found_squad(combat, 2), "a corpse is nobody's founder")
+	_check(not _in_squad_of(other), "and refusing to seat a corpse seated nobody")
+
+
+func _an_answer_remembers_who_it_was_answered_to() -> void:
+	var combat = _combat()
+	var recruiter := _sheet(1, "Recruiter")
+	var yes := _sheet(2, "Yes")
+	var no := _sheet(3, "No")
+	_check(_set_recruitable(yes, true), "the first sheet is askable")
+	_check(_set_recruit_condition(yes, ALWAYS_SUCCEED), "and it says yes")
+	_check(_set_recruitable(no, true), "the second sheet is askable")
+	_check(_set_recruit_condition(no, ALWAYS_FAIL), "and it says no")
+	_check(combat.add_character(recruiter, Vector3.ZERO), "the recruiter registers")
+	_check(combat.add_character(yes, Vector3(1.0, 0.0, 0.0)), "the yes registers in reach")
+	_check(combat.add_character(no, Vector3(0.0, 0.0, 1.0)), "the no registers in reach too")
+	_check(_answered_to_of(yes) == 0, "nobody has been answered to before the ask")
+
+	_check(_issue_recruit(combat, 1, 2), "the yes is asked in reach")
+	_check(combat.step(0.01), "a frame answers it")
+	_check(_in_squad_of(yes), "it joined")
+	_check(_answered_to_of(yes) == 1, "and its answer belongs to the recruiter who asked it")
+
+	_check(_issue_recruit(combat, 1, 3), "the no is asked in reach")
+	_check(combat.step(0.01), "a frame answers that too")
+	_check(not _in_squad_of(no), "it refused, so nobody joined")
+	_check(_answered_to_of(no) == 1, "and a refusal is still an answer to somebody")
+	_check(not _recruitable_of(no), "a refusal spends the flag")
+
+	_check(not _in_squad_of(recruiter), "and no answer seated the recruiter who asked")
+
+
 func _run() -> void:
 	_safe_defaults()
 	_no_door_forwards_to_membership_or_faction()
+	_the_founder_is_seated_and_no_answer_is_stamped()
+	_an_answer_remembers_who_it_was_answered_to()
 	_far_ask_walks_and_the_close_one_answers()
 	_asks_that_are_not_asks()
 

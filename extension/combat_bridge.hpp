@@ -50,6 +50,12 @@ public:
 	// sheet at both ends, a dead actor or a dead target, or a target without the
 	// recruitable flag - and never by an exception.
 	bool issue_recruit(int64_t actor_id, int64_t target_id);
+
+	// Seats the scene's founder, once, and forwards nothing else: C++ decides whether the
+	// seat is possible and what it writes (membership, and only membership). The scene
+	// cannot seat anybody through any other door, because there is no other door: the
+	// sheet bridge has no `set_in_squad` and no `set_faction` either.
+	bool found_squad(int64_t actor_id);
 	bool step(float seconds);
 	bool is_in_combat(int64_t id) const;
 	godot::Vector3 velocity_at(int64_t id) const;

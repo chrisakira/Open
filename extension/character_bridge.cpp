@@ -188,6 +188,8 @@ void OpenCharacter::_bind_methods() {
 	godot::ClassDB::bind_method(godot::D_METHOD("is_in_squad"), &OpenCharacter::is_in_squad);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_recruit_target_id"),
 							   &OpenCharacter::get_recruit_target_id);
+	godot::ClassDB::bind_method(godot::D_METHOD("get_answered_to_id"),
+							   &OpenCharacter::get_answered_to_id);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_equipment_snapshot"),
 							   &OpenCharacter::get_equipment_snapshot);
 	godot::ClassDB::bind_method(godot::D_METHOD("get_weapon_snapshot", "item_id"),
@@ -556,6 +558,17 @@ int64_t OpenCharacter::get_recruit_target_id() const {
 	}
 	const std::optional<std::uint64_t> target = c->recruit_target();
 	return target.has_value() ? static_cast<int64_t>(*target) : 0;
+}
+
+int64_t OpenCharacter::get_answered_to_id() const {
+	const open::Character *c = sheet();
+	if (c == nullptr) {
+		return 0;
+	}
+	// 0 is "nobody has been answered to", never a real sheet id: Character::create
+	// refuses id 0, so an absent answer and an id can never wear the same face here.
+	const std::optional<std::uint64_t> answered = c->answered_to();
+	return answered.has_value() ? static_cast<int64_t>(*answered) : 0;
 }
 
 bool OpenCharacter::apply_damage(int64_t part_id, float amount) {
