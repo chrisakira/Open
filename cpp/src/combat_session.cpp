@@ -345,12 +345,27 @@ bool CombatSession::step_core(float seconds, std::span<const Combatant> actors,
 			// Roster order is untouched: a victim asked later returns the blow inside
 			// this step, a victim asked earlier does it in the next.
 			//
-			// One exception, and it is the recruiter's: a sheet that was walking to ask
-			// somebody does not take this blow as its own attack order. The ask ends, and
-			// nothing else begins - no order, no fight, and no answer written on the sheet
-			// it was walking to (docs/recruiting.md "Hit while recruiting"). Everything
-			// else about the provocation stands as `combat.md` says.
-			if (target->character->recruit_target().has_value()) {
+			// One exception, and it is the recruiter's: a sheet still carrying out its
+			// ask - walking toward someone, or standing in range of them - does not take
+			// this blow as its own attack order. The ask ends, and nothing else begins:
+			// no order, no fight, and no answer written on the sheet it was walking to
+			// (docs/recruiting.md "Hit while recruiting", which names exactly these two
+			// live states). Everything else about the provocation stands as `combat.md`
+			// says.
+			//
+			// An ask that has already gone stale is not the same situation, and the rule
+			// does not stretch to cover it. The locked "Target dies while recruiting" ends
+			// that order with no answer, and the locked "Hit while recruiting" is about
+			// someone who was still asking: a sheet whose target died under an earlier
+			// swing in this very frame is not asking anybody, and reconciliation drops its
+			// order this frame regardless of the blow. Swallowing the retaliation there
+			// would leave a hit character standing with no order at all, which is the one
+			// outcome no paragraph here asked for. So the exception reads the same
+			// liveness the reconciliation and the attempt read, and a victim holding an
+			// ask nobody can honour is answered by the ordinary rule below.
+			const bool recruiting = target->character->recruit_target().has_value() &&
+									recruit_order_is_live(*target, actors);
+			if (recruiting) {
 				target->character->clear_recruit_order();
 			} else if (!target->character->attack_target().has_value()) {
 				target->character->set_attack_target(actor.character->id());

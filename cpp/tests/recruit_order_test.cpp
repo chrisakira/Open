@@ -117,6 +117,34 @@ struct Membership {
 	}
 };
 
+// What one rank-1 unarmed blow costs a sheet that cannot answer it, and what the same
+// blow costs when the sheet turns it aside: the same numbers `combat_session_test`
+// pins, written here as the size of the drain below.
+constexpr float kWholeBlow = 8.0f * (1.0f / 200.0f) / 1.05f;
+
+// Brings main HP just below one whole rank-1 blow while every part stays alive, so the
+// next swing - whichever part it draws - is the one that ends the sheet.
+void drain_main_below_one_whole_hit(open::Character &victim) {
+	const open::BodyPart spare[] = {open::BodyPart::LeftArm, open::BodyPart::RightArm,
+									 open::BodyPart::LeftLeg, open::BodyPart::RightLeg,
+									 open::BodyPart::Head};
+	for (const open::BodyPart part : spare) {
+		const float need = victim.pool(open::PoolKind::Hp).current - 0.015f;
+		if (need <= 0.0f) {
+			break;
+		}
+		const float room = victim.body_part(part).current - (kWholeBlow + 0.02f);
+		if (room <= 0.0f) {
+			continue;
+		}
+		expect_true("main HP is worn down", victim.damage(part, room < need ? room : need));
+	}
+	expect_true("the drained sheet is still alive", victim.alive());
+	expect_true("and main HP is left below one whole blow",
+				victim.pool(open::PoolKind::Hp).current > 0.0f &&
+					victim.pool(open::PoolKind::Hp).current < kWholeBlow);
+}
+
 // A fresh level-1 sheet starts with every pool full: the reading an attempt must not
 // move, because a recruit spends nothing.
 open::Character full_pools(std::uint64_t id) {
@@ -476,6 +504,39 @@ int main() {
 		expect_true("a step runs", control.step(0.1f, plain));
 		expect_true("the bystander takes the attacker as its order",
 					is_target(bystander.attack_target(), 5));
+	}
+	{
+		// a_dead_ask_does_not_swallow_the_retaliation: an ask that cannot be honoured is
+		// not something to stop for. When the sheet it was pointed at dies under an
+		// earlier swing in this same frame, the character walking it is just another
+		// unordered sheet when the next blow lands, and takes that blow as its order.
+		open::Character killer = make_character(1, open::Faction::Enemy);
+		open::Character hitter = make_character(3, open::Faction::Enemy);
+		open::Character recruiter = make_character(2);
+		open::Character asked = jane(4);
+		exhaust_defence(asked);
+		drain_main_below_one_whole_hit(asked);
+		const std::vector<open::Combatant> world =
+			roster({{&killer, at(100.0f, 0.0f, 1.0f)},
+					{&hitter, at(0.0f, 0.0f, 1.0f)},
+					{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&asked, at(100.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(109);
+		expect_true("Jane is asked from far away", session.issue_recruit(world, 2, 4));
+		expect_true("the ask is live while its sheet stands",
+					recruiter.recruit_target().has_value());
+		expect_true("one attacker is ordered at Jane", session.issue_attack(world, 1, 4));
+		expect_true("and another at the recruiter", session.issue_attack(world, 3, 2));
+
+		expect_true("one step runs", session.step(0.1f, world));
+		const std::vector<open::CombatEvent> swung = session.take_swing_events();
+		expect_true("the earlier swing was Jane's",
+					swung.size() >= 1 && swung[0].actor == 1 && swung[0].target == 4);
+		expect_true("and Jane died under it", !asked.alive());
+		expect_true("the recruiter's ask went with its target",
+					!recruiter.recruit_target().has_value());
+		expect_true("and the recruiter took the blow as its order anyway",
+					is_target(recruiter.attack_target(), 3));
 	}
 	{
 		// death_removes_from_squad: a member leaves the squad when they die, and
