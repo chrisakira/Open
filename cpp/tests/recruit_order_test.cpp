@@ -145,17 +145,39 @@ void drain_main_below_one_whole_hit(open::Character &victim) {
 					victim.pool(open::PoolKind::Hp).current < kWholeBlow);
 }
 
-// A fresh level-1 sheet starts with every pool full: the reading an attempt must not
-// move, because a recruit spends nothing.
-open::Character full_pools(std::uint64_t id) {
-	return make_character(id);
+// Takes both spendable bars off a sheet by the amounts `combat_session_test` drains by,
+// so the regrowth a step gives back is a visible rise rather than a touch-up at the cap:
+// a pool that starts full hides any spend, and an ask that quietly cost stamina would
+// look exactly like one that did not.
+void drain_bars(open::Character &who) {
+	expect_true("stamina is spent", who.spend(open::ResourceUse::Sprint, 1.0f));
+	expect_true("mana is spent", who.spend(open::ResourceUse::Spell));
+	expect_close("the bar starts below full", who.pool(open::PoolKind::Stamina).current, 90.0f);
+	expect_close("and so does mana", who.pool(open::PoolKind::Mana).current, 80.0f);
 }
 
-bool same_pools(const open::Character &before, const open::Character &who) {
-	return close(who.pool(open::PoolKind::Stamina).current,
-				 before.pool(open::PoolKind::Stamina).current) &&
-		   close(who.pool(open::PoolKind::Mana).current, before.pool(open::PoolKind::Mana).current);
-}
+// What the two bars said before the ask answered. `vitals.cpp` refills an idle sheet at
+// 10 stamina and 4 mana a second, and no recruit order puts anyone in combat, so the
+// reading after a tenth of a second is exactly this much higher: a join that spent a
+// bar shows up as a shorter rise, which is the whole content of "an ask costs nothing".
+struct PoolReading {
+	float stamina = 0.0f;
+	float mana = 0.0f;
+
+	static PoolReading taken_of(const open::Character &who) {
+		return PoolReading{who.pool(open::PoolKind::Stamina).current,
+						   who.pool(open::PoolKind::Mana).current};
+	}
+
+	bool grew_the_whole_regrowth(const char *name, const open::Character &who) const {
+		const float got_stamina = who.pool(open::PoolKind::Stamina).current - stamina;
+		const float got_mana = who.pool(open::PoolKind::Mana).current - mana;
+		const bool same = close(got_stamina, 1.0f, 0.001f) && close(got_mana, 0.4f, 0.001f);
+		expect_true(name, same);
+		return same;
+	}
+};
+
 
 // An attacker whose bare hands fill a stagger meter in a few blows rather than a few
 // hundred: the rank the combat-session fixtures already train for the same reason, and
@@ -350,8 +372,10 @@ int main() {
 			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)}, {&asked, at(1.0f, 0.0f, 0.0f)}});
 		open::CombatSession session(47);
 		const Membership before_join = Membership::read(asked);
-		const open::Character pools_before = full_pools(2);
-		const open::Character recruiter_before = full_pools(1);
+		drain_bars(asked);
+		drain_bars(recruiter);
+		const PoolReading asked_before = PoolReading::taken_of(asked);
+		const PoolReading recruiter_before = PoolReading::taken_of(recruiter);
 		expect_true("the ask is accepted in range", session.issue_recruit(world, 1, 2));
 
 		expect_true("a zero-time step reconciles without asking", session.step(0.0f, world));
@@ -364,8 +388,11 @@ int main() {
 		expect_true("Jane stays Friendly", asked.faction() == open::Faction::Friendly);
 		expect_true("Jane is no longer recruitable", !asked.recruitable());
 		expect_true("the recruiter was stood down", !recruiter.recruit_target().has_value());
-		expect_true("the join spent nothing on the recruiter", same_pools(recruiter_before, recruiter));
-		expect_true("the join spent nothing on Jane", same_pools(pools_before, asked));
+		expect_true("the join spent nothing on the recruiter",
+					recruiter_before.grew_the_whole_regrowth("the recruiter's bars came back whole",
+															 recruiter));
+		expect_true("the join spent nothing on Jane",
+					asked_before.grew_the_whole_regrowth("Jane's bars came back whole", asked));
 		expect_true("the join kept Jane's own condition",
 					asked.recruit_condition() == open::RecruitCondition::AlwaysSucceed);
 		expect_true("the join never swung for it", !recruiter.attack_target().has_value());
@@ -385,7 +412,8 @@ int main() {
 		const std::vector<open::Combatant> world =
 			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)}, {&hostile, at(1.0f, 0.0f, 0.0f)}});
 		open::CombatSession session(53);
-		const open::Character pools_before = full_pools(2);
+		drain_bars(hostile);
+		const PoolReading hostile_before = PoolReading::taken_of(hostile);
 		expect_true("the enemy is asked in range", session.issue_recruit(world, 1, 2));
 
 		expect_true("one positive step runs", session.step(0.1f, world));
@@ -393,7 +421,9 @@ int main() {
 		expect_true("an Enemy refused stays Enemy", hostile.faction() == open::Faction::Enemy);
 		expect_true("the flag is spent", !hostile.recruitable());
 		expect_true("the recruiter is stood down", !recruiter.recruit_target().has_value());
-		expect_true("a refusal spends nothing either", same_pools(pools_before, hostile));
+		expect_true("a refusal spends nothing either",
+					hostile_before.grew_the_whole_regrowth("a refusal costs no stamina nor mana",
+														   hostile));
 		expect_true("a refused sheet is not askable twice", !session.issue_recruit(world, 1, 2));
 		expect_true("nor does a second step re-run the check", session.step(0.1f, world));
 		expect_true("still no join", !hostile.in_squad());
