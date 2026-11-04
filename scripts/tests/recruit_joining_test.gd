@@ -433,6 +433,36 @@ func _attack_still_works_on_everyone() -> void:
 	await _free_world(world)
 
 
+# A popup built but not yet in the tree: `open_for_target` answers before `_ready` has
+# built any button, and a panel that stores the flag instead of touching a button it does
+# not have yet still shows the right thing once it enters the tree. A popup that reaches
+# for the missing button is a script error in the middle of the click that opened it.
+func _a_popup_opened_off_the_tree_shows_the_ask_after_it_enters() -> void:
+	var popup: AttackPopup = AttackPopup.new()
+	popup.name = "OffTreePopup"
+	popup.open_for_target(JANE_ID, Vector2(8.0, 8.0), true)
+	_check(popup.find_child("Actions", true, false) == null, "an off-tree popup has built no actions yet")
+	root.add_child(popup)
+	await process_frame
+	var attack := _button_of(popup, "AttackButton")
+	var recruit := _button_of(popup, "RecruitButton")
+	_check(attack != null, "entering the tree builds the Attack action")
+	_check(attack != null and attack.visible, "and Attack is offered")
+	_check(recruit != null and recruit.visible,
+			"and the ask it was told about off the tree survives the build")
+	var hidden := AttackPopup.new()
+	hidden.name = "OffTreeUnaskable"
+	hidden.open_for_target(JANE_ID, Vector2(8.0, 8.0))
+	root.add_child(hidden)
+	await process_frame
+	var hidden_recruit := _button_of(hidden, "RecruitButton")
+	_check(hidden_recruit != null and not hidden_recruit.visible,
+			"and a panel opened off the tree without the flag still hides it")
+	popup.queue_free()
+	hidden.queue_free()
+	await process_frame
+
+
 func _run() -> void:
 	_viewport_size = root.get_visible_rect().size
 	_check(_viewport_size.x > 0.0 and _viewport_size.y > 0.0, "the test viewport has a size")
@@ -443,6 +473,7 @@ func _run() -> void:
 	await _walking_in_joins_jane_and_hides_the_button()
 	await _floor_click_cancels_a_pending_ask_without_joining()
 	await _attack_still_works_on_everyone()
+	await _a_popup_opened_off_the_tree_shows_the_ask_after_it_enters()
 
 	if failures == 0:
 		print("Recruit joining: all checks passed")

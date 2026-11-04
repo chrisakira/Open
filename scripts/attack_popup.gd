@@ -63,7 +63,10 @@ func open_for_target(target_id: int, screen_position: Vector2, recruitable: bool
 	# advertised Recruit for a sheet without it would offer an action the coordinator
 	# refuses, which is exactly the lie `docs/style.md` says a popup must not tell.
 	_recruitable = recruitable
-	_recruit_button.visible = recruitable
+	# Both this door and `close` ask one helper to paint, because a popup opened before
+	# its `_ready` has built no button to write on: the flag is the state and the button
+	# follows it, whichever order the two arrive in.
+	_show_recruitable()
 	visible = true
 	reset_size()
 	position = _clamped_position(screen_position)
@@ -72,12 +75,20 @@ func open_for_target(target_id: int, screen_position: Vector2, recruitable: bool
 func close() -> void:
 	_target_id = 0
 	_recruitable = false
-	# A closed panel offers nothing, and that is not left to the panel's own
-	# invisibility: a Recruit button still showing from the last ask would be offered to
-	# whoever is clicked next, flag or no flag.
-	if _recruit_button != null:
-		_recruit_button.visible = false
+	# A closed panel offers nothing, and that is not left to the panel's own invisibility:
+	# a Recruit button still showing from the last ask would be offered to whoever is
+	# clicked next, flag or no flag.
+	_show_recruitable()
 	visible = false
+
+
+# The one door between what the panel knows and what it offers. The button may not exist
+# yet - off the tree, `open_for_target` answers a click with a flag and no actions built
+# - so the write waits for the build instead of reaching for a button that is not there,
+# which is a script error in the middle of the click that opened the panel.
+func _show_recruitable() -> void:
+	if _recruit_button != null:
+		_recruit_button.visible = _recruitable
 
 
 func covers(point: Vector2) -> bool:
@@ -115,6 +126,12 @@ func _on_recruit_pressed() -> void:
 # buttons off screen.
 func _clamped_position(screen_position: Vector2) -> Vector2:
 	var wanted := screen_position + OPEN_OFFSET
+	if not is_inside_tree():
+		# Off the tree there is no viewport to clamp against, and asking a panel for one
+		# is only a warning about a situation no caller of this class builds. The flag it
+		# was given is the answer worth keeping; where the panel will sit is the next
+		# `open_for_target`'s business, once the tree gives it an edge to respect.
+		return wanted
 	var limit := get_viewport_rect().size - size
 	return Vector2(
 		clampf(wanted.x, 0.0, maxf(0.0, limit.x)),
@@ -139,10 +156,10 @@ func _build_actions() -> void:
 	_recruit_button = _make_action("RecruitButton", "Recruit")
 	_recruit_button.pressed.connect(_on_recruit_pressed)
 	row.add_child(_recruit_button)
-	# Closed until the click says the sheet carries the flag: a button that is only
-	# hidden by the panel's own invisibility would be a Recruit waiting to be pressed
-	# on a character who cannot be asked.
-	_recruit_button.visible = false
+	# Built showing what the panel already knows: a click that named the flag before
+	# `_ready` ran is the same answer as one after it, and the one door above is taken
+	# here too rather than writing the button a second way.
+	_show_recruitable()
 
 
 func _make_action(button_name: String, label: String) -> Button:
