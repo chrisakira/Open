@@ -12,7 +12,7 @@ The character sheet is implemented in C++ (`Character` and modules). Click-to-mo
 - **Godot / GDScript** (`scripts/*.gd`, `scenes/`) owns presentation: camera, meshes, clicks, labels.
 - **GDExtension** (`extension/`) is the only place C++ and Godot meet. GDScript cannot call `open::` types directly.
 
-`cpp/` must not include Godot headers or link `godot-cpp`. That is the `open_sim` contract (no automated grep test yet). If a Godot type is leaking into `cpp/include` or `cpp/src`, stop and move it to `extension/`.
+`cpp/` must not include Godot headers or link `godot-cpp`. That is the `open_sim` contract, pinned by the `sim_contract` ctest (`cpp/tests/sim_contract_test.cpp`): it scans `cpp/include` and `cpp/src` for engine tokens (`godot::`, `godot_cpp`, `GDExtension`, …) and `cpp/CMakeLists.txt` for a godot-named link line into `open_sim`. If a Godot type is leaking into `cpp/include` or `cpp/src`, stop and move it to `extension/`.
 
 Player intent enters as an order (click → destination). Presentation draws the result. Do not make GDScript the source of truth for walk velocity, faction, level, health, strength, or limbs.
 

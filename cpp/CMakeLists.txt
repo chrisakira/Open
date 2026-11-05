@@ -149,6 +149,16 @@ target_link_libraries(recruit_squad_tests PRIVATE open_sim)
 target_compile_options(recruit_squad_tests PRIVATE -Wall -Wextra -Werror)
 add_test(NAME recruit_squad COMMAND recruit_squad_tests)
 
+# The open_sim contract as a test: no Godot header, namespace or type anywhere in
+# cpp/include or cpp/src, and no godot-named link line for open_sim. The scan needs the source
+# tree at run time, so its path is compiled in rather than assumed from the working directory.
+add_executable(sim_contract_tests tests/sim_contract_test.cpp)
+target_link_libraries(sim_contract_tests PRIVATE open_sim)
+target_compile_definitions(sim_contract_tests PRIVATE
+	OPEN_SIM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_options(sim_contract_tests PRIVATE -Wall -Wextra -Werror)
+add_test(NAME sim_contract COMMAND sim_contract_tests)
+
 option(OPEN_BUILD_GDEXTENSION "Build the Godot GDExtension that exposes MoveOrder" ON)
 if(OPEN_BUILD_GDEXTENSION)
 	include(FetchContent)
