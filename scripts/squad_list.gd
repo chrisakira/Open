@@ -148,6 +148,10 @@ func _row(member: Dictionary) -> Label:
 	# that a test or a future scene looks up by name finds exactly one.
 	label.name = "Member_%d" % int(member["id"])
 	label.text = _name_for(member)
+	# Clipped to the row: the name rule cuts at twenty characters, not at a pixel count, so a name
+	# of wide letters still asks for more room than the plaque has. A Label refuses to be narrower
+	# than its text unless it clips, which is what pushed the row past the brass.
+	label.clip_text = true
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.add_theme_font_override("font", _serif())
 	label.add_theme_font_size_override("font_size", 13)

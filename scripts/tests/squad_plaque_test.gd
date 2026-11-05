@@ -23,6 +23,7 @@ const WORLD_PATH := "res://scenes/main.tscn"
 
 const WOOD := Color("#241B16")
 const BRASS := Color("#806343")
+const CAST_BAND := Color("#2E231C")
 const HEADING_COLOR := Color("#BD9862")
 const NAME_COLOR := Color("#F4E6C6")
 
@@ -157,6 +158,42 @@ func _unstage(view: SubViewport, control: Control) -> void:
 
 # --- the scene founds its own squad -------------------------------------------
 
+# The name rule cuts at twenty characters, not at a pixel count: nineteen wide letters can
+# still ask for more room than the plaque has. A row that demanded that room would print past the
+# brass; it clips instead, the way the chat clips a word too long for its line.
+func _a_wide_name_stays_inside_the_brass() -> void:
+	var plaque := _plaque()
+	if plaque == null:
+		return
+	var wide := _actor("Wide", 6, "WWWWWWWWWWWWWWWWWWW")
+	_seated(wide)
+	plaque.call("bind_squad", [wide], wide)
+	plaque.refresh()
+	var row := _find(plaque, "Member_6") as Label
+	_check(row != null, "the wide name has a row")
+	if row == null:
+		wide.queue_free()
+		plaque.queue_free()
+		await process_frame
+		return
+	_check(plaque.size.x > 0.0, "the plaque knows its width: %f" % plaque.size.x)
+	_check(row.size.x <= plaque.size.x + 0.5,
+			"the row is given the plaque's width, no more: %f against %f"
+					% [row.size.x, plaque.size.x])
+	var font: Font = row.get_theme_font("font")
+	var wanted := font.get_string_size(String(row.text), HORIZONTAL_ALIGNMENT_LEFT, -1,
+			int(row.get_theme_font_size("font_size"))).x
+	_check(wanted > row.size.x,
+			"the fixture really is wider than its row: %f against %f" % [wanted, row.size.x])
+	_check(bool(row.clip_text), "so the row clips instead of leaking ink past the brass")
+	_check(row.get_minimum_size().x <= row.size.x + 0.5,
+			"and it demands no width the plaque cannot give: %f against %f"
+					% [row.get_minimum_size().x, row.size.x])
+	plaque.queue_free()
+	wide.queue_free()
+	await process_frame
+
+
 func _the_scene_founds_the_squad_with_the_player() -> void:
 	var world = await _world()
 	var player: Node = world.get_node("Player")
@@ -203,6 +240,8 @@ func _the_plaque_is_on_the_hud_over_the_founder() -> void:
 	# and a plaque that quietly drifts to the popup palette would still pass every test above.
 	_check(_close_colors(_color_of(plaque, "WOOD"), WOOD), "the field is the main-panel wood")
 	_check(_close_colors(_color_of(plaque, "BRASS"), BRASS), "the frame is the muted brass")
+	_check(_close_colors(_color_of(plaque, "CAST_BAND"), CAST_BAND),
+			"and the plaque sits on the same dark cast band as the player's")
 	_check(_close_colors(_color_of(plaque, "HEADING_COLOR"), HEADING_COLOR),
 			"the heading is the muted gold of a group heading")
 	_check(_close_colors(_color_of(plaque, "NAME_COLOR"), NAME_COLOR),
@@ -499,13 +538,14 @@ func _run() -> void:
 	await _case("joins and deaths need no refresh call", 7,
 			_a_joined_name_appears_and_a_dead_one_goes)
 	await _case("names from the sheet", 7, _the_names_come_from_the_sheet_and_stop_at_twenty)
+	await _case("a wide name stays inside the brass", 5, _a_wide_name_stays_inside_the_brass)
 	await _case("the right edge at three sizes", 18,
 			_the_plaque_stays_inside_the_screen_on_the_right_edge)
 	await _case("no write of anybody's state", 8,
 			_the_plaque_writes_nothing_it_was_told_to_read)
 	await _case("a rebind replaces the roster", 3, _it_folows_the_squad_across_a_rebind)
 
-	_check(checks > 68, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 76, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Squad plaque: all checks passed")
 	quit(1 if failures else 0)
