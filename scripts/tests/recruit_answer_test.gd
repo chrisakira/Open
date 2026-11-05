@@ -15,8 +15,8 @@ extends SceneTree
 # must stay silent here, and it is built that way on purpose.
 #
 # The silence cases matter as much as the sentences. An ask that walked away, chose a fight
-# instead, or buried its target produced no answer, and a chat that narrated one would be
-# inventing an answer nobody gave.
+# instead, buried its target, or took a blow meant for the recruiter produced no answer, and a
+# chat that narrated one would be inventing an answer nobody gave.
 #
 # New doors are reached by `has_method` and `call`, so a bubble that has not grown one fails as a
 # counted assertion instead of ending the run with the rest of it uncounted.
@@ -413,6 +413,60 @@ func _a_target_that_dies_first_is_silent() -> void:
 	await _free_world(world)
 
 
+# The fourth broken ask, and the only one where the recruiter did nothing wrong: something hit him
+# mid-ask, the order was taken off him, and the sheet he was walking to never got an attempt at
+# all. The C++ side pins the unstamped sheet (`cpp/tests/recruit_squad_test.cpp`); this is the
+# display half - a cancelled order must not read as a no, on screen or on the plaque.
+func _a_blow_on_the_recruiter_is_silent() -> void:
+	var world = await _world()
+	var player: Node = world.get_node("Player")
+	var jane: Node = world.get_node("Friendly")
+	var enemy: Node = world.get_node("Enemy")
+	var combat = world.get("_combat")
+	var log := _log_of(world)
+	var bubble := _bubble_of(world)
+	if combat == null or log == null or bubble == null:
+		await _free_world(world)
+		return
+	_far_left(jane)
+	await physics_frame
+	# Off the walking line rather than on it: a standing enemy is a wall as much as a target, and
+	# the player has to come inside the 1.5 of melee reach on his way past without colliding.
+	_at(enemy, Vector3(-3.0, 0.1, 1.1))
+	await physics_frame
+	_check(bool(await _press_action(world, jane, "RecruitButton")),
+			"Jane is asked from across the floor")
+	_check(bool(combat.issue_attack(ENEMY_ID, PLAYER_ID)),
+			"and an enemy is ordered at the man who is asking")
+	var swung := false
+	for frame in range(40):
+		await physics_frame
+		await process_frame
+		for line in _lines_of(log):
+			if String(line).contains("attacks"):
+				swung = true
+				break
+		if swung:
+			break
+	_check(swung, "the blow landed, which is the whole point of the case: got %s"
+			% str(_lines_of(log)))
+	for frame in range(12):
+		await physics_frame
+		await process_frame
+	# The ask really is off him, so this is silence about a broken order and not silence about a
+	# frame that simply had not answered yet.
+	_check(int(player.sheet.get_recruit_target_id()) == 0,
+			"the blow took the ask off the recruiter: still asking %d"
+					% int(player.sheet.get_recruit_target_id()))
+	_check(_recruit_lines(log).is_empty(),
+			"a blow that broke the ask answers nothing, so nothing was said: got %s"
+					% str(_recruit_lines(log)))
+	_check(not bool(bubble.visible), "and no card stands over anybody for an ask that broke")
+	_check(bool(jane.sheet.is_recruitable()), "the broken ask spent nobody's flag")
+	_check(not bool(jane.sheet.is_in_squad()), "and nobody joined on the way past")
+	await _free_world(world)
+
+
 # --- the card's own life -------------------------------------------------------
 
 func _the_watch_holds_then_fades_and_says_nothing_after() -> void:
@@ -527,14 +581,20 @@ func _the_card_can_be_said_over_the_player_too() -> void:
 	_check(_close(bubble.position.x + bubble.size.x / 2.0, wanted.x, 0.5),
 			"centred on the player's own head anchor: card %f, anchor %f" % [
 					bubble.position.x + bubble.size.x / 2.0, wanted.x])
-	# The gate is still the camera's: with nothing drawing, nothing may be painted.
-	var viewport: Viewport = player.get_viewport()
-	viewport.camera_3d = null
+	# The gate is still the camera's own, and it is the camera's rule that hides the card - not
+	# the missing plate. Past the overlay's view distance, the card goes; back inside it, it
+	# comes back wearing the same word.
+	var camera: Camera3D = world.get("_camera")
+	var where_was_i: Vector3 = player.global_position
+	player.global_position = camera.global_position + Vector3(0.0, 0.0, -90.0)
 	await process_frame
-	_check(not bool(bubble.visible), "no drawing camera, no card")
-	viewport.camera_3d = world.get("_camera")
+	_check(not bool(bubble.visible), "out of the camera's reach, the card hides")
+	_check(String(bubble.call("word")) == "YES", "and the verdict it holds is unchanged: [%s]"
+			% String(bubble.call("word")))
+	player.global_position = where_was_i
+	camera.global_position = where_was_i + Vector3(0.0, 9.0, 12.0)
 	await process_frame
-	_check(bool(bubble.visible), "and it comes back with the camera")
+	_check(bool(bubble.visible), "back in reach, the same word shows again")
 	await _free_world(world)
 
 
@@ -556,6 +616,29 @@ func _the_bubble_is_click_through_and_hangs_under_the_popups() -> void:
 			&& bubble.find_children("*", "TextureButton", true, false).is_empty(),
 			"and it offers no control at all, so there is nothing to dismiss and nothing to ask"
 			+ " again")
+	# The locked surface: badge wood, brass, and one parchment word. A card that quietly went
+	# red-for-no would still pass every behavioural check above, and the human's call was that a
+	# NO is an answer, not an error.
+	var table: Dictionary = bubble.get_script().get_script_constant_map()
+	for spec in [["CARD_WOOD", Color("#493326")], ["CARD_BRASS", Color("#806343")],
+			["INK", Color("#F4E6C6")]]:
+		var name: String = String(spec[0])
+		_check(table.has(name), "the card states a %s constant" % name)
+		if table.has(name):
+			var got: Color = table[name]
+			var want: Color = spec[1]
+			_check(_close(got.r, want.r) and _close(got.g, want.g) and _close(got.b, want.b),
+					"%s is the locked hex: got %s" % [name, str(got)])
+	# Both words, the same ink: the verdict must not be coloured by its outcome.
+	bubble.call("open_for", world.get_node("Friendly"), false)
+	var word: Label = bubble.find_children("AnswerWord", "Label", true, false)[0]
+	_check(String(word.text) == "NO", "the word is NO: got [%s]" % String(word.text))
+	_check(word.has_theme_color_override("font_color"), "the word sets its own ink")
+	var ink: Color = word.get("theme_override_colors/font_color")
+	_check(_close(ink.r, Color("#F4E6C6").r) and _close(ink.b, Color("#F4E6C6").b),
+			"and a NO is parchment like a YES: got %s" % str(ink))
+	bubble.call("open_for", world.get_node("Friendly"), true)
+	_check(_close(ink.r, Color("#F4E6C6").r), "a YES wears the same ink: nothing shouts")
 	var layer: Node = bubble.get_parent()
 	_check(layer is CanvasLayer, "the bubble lives on the HUD canvas layer")
 	var above := 0
@@ -590,15 +673,16 @@ func _run() -> void:
 	await _case("a walked-away ask is silent", 5, _a_walked_away_ask_is_silent)
 	await _case("a fight chosen instead is silent", 5, _a_fight_chosen_instead_is_silent)
 	await _case("a target that dies first is silent", 4, _a_target_that_dies_first_is_silent)
+	await _case("a blow on the recruiter is silent", 8, _a_blow_on_the_recruiter_is_silent)
 	await _case("hold, fade, then nothing", 10,
 			_the_watch_holds_then_fades_and_says_nothing_after)
 	await _case("stacks over the plate, obeys the gate", 9,
 			_the_card_stacks_over_the_plate_and_obeys_the_gate)
 	await _case("the card over the player too", 8, _the_card_can_be_said_over_the_player_too)
-	await _case("click-through under the popups", 10,
+	await _case("click-through under the popups", 17,
 			_the_bubble_is_click_through_and_hangs_under_the_popups)
 
-	_check(checks > 78, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 93, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Recruit answer display: all checks passed")
 	quit(1 if failures else 0)

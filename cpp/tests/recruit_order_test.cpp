@@ -104,16 +104,32 @@ struct Membership {
 	open::RecruitCondition condition = open::RecruitCondition::AlwaysFail;
 	bool in_squad = false;
 	open::Faction faction = open::Faction::Friendly;
+	// The answer stamp travels with the rest, because "this was not an answer" is a claim about
+	// the stamp as much as about the flag: a cancel that stamped an answer nobody gave would leave
+	// every other field untouched and still put a sentence on the screen.
+	bool stamped = false;
+	std::uint64_t answered_to = 0;
+	bool answered_accepted = false;
 	// Asserts under one name that nothing about the join moved, and answers the same.
 	bool as_before(const char *name, const open::Character &who) const {
 		const Membership after = read(who);
 		const bool same = recruitable == after.recruitable && condition == after.condition &&
-						  in_squad == after.in_squad && faction == after.faction;
+						  in_squad == after.in_squad && faction == after.faction &&
+						  stamped == after.stamped && answered_to == after.answered_to &&
+						  answered_accepted == after.answered_accepted;
 		expect_true(name, same);
 		return same;
 	}
 	static Membership read(const open::Character &who) {
-		return Membership{who.recruitable(), who.recruit_condition(), who.in_squad(), who.faction()};
+		const std::optional<std::uint64_t> to = who.answered_to();
+		const std::optional<bool> accepted = who.answered_accepted();
+		return Membership{who.recruitable(),
+						  who.recruit_condition(),
+						  who.in_squad(),
+						  who.faction(),
+						  to.has_value(),
+						  to.has_value() ? *to : 0,
+						  accepted.has_value() ? *accepted : false};
 	}
 };
 

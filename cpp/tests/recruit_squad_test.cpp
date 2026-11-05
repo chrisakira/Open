@@ -1,5 +1,6 @@
 #include "open/character.hpp"
 #include "open/character_rules.hpp"
+#include "open/combat_rules.hpp"
 #include "open/combat_session.hpp"
 
 #include <cstdint>
@@ -258,6 +259,92 @@ int main() {
 		expect_true("and the founder answered to nobody", !founder.answered_to().has_value());
 		expect_true("which means there is no answer content on a founder either",
 					!founder.answered_accepted().has_value());
+	}
+
+	{
+		// a_seat_touches_no_order_anyone_holds: founding is a membership write and nothing
+		// else, so a sheet in the middle of anything keeps whatever it was doing. One order per
+		// sheet, because the orders cancel one another by design and this is about the seat not
+		// cancelling.
+		open::Character walker = make_character(1);
+		open::Character fighter = make_character(2);
+		open::Character asker = make_character(3);
+		open::Character target = jane(4);
+		const std::vector<open::Combatant> world =
+			roster({{&walker, at(0.0f, 0.0f, 0.0f)},
+					{&fighter, at(5.0f, 0.0f, 0.0f)},
+					{&asker, at(9.0f, 0.0f, 0.0f)},
+					{&target, at(20.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(53);
+
+		expect_true("one sheet is walking", walker.set_destination(-4.0f, 0.0f, 0.0f));
+		expect_true("one sheet is fighting", session.issue_attack(world, 2, 1));
+		expect_true("one sheet is asking", session.issue_recruit(world, 3, 4));
+
+		expect_true("the walker is seated", session.found_squad(world, 1));
+		expect_true("and the walk is still its own", walker.destination().has_value());
+		expect_true("the fighter is seated", session.found_squad(world, 2));
+		expect_true("and the attack order survives its own founding",
+					fighter.attack_target().has_value() && *fighter.attack_target() == 1);
+		expect_true("the asker is seated", session.found_squad(world, 3));
+		expect_true("and the ask it was walking survives too",
+					asker.recruit_target().has_value() && *asker.recruit_target() == 4);
+		expect_true("none of that answered anybody", !target.answered_to().has_value());
+		expect_true("and the three seated sheets are members",
+					walker.in_squad() && fighter.in_squad() && asker.in_squad());
+	}
+	{
+		// a_swing_at_the_recruiter_leaves_the_asked_sheet_unstamped: docs/recruiting.md says a
+		// broken ask stamps nothing, and the swing is the break that lands closest to an attempt -
+		// the recruiter is standing in range, so an unstopped frame would answer.
+		open::Character recruiter = make_character(1);
+		open::Character asked = jane(2);
+		open::Character attacker = make_character(3, open::Faction::Enemy);
+		const std::vector<open::Combatant> world =
+			roster({{&recruiter, at(0.0f, 0.0f, 0.0f)},
+					{&attacker, at(1.0f, 0.0f, 0.0f)},
+					{&asked, at(1.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(59);
+
+		expect_true("the recruiter stands inside the recruit range",
+					open::melee_in_range(at(0.0f, 0.0f, 0.0f), at(1.0f, 0.0f, 0.0f)));
+		expect_true("Jane is asked", session.issue_recruit(world, 1, 2));
+		expect_true("and the ask is held", recruiter.recruit_target().has_value());
+		expect_true("the attacker is ordered at the recruiter", session.issue_attack(world, 3, 1));
+		expect_true("one step runs", session.step(0.1f, world));
+		expect_true("the ask ended with the blow", !recruiter.recruit_target().has_value());
+		expect_true("Jane was never answered", !asked.answered_to().has_value());
+		expect_true("so there is no yes-or-no to read either",
+					!asked.answered_accepted().has_value());
+		expect_true("and Jane was not recruited by it", !asked.in_squad());
+		expect_true("nor spent her flag", asked.recruitable());
+	}
+	{
+		// a_second_answered_ask_owns_the_stamp: the stamp is the latest answer's. Re-flagging a
+		// sheet is not a door the scene has - nothing in the game re-asks - but this is the
+		// behaviour a display leans on when it decides an answer was not its own, so it is
+		// written down as an assertion rather than a paragraph.
+		open::Character first = make_character(1);
+		open::Character second = make_character(3);
+		open::Character asked = jane(2);
+		const std::vector<open::Combatant> world =
+			roster({{&first, at(0.0f, 0.0f, 0.0f)},
+					{&asked, at(1.0f, 0.0f, 0.0f)},
+					{&second, at(2.0f, 0.0f, 0.0f)}});
+		open::CombatSession session(61);
+
+		expect_true("the first ask is issued in range", session.issue_recruit(world, 1, 2));
+		expect_true("and one step answers it", session.step(0.1f, world));
+		expect_true("the stamp is the first recruiter's", is_answered_to(asked.answered_to(), 1));
+		expect_true("the answer spent the flag, as the docs say", !asked.recruitable());
+
+		expect_true("a re-flagged sheet can be asked again", asked.set_recruitable(true));
+		expect_true("the second recruiter asks in range", session.issue_recruit(world, 3, 2));
+		expect_true("and one step answers that too", session.step(0.1f, world));
+		expect_true("the stamp is the second recruiter's now",
+					is_answered_to(asked.answered_to(), 3));
+		expect_true("and it is still a yes, so an issuer reading a foreign stamp stays quiet",
+					answers_yes(asked));
 	}
 
 	return test_summary();

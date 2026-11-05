@@ -199,6 +199,38 @@ func _the_plaque_is_on_the_hud_over_the_founder() -> void:
 	_check(plaque.find_children("*", "Button", true, false).is_empty()
 			&& plaque.find_children("*", "LineEdit", true, false).is_empty(),
 			"and nothing on it can be clicked into an order")
+	# The locked shape, in the locked colours: docs/recruiting.md names four hexes and a serif,
+	# and a plaque that quietly drifts to the popup palette would still pass every test above.
+	_check(_close_colors(_color_of(plaque, "WOOD"), WOOD), "the field is the main-panel wood")
+	_check(_close_colors(_color_of(plaque, "BRASS"), BRASS), "the frame is the muted brass")
+	_check(_close_colors(_color_of(plaque, "HEADING_COLOR"), HEADING_COLOR),
+			"the heading is the muted gold of a group heading")
+	_check(_close_colors(_color_of(plaque, "NAME_COLOR"), NAME_COLOR),
+			"the names are the light parchment of a title")
+	if heading != null:
+		_check(_close_colors(_font_color(heading), HEADING_COLOR),
+				"and the heading label actually wears that colour")
+		var row: Label = plaque.find_children("Member_*", "Label", true, false)[0]
+		_check(_close_colors(_font_color(row), NAME_COLOR),
+				"and a name label wears the parchment one")
+		var serif: SystemFont = row.get("theme_override_fonts/font")
+		_check(serif != null and String(serif.font_names[0]) == "Georgia"
+				&& serif.font_names[serif.font_names.size() - 1] == "serif",
+				"the names are set in the project's serif stack, not the theme default")
+	# And it draws under the popups, the way every other view does: a later sibling is the one
+	# on top, so the plaque must be an earlier one.
+	var layer: Node = plaque.get_parent()
+	var above := 0
+	var seen := 0
+	for popup_name in ["CharacterPopup", "EquipmentPopup", "TechniquePopup", "WorkbenchPopup",
+			"AttackPopup", "WeaponPopup"]:
+		var popup := _find(world, popup_name)
+		if popup != null:
+			seen += 1
+			if popup.get_parent() == layer and popup.get_index() > plaque.get_index():
+				above += 1
+	_check(seen == 6 and above == 6,
+			"every popup still draws over the squad list (saw %d, above %d)" % [seen, above])
 	await _free_world(world)
 
 
@@ -432,6 +464,25 @@ func _it_folows_the_squad_across_a_rebind() -> void:
 
 # --- the run ------------------------------------------------------------------
 
+func _color_of(control, constant_name: String) -> Color:
+	var table: Dictionary = control.get_script().get_script_constant_map()
+	if not table.has(constant_name):
+		_check(false, "the plaque states a %s constant for the locked palette" % constant_name)
+		return Color(9.0, 9.0, 9.0)  # not a colour any palette uses
+	return table[constant_name] as Color
+
+
+func _font_color(label: Label) -> Color:
+	if not label.has_theme_color_override("font_color"):
+		_check(false, "%s sets no font colour override" % String(label.name))
+		return Color(9.0, 9.0, 9.0)
+	return label.get("theme_override_colors/font_color")
+
+
+func _close_colors(left: Color, right: Color) -> bool:
+	return _close(left.r, right.r) and _close(left.g, right.g) and _close(left.b, right.b)
+
+
 func _case(what: String, minimum: int, callable: Callable) -> void:
 	var before := checks
 	await callable.call()
@@ -442,7 +493,7 @@ func _case(what: String, minimum: int, callable: Callable) -> void:
 
 func _run() -> void:
 	await _case("the scene founds its squad", 8, _the_scene_founds_the_squad_with_the_player)
-	await _case("the HUD plaque over the founder", 9, _the_plaque_is_on_the_hud_over_the_founder)
+	await _case("the HUD plaque over the founder", 17, _the_plaque_is_on_the_hud_over_the_founder)
 	await _case("always on over no rows", 6, _it_is_always_on_even_over_an_empty_squad)
 	await _case("founder first, then by id", 6, _the_founder_sits_first_then_the_names_by_id)
 	await _case("joins and deaths need no refresh call", 7,
@@ -454,7 +505,7 @@ func _run() -> void:
 			_the_plaque_writes_nothing_it_was_told_to_read)
 	await _case("a rebind replaces the roster", 3, _it_folows_the_squad_across_a_rebind)
 
-	_check(checks > 60, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 68, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Squad plaque: all checks passed")
 	quit(1 if failures else 0)

@@ -329,6 +329,39 @@ func _the_recruit_answer_is_one_true_line() -> void:
 
 # --- the number in the sentence ------------------------------------------------
 
+# The history is one queue, not one queue per kind: eight entries means eight, whatever mix of
+# swings and answers got them there, and the oldest drops regardless of which door wrote it.
+func _swings_and_answers_share_the_eight_entry_history() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var player := _named_actor("Player", "John Doe", 1)
+	var asked := _named_actor("Friendly", "Jane Doe 1", 2)
+	log.bind_actors([player, asked])
+	for index in range(6):
+		log.append_swing(_event(1, 2, "none", float(index + 1)))
+	log.append_recruit({"actor_id": 1, "target_id": 2, "accepted": true})
+	for index in range(3):
+		log.append_swing(_event(1, 2, "dodge", 0.0))
+	log.append_recruit({"actor_id": 1, "target_id": 2, "accepted": false})
+	var lines := _lines_of(log)
+	_check(lines.size() == 8, "ten writes, eight survivors: got %d" % lines.size())
+	if lines.size() == 8:
+		_check(String(lines[0]) == "John Doe attacks Jane Doe 1 and deals 4 damage",
+				"the three oldest swings dropped first: got [%s]" % String(lines[0]))
+		_check(String(lines[7]) == "John Doe failed to recruit Jane Doe 1",
+				"and the newest entry is the newest write, not the newest swing: got [%s]"
+						% String(lines[7]))
+		var recruits := 0
+		for line in lines:
+			if String(line).contains("recruit"):
+				recruits += 1
+		_check(recruits == 2, "both answers survived, in the order they happened: %d" % recruits)
+	player.free()
+	asked.free()
+	log.free()
+
+
 func _the_amount_is_the_number_the_float_prints() -> void:
 	var text_script: Script = load(TEXT_PATH)
 	if text_script == null:
@@ -651,6 +684,8 @@ func _run() -> void:
 	await _case("a zero without a defence", 7, _a_zero_without_a_defence_refuses_to_invent_one)
 	await _case("names from the sheet", 9, _names_come_from_the_sheet_and_stay_plain_text)
 	await _case("the recruit answer", 11, _the_recruit_answer_is_one_true_line)
+	await _case("swings and answers share the history", 6,
+			_swings_and_answers_share_the_eight_entry_history)
 	await _case("the shared amount", 25, _the_amount_is_the_number_the_float_prints)
 	await _case("the last eight lines", 9, _the_chat_keeps_the_last_eight_lines)
 	await _case("click-through and bounds", 45,
