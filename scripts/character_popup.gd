@@ -33,12 +33,17 @@ const SKILL_GROUPS := [
 
 const INK := Color("e0d0ae")
 const GOLD := Color("d0a96b")
+# The one name rule the whole HUD reads (docs/status_UID.md, locked 2026-11-01). The popup is a
+# HUD view like any other, so it asks the presenter instead of printing its own idea of a name.
+const Presenter := preload("res://scripts/status_presenter.gd")
+
 const MUTED_GOLD := Color("bd9862")
 const PANEL_COLOR := Color("241b16")
 const HEADER_COLOR := Color("493326")
 const BORDER_COLOR := Color("806343")
 
 var _sheet: OpenCharacter
+var _fallback_name := ""
 var _title_label: Label
 var _level_label: Label
 var _serif_font: SystemFont
@@ -77,9 +82,12 @@ func _ready() -> void:
 	_clear_contents()
 
 
-# The popup follows one sheet: values are re-read from it while it is open.
-func bind_sheet(sheet: OpenCharacter) -> void:
+# The popup follows one sheet: values are re-read from it while it is open. The fallback name is
+# the actor's scene-node name, the second half of the locked naming rule; a popup bound to a bare
+# sheet still truncates, it just has nothing to fall back to.
+func bind_sheet(sheet: OpenCharacter, fallback_name := "") -> void:
 	_sheet = sheet
+	_fallback_name = String(fallback_name)
 	_refresh()
 
 
@@ -130,10 +138,10 @@ func _refresh() -> void:
 	if _sheet == null or not _sheet.is_configured():
 		_clear_contents()
 		return
-	var sheet_name := String(_sheet.get_character_name())
-	if sheet_name.is_empty():
-		sheet_name = "Character"
-	_title_label.text = sheet_name
+	var shown := Presenter.display_name(String(_sheet.get_character_name()), _fallback_name)
+	# A sheet with no name and no actor to fall back to has nothing honest to print; the popup's
+	# own word is the last resort, and it goes through the same rule like every other string.
+	_title_label.text = shown if shown != "" else "Character"
 	_level_label.text = "LEVEL %d" % _sheet.get_level()
 	_render_attributes()
 	_render_skills(_sheet.get_skill_snapshot())

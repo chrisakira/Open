@@ -258,6 +258,33 @@ func _run() -> void:
 	if strength_label != null:
 		_check(_close(_row_value(strength_label), 1.25), "and follows it back")
 
+	# The naming rule is one rule for the whole HUD (docs/status_UID.md, locked 2026-11-01):
+	# the sheet's name, the actor's scene-node name under it, and 19 characters plus an ellipsis
+	# past twenty. A popup keeping its own idea of a name would be the second rule the lock
+	# forbids - and it was, until the review looked.
+	var long_named := OpenCharacter.new()
+	_check(long_named.configure_npc(98, "Bartholomew the Unready", 0, 1, 77),
+			"a sheet with a long name configures")
+	popup.bind_sheet(long_named, "ActorNode")
+	var title: Label = popup.get("_title_label")
+	_check(title != null and String(title.text) == "Bartholomew the Unr…",
+			"the popup title truncates like every other view: got [%s]"
+					% ("" if title == null else String(title.text)))
+	var nameless := OpenCharacter.new()
+	_check(nameless.configure_npc(97, "", 0, 1, 78), "a sheet with no name configures")
+	popup.bind_sheet(nameless, "NamelessNode")
+	_check(title != null and String(title.text) == "NamelessNode",
+			"an unnamed sheet falls back to the actor's node name: got [%s]"
+					% ("" if title == null else String(title.text)))
+	var unbindable := OpenCharacter.new()
+	_check(unbindable.configure_npc(96, "A Name Long Enough To Need Cutting", 0, 1, 79),
+			"a third sheet configures")
+	popup.bind_sheet(unbindable)
+	_check(title != null and String(title.text) == "A Name Long Enough …",
+			"and an unnamed actor fallback still truncates: got [%s]"
+					% ("" if title == null else String(title.text)))
+	popup.bind_sheet(player.sheet, String(player.name))
+
 	# An unconfigured sheet invents nothing.
 	var bare := CharacterPopup.new()
 	root.add_child(bare)

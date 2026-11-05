@@ -706,7 +706,7 @@ func _build_hud() -> void:
 	_popup.name = "CharacterPopup"
 	_popup.visible = false
 	layer.add_child(_popup)
-	_popup.bind_sheet(_player.sheet)
+	_popup.bind_sheet(_player.sheet, String(_player.name))
 
 	# The equipment panel is a view of the player's own sheet: it lists what the sheet owns and
 	# asks C++ to move things between the hands. Whether any of that happens is C++'s answer.
