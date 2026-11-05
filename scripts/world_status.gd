@@ -209,9 +209,20 @@ class _Diamond:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		custom_minimum_size = Vector2(9.0, 9.0)
 
-	func _draw() -> void:
-		var c := size / 2.0
+	# The points the diamond is cut from: a square standing on a point, centred in its box with
+	# half a pixel of margin. `_draw` submits exactly these, so a collapsed or drifting diamond
+	# is a failed assertion rather than something only a screenshot could have shown.
+	static func paint_layers(diamond_size: Vector2, colour: Color) -> Array:
+		var c := diamond_size / 2.0
 		var half := minf(c.x, c.y) - 0.5
-		draw_colored_polygon(PackedVector2Array([
-			Vector2(c.x, c.y - half), Vector2(c.x + half, c.y),
-			Vector2(c.x, c.y + half), Vector2(c.x - half, c.y)]), diamond_color)
+		return [{
+			"points": PackedVector2Array([
+				Vector2(c.x, c.y - half), Vector2(c.x + half, c.y),
+				Vector2(c.x, c.y + half), Vector2(c.x - half, c.y)]),
+			"colors": PackedColorArray([colour]),
+		}]
+
+	func _draw() -> void:
+		for layer in paint_layers(size, diamond_color):
+			draw_colored_polygon(layer["points"] as PackedVector2Array,
+					(layer["colors"] as PackedColorArray)[0])

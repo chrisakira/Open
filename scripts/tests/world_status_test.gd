@@ -382,6 +382,82 @@ func _the_bar_paints_track_frame_fill_and_highlight() -> void:
 	_check(empty.size() == 2, "an empty bar is the bare track and its frame, got %d" % empty.size())
 
 
+# The diamond is one painted polygon, and only its colour was ever pinned. Its geometry is the
+# locked identity too: a square standing on a point, centred in its 9 px box with half a pixel
+# of margin. Nothing rasterises under `--headless`, so the inner class submits its points as a
+# function and the test reads them - a dot, a square or a shape that drifts out of its box all
+# fail here.
+func _the_diamond_paints_a_centred_square_on_its_point() -> void:
+	var status := _status()
+	if status == null:
+		return
+	var diamond := status.get_node_or_null("RelationshipDiamond") as Control
+	_check(diamond != null, "the overhead carries its relationship diamond")
+	if diamond == null:
+		_free(status)
+		return
+	var script: Script = diamond.get_script()
+	_check(script != null and script.has_method("paint_layers"),
+			"the diamond's paint stack is a function, so its points are assertable")
+	if script == null or not script.has_method("paint_layers"):
+		_free(status)
+		return
+	var layers: Array = script.paint_layers(Vector2(9, 9), Color("#4E7A4A"))
+	_check(layers.size() == 1, "one polygon, got %d" % layers.size())
+	if layers.size() != 1:
+		_free(status)
+		return
+	var points: PackedVector2Array = layers[0]["points"]
+	_check(points.size() == 4, "a four-point diamond, got %d" % points.size())
+	if points.size() != 4:
+		_free(status)
+		return
+	var centre := Vector2(4.5, 4.5)
+	_check(points[0].is_equal_approx(Vector2(4.5, 0.5))
+			and points[1].is_equal_approx(Vector2(8.5, 4.5))
+			and points[2].is_equal_approx(Vector2(4.5, 8.5))
+			and points[3].is_equal_approx(Vector2(0.5, 4.5)),
+			"the four points sit half a pixel inside the box, on the axes: %s" % str(points))
+	var sum := Vector2.ZERO
+	for point in points:
+		sum += point
+	_check((sum / 4.0).is_equal_approx(centre), "and they average to the box centre")
+	var inside := true
+	for point in points:
+		inside = inside and point.x >= 0.0 and point.y >= 0.0 and point.x <= 9.0 and point.y <= 9.0
+	_check(inside, "and no point escapes the nine-pixel box")
+	_check(_same_colour(layers[0]["colors"][0], Color("#4E7A4A")),
+			"the polygon wears the faction colour it was handed")
+	_free(status)
+
+
+# The level badge is its own locked badge: a wooden plate with a brass frame and parchment ink.
+# The style box is what the engine draws, so filling it from the wrong constant is a visible
+# drift with no other way to catch it in a headless run.
+func _the_level_badge_is_the_locked_brass_plate() -> void:
+	var status := _status()
+	if status == null:
+		return
+	var badge := status.get_node_or_null("LevelBadge") as Control
+	_check(badge != null, "the overhead carries its level badge")
+	if badge == null:
+		_free(status)
+		return
+	_check(badge.has_theme_stylebox_override("panel"), "the badge carries its own plate")
+	var plate := badge.get_theme_stylebox("panel")
+	_check(plate is StyleBoxFlat, "the plate is a flat panel")
+	if plate is StyleBoxFlat:
+		_check(plate.bg_color == Color("#493326"), "the plate is badge wood")
+		_check(plate.border_color == Color("#806343"), "framed in muted brass")
+		_check(plate.border_width_left == 1 and plate.border_width_right == 1
+				and plate.border_width_top == 1 and plate.border_width_bottom == 1,
+				"with a one-pixel border on every side")
+	var value := badge.get_node_or_null("Value") as Label
+	_check(value != null and value.get_theme_color("font_color") == Color("#F4E6C6"),
+			"and the level is printed in light parchment")
+	_free(status)
+
+
 # --- runner --------------------------------------------------------------------
 
 func _case(what: String, minimum: int, callable: Callable) -> void:
@@ -408,8 +484,12 @@ func _run() -> void:
 			_the_plate_paints_band_brass_and_wood_in_that_order)
 	await _case("the bar draws track, frame, fill and highlight", 12,
 			_the_bar_paints_track_frame_fill_and_highlight)
+	await _case("the diamond is a centred square on its point", 8,
+			_the_diamond_paints_a_centred_square_on_its_point)
+	await _case("the level badge is the locked brass plate", 7,
+			_the_level_badge_is_the_locked_brass_plate)
 
-	_check(checks > 75, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 90, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("World status: all checks passed")
 	quit(1 if failures else 0)
