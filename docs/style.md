@@ -21,12 +21,13 @@ are RGB; transparency is applied separately.
 | Header | `#493326` | Lighter leather brown |
 | Frame and control borders | `#806343` | Muted brass |
 | Body text | `#E0D0AE` | Warm parchment |
-| Main title | `#F4E6C6` | Light parchment |
+| Main title and character names | `#F4E6C6` | Light parchment |
 | Numeric values | `#F0D3A0` | Warm, distinct from labels |
 | Accent | `#D0A96B` | Brass highlight |
 | Secondary text and group headings | `#BD9862` | Muted gold |
 | Section heading | `#E3C590` | Light gold |
 | Section rule | `#6E5539` | Subtle brown-gold |
+| Cast band and bar track | `#2E231C` | Dark warm brown behind a plaque |
 | Vertical divider | `#675038` | Subtle brown-gold |
 | Footer hint | `#9C886D` | Recessive, but readable |
 

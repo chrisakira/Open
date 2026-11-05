@@ -1,6 +1,8 @@
 # Open
 
-Throwaway click-to-move spike. Left click the floor; the dummy walks there.
+A single-player 3D sandbox in the Kenshi-like shape: you give orders, and the
+characters carry them out. Left click the floor; the character you command walks
+there.
 
 Press **I** to open or close the character popup, or use its × button to close
 it. Drag its header to move it. It shows the player's effective attributes and
@@ -8,15 +10,23 @@ grouped skills, including any chosen specializations, and refreshes while open. 
 shown. The game continues running, and clicks outside the popup still move the
 player.
 
-Left click a living character, friendly or enemy, and a small popup opens beside
-it with one action: **Attack**. Attack orders the player to walk to that
-character and swing on C++'s cooldown until the fight ends; **Escape** or a click
+Left click another living character, friendly or enemy, and a small popup opens
+beside it with **Attack** - and with **Recruit** beside it when that character's
+recruitable flag is set. Attack orders the player to walk to that character and
+swing on C++'s cooldown until the fight ends; **Escape** or a click
 elsewhere closes the popup, and a click on the floor cancels the attack and moves
 the player instead. Clicking the player or a dead character does nothing. Clicking
 a character never orders a move, and the popup only offers the action: whether the
 target is still valid, how far it is, and what a swing costs are all decided in
 C++. Unarmed, both dummies start taking `0.04` damage per hit at level 1, so the
 rounded HP label barely moves; that is intended, not a bug to tune away.
+
+Choosing **Recruit** walks the commanded character into asking range and lets
+C++ decide whether the target joins. A yes seats them in the squad and that is
+shown three ways: the right-edge **squad** plaque, one line in the bottom-left
+action chat, and a yes-or-no card over the head that answered. A no spends the
+target's recruitable flag and says so; an ask that breaks - walked away, a fight
+chosen instead, the target dead first, a blow on the asker - says nothing at all.
 
 The simulation is C++ (`cpp/`): one `Character` type owns attributes, level,
 blessing, pools, body-part health, skills, titles, equipment and the move and
@@ -73,6 +83,9 @@ godot --path . --headless --script res://scripts/tests/character_sheet_test.gd
 godot --path . --headless --script res://scripts/tests/character_visuals_test.gd
 godot --path . --headless --script res://scripts/tests/character_animation_test.gd
 ```
+
+The full headless suite list, including the status, recruiting and workbench
+checks, is in `AGENTS.md`.
 
 `character_sheet_test.gd` drives the bridge directly and `combat_bridge_test.gd`
 drives the combat coordinator; `character_visuals_test.gd`

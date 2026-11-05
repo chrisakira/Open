@@ -16,13 +16,14 @@ dialogue trees, or lore here.
 The squad starts founded: the scene asks the coordinator to seat the player as
 its founder before anybody has asked anybody anything. Jane Doe 1 starts
 recruitable and her condition is the dummy that always succeeds; the enemy dummy
-and the player do not carry the flag. Left-click a living character opens the
-popup with Attack, and with Recruit beside it when that character's recruitable
-flag is set - `attack_popup.gd` shows the second button and issues nothing
-itself. Choosing Recruit issues a recruit order on the currently commanded
-character: C++ walks them to the unarmed melee 1.5 (a held weapon's reach does
-not replace it), and the attempt runs on a later frame, in range, never on the
-click. A yes puts the target in the squad and sets faction Friendly; a no spends
+and the player do not carry the flag. Left-click another living character opens
+the popup with Attack, and with Recruit beside it when that character's
+recruitable flag is set - `attack_popup.gd` shows the second button and issues
+nothing itself. A click on the player is ignored: the player's own sheet opens
+on `I`, not by clicking the body you command. Choosing Recruit issues a recruit
+order on the currently commanded character: C++ walks them to the unarmed melee
+1.5 (a held weapon's reach does not replace it), and the attempt runs on a later
+frame, in range, never on the click. A yes puts the target in the squad and sets faction Friendly; a no spends
 the flag and moves nothing else, and either answer stands the recruiter down.
 The answered sheet keeps the stamp of whose ask it answered and what it said,
 which is how the scene that issued the ask tells its own answer from somebody
@@ -69,10 +70,11 @@ have the flag.
 
 ## How the player asks — locked
 
-**Locked 2026-11-03 (human).** Left-click a living character still opens the
-existing popup. Attack stays on it. When that character's recruitable flag is
+**Locked 2026-11-03 (human).** Left-click another living character still opens
+the existing popup. Attack stays on it. When that character's recruitable flag is
 set, the same popup also offers Recruit. A character without the flag is
-Attack-only, same as today.
+Attack-only, same as today. Clicking the player is not an ask and opens nothing:
+the character you command is not a target for its own popup.
 
 `combat.md` still owns Attack. This file owns Recruit on that popup. Opening or
 dismissing the popup does not recruit.
@@ -99,6 +101,12 @@ order and does **not** auto-retaliate. They stop: no recruit order, no attack
 order. Not a failed attempt: faction and recruitable stay as they were. The
 swing is still a provocation in every other sense `combat.md` already names;
 this only blocks taking the attacker as an attack order.
+
+An ask that has already ended is not "still recruiting": if its target died
+under an earlier swing in the same frame, "Target dies while recruiting" has
+already ended the order, and the blow that lands afterwards is answered by the
+ordinary `combat.md` provocation instead of being swallowed for an ask nobody
+could honour.
 
 ## New move while recruiting — locked
 
@@ -180,11 +188,13 @@ with, its recruitable flag and its own recruit condition stay exactly as they
 were, and no answer is stamped, because nobody was asked. A corpse cannot be
 seated (death is the only way a member leaves, and a seat cannot bring anybody
 back), an absent or zero id is refused, and founding twice seats the one seat it
-already seated. Nothing else seats anybody: there is no public `set_in_squad`,
-and the only membership door the bridge carries is the read `is_in_squad`, so no
-script can seat or unseat at all. Death is the one thing that writes membership
-the other way — that is the leaving rule above, not a seat — and a corpse stays
-a corpse: founding a seated-then-dead sheet cannot resurrect the join.
+already seated. Nothing else seats anybody: the sheet's bridge has no public
+`set_in_squad`, and the one membership *write* the coordinator's bridge carries
+is `found_squad` - the scene points it at the player, and it will seat any living
+id it is handed. No script can unseat anybody at all. Death is the one thing that
+writes membership the other way — that is the leaving rule above, not a seat —
+and a corpse stays a corpse: founding a seated-then-dead sheet cannot resurrect
+the join (pinned in `cpp/tests/recruit_squad_test.cpp`).
 
 ## The answer is stamped — locked
 

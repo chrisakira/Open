@@ -12,7 +12,7 @@ visual direction; `combat_log.md` owns the separate bottom-left action chat.
 
 ## Current
 
-The scene has a top-left hint label, character/equipment/technique/workbench
+The scene has a centered top hint label, character/equipment/technique/workbench
 popups, a bottom-left action chat, floating combat damage numbers, and two
 recruiting views sharing the same HUD layer: the right-edge squad plaque
 (`scripts/squad_list.gd`) and the answer card (`scripts/recruit_bubble.gd`).
@@ -214,9 +214,11 @@ different pools or characters can have different maxima.
 
 **Locked 2026-11-01 (human) — degenerate data.** If a maximum is zero, the bar
 draws **empty** (fill 0, no crash) and the player text prints the true numbers
-anyway (e.g. `0/0`). If a status's sheet is missing, freed or invalid,
-that status **hides entirely** and reappears when the data is valid again —
-never a placeholder or half-truth.
+anyway (e.g. `0/0`). If a status's sheet is missing or invalid, that status
+**hides entirely** and reappears when the data is valid again — never a
+placeholder or half-truth. An overhead whose actor **node** has been freed
+hides with the node: the sheet itself is a `RefCounted` the view holds, so it
+cannot be freed out from under a bound view.
 
 **Bar updates — locked.** Both displays update their bar fill immediately when a
 pool value changes, without a delayed drain or refill animation.
@@ -248,11 +250,12 @@ Character naming for the display layer is likewise **locked 2026-11-01 (human)**
 in both views: show the character's **sheet name**, falling back to the actor's
 **scene node name** when the sheet name is empty; names longer than 20
 characters display as the first 19 plus `…`. The rule is written once, in
-`scripts/status_presenter.gd`, and **the whole HUD reads through it** — the
-player plaque, the overhead plates, the popups, the squad plaque, the answer
-card and, as of 2026-11-04, the action chat too: the chat's earlier scene-node
-wording is gone, because a character cannot be one name on her plate and
-another in the line about her.
+`scripts/status_presenter.gd`, and **every HUD surface that prints a name reads
+through it** — the player plaque, the overhead plates, the character popup, the
+squad plaque and, as of 2026-11-04, the action chat too: the chat's earlier
+scene-node wording is gone, because a character cannot be one name on her plate
+and another in the line about her. The answer card prints a word, not a name, so
+it is not one of the rule's readers.
 
 ## 4. Decision walk
 

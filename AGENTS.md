@@ -4,7 +4,7 @@ This is **Open**, a single-player 3D Kenshi-like sandbox. You give orders; chara
 
 This repo is **not** `Project_OPEN`. Do not copy that architecture, docs, or code unless the human asks.
 
-The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. A performed swing provokes: an unordered victim takes the attacker as its attack order and turns to face it (`docs/combat.md` section 1). The player owns the five starter items (C++ setup command), and the scene walks, fights with the typed model, performs techniques, shows held models, swing motion and damage numbers, and carries the character, equipment, technique and workbench panels. Crafting, repair and enchanting run through the coordinator's queue; the scene places the two benches. Jane Doe 1 starts recruitable: the character popup grows a Recruit action wherever the flag says so, the ask walks whoever is commanded into the unarmed melee 1.5, and a yes puts that sheet in the squad (`docs/recruiting.md`). The squad starts founded on the player, and the join is visible three ways - the right-edge squad plaque prints who is seated, the chat says the answer once, and a yes-or-no card hangs over the one who answered; a broken ask says nothing. Nobody can be commanded but the player yet - the roster is not built.
+The character sheet is implemented in C++ (`Character` and modules). Click-to-move works. The player and two standing dummies (green friend, red enemy) all use `OpenCharacter`. Standing dummies call `set_can_move(false)` so they never walk. A performed swing provokes: an unordered victim takes the attacker as its attack order and turns to face it (`docs/combat.md` section 1) — except a victim still carrying out a recruit order, whose ask ends and who takes no attack order (`docs/recruiting.md`, "Hit while recruiting"). The player owns the five starter items (C++ setup command), and the scene walks, fights with the typed model, performs techniques, shows held models, swing motion and damage numbers, and carries the character, attack, equipment, technique, workbench and weapon panels. The player status plaque and the overhead name-and-bar plates come from `docs/status_UID.md`. Crafting, repair and enchanting run through the coordinator's queue; the scene places the two benches. Jane Doe 1 starts recruitable — the scene writes that starting flag — and the attack popup (`scripts/attack_popup.gd`) grows a Recruit action wherever the flag says so, the ask walks whoever is commanded into the unarmed melee 1.5, and a yes puts that sheet in the squad (`docs/recruiting.md`). The squad starts founded on the player, and the join is visible three ways - the right-edge squad plaque prints who is seated, the chat says the answer once, and a yes-or-no card hangs over the one who answered; a broken ask says nothing. Nobody can be commanded but the player yet - the roster is not built.
 
 ## Language split
 
@@ -29,6 +29,7 @@ Player intent enters as an order (click → destination). Presentation draws the
 | `scripts/tests/` | Headless Godot tests |
 | `scripts/build_and_run.sh` | Build, test, launch |
 | `scenes/main.tscn` | Main scene |
+| `scenes/characters/` | Character model scenes (`male.tscn`, `female.tscn`), clips chosen per instance |
 | `project.godot` | Godot 4.7 project |
 | `docs/` | Design. `docs/README.md` is the index; ownership per file below |
 | `docs/superpowers/plans/` | Implementation plans |
@@ -45,7 +46,8 @@ Each doc owns its domain and points at the others rather than restating them:
 - `docs/weapons.md` — items: starter equipment, typed damage, techniques, durability, and the workbench actions (craft, repair, enchant).
 - `docs/style.md` — visual and interaction style for menus and popups; the rustic/medieval reference implementation is `scripts/character_popup.gd`.
 - `docs/combat_log.md` — the bottom-left action chat. Presentation only; it must never become a second simulation.
-- `docs/recruiting.md` — how a character joins the player's squad: the recruitable flag, each sheet's own recruit condition, the recruit order and its range, what a yes and a no do, the only way a member leaves, who the founder is, whose answer an answer is stamped to, and the three views of the join - the squad plaque, the chat line and the answer card. C++ owns all of it; the roster and switching who you command are not this file's and are not built.
+- `docs/status_UID.md` — the player status HUD and the overhead name-and-bar plates: layout, palettes, the shared name rule in `scripts/status_presenter.gd`, the update mechanism and the display/view boundary.
+- `docs/recruiting.md` — how a character joins the player's squad: the recruitable flag, each sheet's own recruit condition, the recruit order and its range, what a yes and a no do, the only way a member leaves, who the founder is, whose answer an answer is stamped to, and the three views of the join - the squad plaque, the chat line and the answer card. C++ owns the simulation; the scene writes Jane's starting flag and the popups only ask. The roster and switching who you command are not this file's and are not built.
 
 Code/tests win if they disagree with an older paragraph. Respect each file's Current / Locked / Open markers: do not build what is merely Locked, and never what is Open.
 
@@ -76,14 +78,15 @@ godot --path . --headless --import --quit
 
 A stale extension looks like missing classes (`OpenMoveOrder`, `OpenCharacter`, `OpenCombat`) or old behavior. A skipped import keeps old GDScript method signatures.
 
-Godot headless checks (after import) — run at least the tests covering what you changed; `scripts/tests/` holds them all (sheet, visuals, animation, popups, melee combat, bridges, combat feedback and log, workbench, recruiting: bridge, joining, squad plaque and answer display):
+Godot headless checks (after import) — run at least the tests covering what you changed; `scripts/tests/` holds them all. When in doubt, sweep every suite (each script quits itself):
 
 ```
-godot --path . --headless --script scripts/tests/character_sheet_test.gd
-godot --path . --headless --script scripts/tests/character_visuals_test.gd
-godot --path . --headless --script scripts/tests/melee_combat_test.gd
-godot --path . --headless --script scripts/tests/workbench_test.gd
+for t in scripts/tests/*_test.gd; do
+  godot --path . --headless --script "$t"
+done
 ```
+
+The suites cover the sheet, visuals and animation; the character, attack, equipment, technique, weapon and workbench popups; the move, combat, weapon and recruit bridges; status (presenter, player plaque, world plates, integration); combat feedback and the action chat; melee combat; medieval weapons; the player's name; the workbench; and recruiting (bridge, joining, squad plaque, answer card).
 
 New `class_name` GDScript needs that import once or the editor will not see the name.
 
@@ -104,8 +107,9 @@ Do not commit `cpp/build/`, `extension/bin/`, `.godot/`, or `*.so`.
 - Click the floor: the player dummy walks there. C++ `Character::velocity_at` owns the velocity; walk speed is `4.5` times the leg multiplier.
 - Green dummy = friendly, red dummy = enemy. Both and the player use `OpenCharacter`.
 - Faction ints on the bridge: `0` friendly, `1` enemy.
-- Standing dummies call `set_can_move(false)` so they never walk.
+- Standing dummies call `set_can_move(false)` so they never walk, including Jane after she joins.
 - Arrive radius is `0.4`. Movement is horizontal; Y is ignored.
+- `I` toggles the character sheet; `P` powers the player's sheet up (a playtest lever, C++ decides what that means).
 
 ## When something is unclear
 
