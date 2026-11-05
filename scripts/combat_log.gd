@@ -12,6 +12,13 @@ extends Control
 #
 # It is a log of *reports*, not a live view: a line says what happened and then stays out of the
 # way. Nothing here can be clicked into an order, and no line fades on a timer.
+#
+# Two feeds, one history. A swing arrives from `CombatFeedback.swing_reported`, which is the only
+# node that drains the coordinator's queue; a recruit answer arrives from the node that *issued*
+# the ask, carrying the answer C++ stamped on the sheet that was asked (`append_recruit`). Both
+# are pushes and this control drains nothing, so the two kinds share one eight-entry history
+# rather than each keeping a queue of its own - eight entries means eight, whatever mix of swings
+# and answers put them there.
 
 const CombatText := preload("res://scripts/combat_text.gd")
 # The name policy lives with the status views that share it: this chat reads the same rule the

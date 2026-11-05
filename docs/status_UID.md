@@ -13,7 +13,14 @@ visual direction; `combat_log.md` owns the separate bottom-left action chat.
 ## Current
 
 The scene has a top-left hint label, character/equipment/technique/workbench
-popups, a bottom-left action chat, and floating combat damage numbers. The
+popups, a bottom-left action chat, floating combat damage numbers, and two
+recruiting views sharing the same HUD layer: the right-edge squad plaque
+(`scripts/squad_list.gd`) and the answer card (`scripts/recruit_bubble.gd`).
+**Neither is a status view** — what they print is squad membership and the
+answer to an ask, and `docs/recruiting.md` owns both. Only the card borrows
+anything from this file, and only where there is one rule to borrow: the
+overlay's head anchor, the overlay's camera gate and the overhead plate's own
+height, rather than a second opinion about where a character is on screen. The
 **player status HUD is now present**: one scene-owned `StatusOverlay`
 (`scripts/status_overlay.gd`) sits on the HUD layer after the chat and before
 every popup, refreshes once per drawn frame after the camera follows, and owns
@@ -219,6 +226,11 @@ current **and** maximum from the bridge **once per drawn frame, after the
 camera has followed** — maxima are never cached, so a mid-play maximum change
 shows the same frame it happens. Statuses expose an explicit `refresh()` seam
 for deterministic tests; normal play drives the same path automatically.
+*"After" is a bigger number, not a smaller one:* Godot 4 ticks the **lower**
+`process_priority` first, so a status view under the world's 0 projects last
+frame's camera. The overlay ticks at 50 and the answer card after it at 60;
+`scripts/tests/status_integration_test.gd` measures the effect rather than the
+sign.
 
 **Direction adopted 2026-11-01 (human):**
 
@@ -235,8 +247,12 @@ for deterministic tests; normal play drives the same path automatically.
 Character naming for the display layer is likewise **locked 2026-11-01 (human)**
 in both views: show the character's **sheet name**, falling back to the actor's
 **scene node name** when the sheet name is empty; names longer than 20
-characters display as the first 19 plus `…`. The action chat keeps its existing
-scene-node wording regardless.
+characters display as the first 19 plus `…`. The rule is written once, in
+`scripts/status_presenter.gd`, and **the whole HUD reads through it** — the
+player plaque, the overhead plates, the popups, the squad plaque, the answer
+card and, as of 2026-11-04, the action chat too: the chat's earlier scene-node
+wording is gone, because a character cannot be one name on her plate and
+another in the line about her.
 
 ## 4. Decision walk
 

@@ -563,10 +563,11 @@ these change the rank curves, pools, blessings, frozen-parent resolution or limb
 - id, name (name may be empty)
 - faction `Friendly` / `Enemy`
 - `can_move` and the current move order
-- the recruitable flag, this sheet's own recruit condition, squad membership, and the
-  ask in flight (which sheet it is walking to). Who may be asked, what answers the ask,
-  and what a join does to all four: `docs/recruiting.md` owns those, as
-  `docs/combat.md` owns the attack order.
+- the recruitable flag, this sheet's own recruit condition, squad membership, the
+  ask in flight (which sheet it is walking to), and the answer stamp — the two
+  halves that say it answered *whom* and *yes or no*. Who may be asked, what
+  answers the ask, and what a join does to all of them: `docs/recruiting.md`
+  owns those, as `docs/combat.md` owns the attack order.
 - hunger / bleed: parked from earlier, not attributes
 
 ## Open (not attributes)

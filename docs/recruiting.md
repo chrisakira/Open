@@ -180,8 +180,11 @@ with, its recruitable flag and its own recruit condition stay exactly as they
 were, and no answer is stamped, because nobody was asked. A corpse cannot be
 seated (death is the only way a member leaves, and a seat cannot bring anybody
 back), an absent or zero id is refused, and founding twice seats the one seat it
-already seated. Nothing else seats anybody: there is no public `set_in_squad`, and
-no door that writes membership from a script.
+already seated. Nothing else seats anybody: there is no public `set_in_squad`,
+and the only membership door the bridge carries is the read `is_in_squad`, so no
+script can seat or unseat at all. Death is the one thing that writes membership
+the other way — that is the leaving rule above, not a seat — and a corpse stays
+a corpse: founding a seated-then-dead sheet cannot resurrect the join.
 
 ## The answer is stamped — locked
 
@@ -190,8 +193,10 @@ sheet that was asked, and the trace is the whole answer: *whose* ask it answered
 (`answered_to`) and *what it said* (`answered_accepted`). Both halves arrive
 together or not at all, because only an attempt stamps them. A seat is not an
 answer, and a cancel, a death or a swing is not an answer either — an ask that
-broke stamps nothing. Death does not take an answer away, and neither does a
-later ask: the stamp belongs to the recruiter who got it.
+broke stamps nothing. Death does not take an answer away, either. A later ask
+does not overwrite the stamp unless it too got an answer: what sits on the sheet
+is always the latest answer that was *given*, and it belongs to the recruiter who
+got it (pinned by `cpp/tests/recruit_squad_test.cpp`).
 
 **Two halves, not a half-answer (the agent's call, seen 2026-11-04).** The bridge
 carries both halves as one read (`get_recruit_answer`): an empty Dictionary means
@@ -217,7 +222,8 @@ says; they never decide that somebody joined because a number moved.
 
 **Locked 2026-11-04 (human).** Membership is printed on the **right screen edge**,
 16 px in and vertically centred, as a wood plaque (`#241B16`) in a brass frame
-(`#806343`) under a `SQUAD` heading (`#BD9862`) and the names below it
+(`#806343`) on a cast band (`#2E231C`) — the same three layers the player's own
+plaque draws — under a `SQUAD` heading (`#BD9862`) and the names below it
 (`#F4E6C6`, serif), through the same name rule every other view uses.
 
 It is **always on**: the heading stands over zero rows, because an empty squad is
@@ -247,8 +253,10 @@ anchor and gate instead of writing a second rule for where a head is or what the
 camera can show, so an out-of-range or behind-the-camera answer hides rather than
 being painted at a guessed place, and comes back on the word it was already
 saying. Those timings are the agent's call, seen 2026-11-04. It stacks over the
-answered character's own overhead plate rather than covering it. Nothing on it can
-be dismissed, clicked or asked again.
+answered character's own overhead plate rather than covering it, and it asks the
+gate's **camera** half rather than its plate half, because a verdict the player
+is owed cannot be cancelled by the fact that the player owns no overhead plate of
+her own. Nothing on it can be dismissed, clicked or asked again.
 
 ## Open
 
