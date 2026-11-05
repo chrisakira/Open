@@ -317,6 +317,34 @@ func _it_hides_itself_when_there_is_no_honest_thing_to_show() -> void:
 		plaque.get_parent().free()
 
 
+# docs/status_UID.md: a zero or negative maximum draws an empty bar, no crash, and the readout
+# still prints the true numbers the caller handed it. The guard lives in the shared bar, so the
+# player plaque and the overhead both inherit it - and nothing tested it until now.
+func _a_zero_maximum_draws_empty_and_prints_the_truth() -> void:
+	var plaque := _plaque()
+	if plaque == null:
+		return
+	var sheet := _sheet(41, "Empty Pool", 1)
+	plaque.bind_sheet(sheet)
+	plaque.refresh()
+	var row := _row(plaque, "HP")
+	_check(row != null, "the plaque has an HP row to starve")
+	if row == null:
+		plaque.get_parent().free()
+		return
+	row.present(0.0, 0.0, "0/0")
+	_check(_close(float(row.get("ratio")), 0.0), "a zero maximum fills nothing, not a crash")
+	_check(_row_text(row) == "0/0", "and the readout still prints 0/0: got [%s]" % _row_text(row))
+	row.present(-4.0, 0.0, "-4/0")
+	_check(_close(float(row.get("ratio")), 0.0), "a negative maximum fills nothing either")
+	_check(_row_text(row) == "-4/0", "and its truth is printed too: got [%s]" % _row_text(row))
+	row.present(0.0, -2.0, "0/-2")
+	_check(_close(float(row.get("ratio")), 0.0), "a negative maximum under a zero current is empty")
+	row.present(50.0, 100.0, "50/100")
+	_check(_close(float(row.get("ratio")), 0.5), "and a real maximum still fills half")
+	plaque.get_parent().free()
+
+
 func _a_small_window_moves_the_plaque_and_keeps_its_numbers() -> void:
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(1280, 720)
@@ -388,10 +416,12 @@ func _run() -> void:
 			_the_whole_control_tree_is_invisible_to_the_mouse)
 	await _case("it hides itself when there is no honest thing to show", 4,
 			_it_hides_itself_when_there_is_no_honest_thing_to_show)
+	await _case("a zero maximum draws empty and prints the truth", 6,
+			_a_zero_maximum_draws_empty_and_prints_the_truth)
 	await _case("a small window moves the plaque and keeps its numbers", 6,
 			_a_small_window_moves_the_plaque_and_keeps_its_numbers)
 
-	_check(checks > 55, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 62, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Player status: all checks passed")
 	quit(1 if failures else 0)

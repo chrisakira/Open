@@ -110,6 +110,15 @@ int main() {
 		expect_true("founding the seated founder again is accepted",
 					session.found_squad(world, 1));
 		expect_true("and the seat is the one seat it was", founder.in_squad());
+
+		// A seat is not a resurrection: a founder seated while alive who then dies is outside
+		// the squad - death is the one way a member leaves - and founding cannot put a corpse
+		// back in the chair.
+		expect_true("the seated founder takes a killing blow",
+					founder.damage(open::BodyPart::Torso, 500.0f));
+		expect_true("a seated-then-fallen founder cannot be seated again",
+					!session.found_squad(world, 1));
+		expect_true("and the corpse stays outside the squad", !founder.in_squad());
 	}
 	{
 		// found_squad_refuses_what_it_cannot_seat: an absent id, a zero id, a dead sheet and
