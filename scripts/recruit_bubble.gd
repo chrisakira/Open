@@ -99,15 +99,19 @@ func word() -> String:
 
 
 # One frame of the card's own life: the hold, then the fade, then the card is gone. Called by
-# `_process` and by nothing else; the scene never pushes time into an answer.
+# `_process` and by nothing else; the scene never pushes time into an answer. The clock runs only
+# while the gate is showing the card: time spent hidden is time nobody could read, and spending
+# it would take the answer away before it was ever seen.
 func tick(delta: float) -> void:
 	if not _answering:
+		return
+	_follow()
+	if not visible:
 		return
 	_elapsed += delta
 	if _elapsed >= HOLD + FADE:
 		_retire()
 		return
-	_follow()
 	if _elapsed > HOLD:
 		var fading := minf(1.0, (_elapsed - HOLD) / FADE)
 		modulate.a = 1.0 - fading
@@ -120,8 +124,9 @@ func _process(delta: float) -> void:
 
 
 # Follow the head, or hide when the camera cannot show that head. Hiding is not retiring: the
-# answer keeps its clock while it is out of sight, so an answer that walks out of range comes back
-# on the word it was already given, and does not get a second life for free.
+# answer keeps its clock *where it stopped*, so an answer that walks out of range comes back on
+# the word it was already given and at the ink it had reached - it neither loses the moment nor
+# gets a second one for free.
 func _follow() -> void:
 	if _actor == null or not is_instance_valid(_actor):
 		_retire()

@@ -235,6 +235,7 @@ func _a_yes_reports_once_in_the_chat_and_says_yes_over_her() -> void:
 	# The answer joined her: C++'s decision, pinned already. Here it is only the evidence that
 	# the answer was a yes.
 	_check(bool(jane.sheet.is_in_squad()), "the yes put her in the squad")
+	_check(not bool(jane.sheet.get_can_move()), "and joining did not give her legs")
 	var lines := _recruit_lines(log)
 	_check(lines.size() == 1, "one answer is one recruit line, got %s" % str(lines))
 	if lines.size() == 1:
@@ -505,6 +506,44 @@ func _the_watch_holds_then_fades_and_says_nothing_after() -> void:
 	await _free_world(world)
 
 
+# The gate hides an answer nobody can see; it must not also keep counting it down behind the
+# curtain, or "comes back on the word it was already saying" would stop being true the moment an
+# answer took longer to walk back into view than the hold and fade together.
+func _a_hidden_card_does_not_spend_its_moment_in_the_dark() -> void:
+	var world = await _world()
+	var jane: Node = world.get_node("Friendly")
+	var bubble := _bubble_of(world)
+	if bubble == null:
+		await _free_world(world)
+		return
+	_in_reach_of_player(jane)
+	await physics_frame
+	_check(bool(await _press_action(world, jane, "RecruitButton")), "Jane is asked in reach")
+	await physics_frame
+	await process_frame
+	_check(bool(bubble.visible) and String(bubble.call("word")) == "YES",
+			"the yes is being said while she can be seen")
+	_out_of_every_view(jane)
+	await process_frame
+	await process_frame
+	_check(not bool(bubble.visible), "out of the camera's reach the card hides")
+	# Several whole lives of this card, spent where nobody could read a word of it.
+	bubble.call("tick", 4.0)
+	_check(not bool(bubble.visible), "hiding is still not showing")
+	_check(String(bubble.call("word")) == "YES",
+			"the clock stopped with the curtain: the word is still hers")
+	_in_reach_of_player(jane)
+	await process_frame
+	await process_frame
+	_check(bool(bubble.visible), "back in view, the card comes back")
+	_check(_close(float(bubble.modulate.a), 1.0),
+			"and it comes back at full ink: the dark spent none of its moment")
+	bubble.call("tick", 0.6)
+	bubble.call("tick", 1.0)
+	_check(not bool(bubble.visible), "seen, it still runs its hold and fade and goes")
+	await _free_world(world)
+
+
 func _the_card_stacks_over_the_plate_and_obeys_the_gate() -> void:
 	var world = await _world()
 	var player: Node = world.get_node("Player")
@@ -639,6 +678,27 @@ func _the_bubble_is_click_through_and_hangs_under_the_popups() -> void:
 			"and a NO is parchment like a YES: got %s" % str(ink))
 	bubble.call("open_for", world.get_node("Friendly"), true)
 	_check(_close(ink.r, Color("#F4E6C6").r), "a YES wears the same ink: nothing shouts")
+	# The card's own shape and face: a serif word, a tail pointing at the head, and no motion
+	# besides following - a card that rose or popped would compete with the fight it reports.
+	_check(word.has_theme_font_override("font"), "the word sets its own face")
+	var serif: Font = word.get("theme_override_fonts/font")
+	_check(serif is SystemFont and String((serif as SystemFont).font_names[0]) == "Georgia"
+			and String((serif as SystemFont).font_names[
+					(serif as SystemFont).font_names.size() - 1]) == "serif",
+			"and it is the project's serif stack")
+	_check(table.has("TAIL_HEIGHT") and float(table["TAIL_HEIGHT"]) > 0.0
+			and table.has("TAIL_HALF_WIDTH") and float(table["TAIL_HALF_WIDTH"]) > 0.0,
+			"the card states the tail that points at the head")
+	_check(_close(bubble.custom_minimum_size.y,
+			float(table.get("CARD_HEIGHT", 0.0)) + float(table.get("TAIL_HEIGHT", 0.0))),
+			"and reserves its own height plus that tail: %f" % bubble.custom_minimum_size.y)
+	var resting := bubble.get_global_rect()
+	bubble.call("tick", 0.5)
+	_check(bubble.get_global_rect().is_equal_approx(resting),
+			"half the hold in, the card has neither moved nor grown: %s against %s"
+					% [str(bubble.get_global_rect()), str(resting)])
+	_check(bubble.scale == Vector2.ONE and _close(float(bubble.rotation), 0.0),
+			"and it pops nothing: scale %s, rotation %f" % [str(bubble.scale), bubble.rotation])
 	var layer: Node = bubble.get_parent()
 	_check(layer is CanvasLayer, "the bubble lives on the HUD canvas layer")
 	var above := 0
@@ -676,13 +736,15 @@ func _run() -> void:
 	await _case("a blow on the recruiter is silent", 8, _a_blow_on_the_recruiter_is_silent)
 	await _case("hold, fade, then nothing", 10,
 			_the_watch_holds_then_fades_and_says_nothing_after)
+	await _case("a hidden card keeps its moment", 7,
+			_a_hidden_card_does_not_spend_its_moment_in_the_dark)
 	await _case("stacks over the plate, obeys the gate", 9,
 			_the_card_stacks_over_the_plate_and_obeys_the_gate)
 	await _case("the card over the player too", 8, _the_card_can_be_said_over_the_player_too)
-	await _case("click-through under the popups", 17,
+	await _case("click-through under the popups", 23,
 			_the_bubble_is_click_through_and_hangs_under_the_popups)
 
-	_check(checks > 93, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 108, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Recruit answer display: all checks passed")
 	quit(1 if failures else 0)
