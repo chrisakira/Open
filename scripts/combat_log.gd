@@ -52,9 +52,17 @@ var _actors: Array = []
 var _entries: PackedStringArray = PackedStringArray()
 var _lines: VBoxContainer
 var _built := false
+var _serif_font: SystemFont
 
 
 func _init() -> void:
+	# The whole panel is set in the project's one serif stack (docs/style.md). The override goes
+	# on each line because a Godot 4 theme on a plain Control does not reach its children, and
+	# the measurement below reads this same font object rather than asking the theme - the height
+	# and the ink cannot disagree if they are the same face.
+	_serif_font = SystemFont.new()
+	_serif_font.font_names = PackedStringArray(
+			["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])
 	# Built here rather than in `_ready` because the chat is handed events by another node, and
 	# a report that arrives before the scene finished its first frame is still a report.
 	_build()
@@ -226,6 +234,7 @@ func _line(text: String) -> Label:
 	# No `clip_text` here: with autowrap it makes the label report a one-pixel minimum height,
 	# which collapses the whole panel. Overflow is the panel's business - it clips its own
 	# contents - and a word too long for a line is clipped by that instead.
+	line.add_theme_font_override("font", _serif_font)
 	line.add_theme_font_size_override("font_size", FONT_SIZE)
 	line.add_theme_color_override("font_color", TEXT_COLOR)
 	line.size_flags_horizontal = Control.SIZE_FILL
@@ -281,7 +290,7 @@ func _measured_entries_height(inner_width: float) -> float:
 # draws with. Measured rather than guessed, because the chat is the only place a long name has
 # to fit, and a panel that grew one line per entry would be a panel that walks off the top.
 func _entry_height(text: String, inner_width: float) -> float:
-	var font: Font = get_theme_font("font")
+	var font: Font = _serif_font
 	if font == null:
 		return _single_line_height()
 	# The wrapped height the same font reports at this width, read back as a line count: the
@@ -296,7 +305,7 @@ func _entry_height(text: String, inner_width: float) -> float:
 
 
 func _single_line_height() -> float:
-	var font: Font = get_theme_font("font")
+	var font: Font = _serif_font
 	if font == null:
 		return float(FONT_SIZE) + LINE_SPACING
 	return maxf(font.get_height(FONT_SIZE), 1.0)

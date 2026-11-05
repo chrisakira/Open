@@ -413,6 +413,64 @@ func _the_amount_is_the_number_the_float_prints() -> void:
 
 # --- history, chrome and input -------------------------------------------------
 
+# docs/style.md: a readable serif face, from the project's one system stack. Every other HUD
+# surface wore it; the chat was the last one still on the theme's sans default, and nothing said
+# so. The panel measures its text with `get_theme_font("font")`, so the check has to pass for
+# both sides or the panel height and the ink would quietly disagree.
+func _the_chat_is_set_in_the_shared_serif() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var player := _named_actor("Player", "John Doe", 1)
+	log.bind_actors([player])
+	log.append_swing(_event(1, 2, "none", 3.0))
+	var lines: Array = log.find_children("*", "Label", true, false)
+	_check(not lines.is_empty(), "the chat wrote a line to measure")
+	if not lines.is_empty():
+		var font: Font = (lines[0] as Label).get_theme_font("font")
+		_check(font is SystemFont, "a chat line wears a system font, not the theme default")
+		if font is SystemFont:
+			var names: PackedStringArray = (font as SystemFont).font_names
+			_check(names.size() == 4 and String(names[0]) == "Georgia"
+					and String(names[names.size() - 1]) == "serif",
+					"and it is the project's serif stack: got %s" % str(names))
+	var measuring: Font = log.get("_serif_font")
+	_check(measuring != null and (lines.is_empty() or lines[0].get_theme_font("font") == measuring),
+			"the panel measures with the same face it draws in, or the height lies")
+	player.free()
+	log.free()
+
+
+# The panel's chrome is locked to docs/style.md: the main-panel wood at 86 percent, the muted
+# brass frame at 90 percent and two pixels wide, and the parchment body text at full ink. The
+# transparency is the point - the fight the chat describes stays visible behind it. A panel that
+# kept the colours but lost its `_draw` would still pass every behavioural check above.
+func _the_panel_wears_the_locked_chrome() -> void:
+	var log = _log()
+	if log == null:
+		return
+	var table: Dictionary = log.get_script().get_script_constant_map()
+	for spec in [["PANEL_COLOR", 0.141, 0.106, 0.086, 0.86],
+			["FRAME_COLOR", 0.502, 0.388, 0.263, 0.9],
+			["TEXT_COLOR", 0.878, 0.816, 0.682, 1.0]]:
+		var name := String(spec[0])
+		_check(table.has(name), "the chat states a %s constant" % name)
+		if not table.has(name):
+			continue
+		var got: Color = table[name]
+		_check(_close(got.r, float(spec[1])) and _close(got.g, float(spec[2]))
+				and _close(got.b, float(spec[3])) and _close(got.a, float(spec[4])),
+				"%s is the locked colour and transparency: got %s" % [name, str(got)])
+	_check(table.has("FRAME_WIDTH") and _close(float(table["FRAME_WIDTH"]), 2.0),
+			"the frame is the locked two pixels")
+	var draws := false
+	for method in log.get_script().get_script_method_list():
+		if String(method.get("name", "")) == "_draw":
+			draws = true
+	_check(draws, "and the chat paints that frame itself rather than inheriting a default")
+	log.free()
+
+
 func _the_chat_keeps_the_last_eight_lines() -> void:
 	var log = _log()
 	if log == null:
@@ -687,6 +745,8 @@ func _run() -> void:
 	await _case("swings and answers share the history", 6,
 			_swings_and_answers_share_the_eight_entry_history)
 	await _case("the shared amount", 25, _the_amount_is_the_number_the_float_prints)
+	await _case("the shared serif", 3, _the_chat_is_set_in_the_shared_serif)
+	await _case("the locked chrome", 8, _the_panel_wears_the_locked_chrome)
 	await _case("the last eight lines", 9, _the_chat_keeps_the_last_eight_lines)
 	await _case("click-through and bounds", 45,
 			_the_panel_never_eats_a_click_and_never_leaves_the_screen)
@@ -697,7 +757,7 @@ func _run() -> void:
 	await _case("no second drain", 12, _the_chat_holds_no_second_drain_of_its_own)
 	await _case("an event comes through untouched", 4, _a_reported_event_comes_through_untouched)
 
-	_check(checks > 180, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 193, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Combat log: all checks passed")
 	quit(1 if failures else 0)
