@@ -38,9 +38,9 @@ const CARD_HEIGHT := 24.0
 const TAIL_HEIGHT := 8.0
 const TAIL_HALF_WIDTH := 7.0
 const CARD_BORDER := 2.0
-# The plate the verdict stacks over, measured with the overhead's own numbers so the bubble and
-# the plate agree on where the plate is.
-const PLATE_HEIGHT := Plate.NAME_ROW_HEIGHT + 2.0 + Plate.STACK_HEIGHT + 2.0 * Plate.PADDING
+# The plate the verdict stacks over, at the height the plate itself says it has: the card does not
+# get to keep a second opinion about where the plate ends.
+const PLATE_HEIGHT := Plate.PLATE_HEIGHT
 const STACK_GAP := Plate.GAP
 
 var _overlay: Control
@@ -53,9 +53,10 @@ var _word: Label
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size = Vector2(CARD_WIDTH, CARD_HEIGHT + TAIL_HEIGHT)
-	# Later than the overlay (which is -100) so the anchor and the gate it publishes are already
-	# this frame's, not the frame before it.
-	process_priority = -101
+	# After the world's camera follow (0) and after the overlay (50): Godot 4 ticks the *lower*
+	# priority first, so a negative number here would have made this the earliest of the three and
+	# the card would have hung from last frame's camera.
+	process_priority = 60
 	_word = Label.new()
 	_word.name = "AnswerWord"
 	_word.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -128,10 +129,16 @@ func _follow() -> void:
 	if _overlay == null or not is_instance_valid(_overlay):
 		visible = false
 		return
-	if not bool(_overlay.call("status_visible", _actor)):
+	# The camera's own answer, not the plate's: the card can be pointed at a character the
+	# overlay owns no plate for - the player has none - and "can this head be seen" is the
+	# question either way.
+	if not bool(_overlay.call("camera_shows", _actor)):
 		visible = false
 		return
 	var anchor: Vector2 = _overlay.call("head_anchor", _actor)
+	if anchor == Vector2.INF:
+		visible = false
+		return
 	position = Vector2(anchor.x - size.x / 2.0, anchor.y - PLATE_HEIGHT - STACK_GAP - size.y)
 	visible = true
 
@@ -165,7 +172,3 @@ func _draw() -> void:
 	]), PackedColorArray([CARD_WOOD]))
 
 
-# Nothing is laid out by a container: the card is one word, at a size that word fits.
-func _layout() -> void:
-	_word.position = Vector2(0.0, 0.0)
-	_word.size = Vector2(CARD_WIDTH, CARD_HEIGHT)

@@ -92,8 +92,11 @@ func _the_scene_carries_one_overlay_bound_to_the_player() -> void:
 				popups_above += 1
 	_check(popups_seen >= 5 and popups_above == popups_seen,
 			"every popup shares the layer and stays above the status (saw %d)" % popups_seen)
-	_check(int(overlay.process_priority) < 0,
-			"the overlay refreshes after the camera: priority %d" % int(overlay.process_priority))
+	# Godot 4 ticks the *lower* priority first, so "after the camera" means a priority above the
+	# world's 0. The effect is pinned by _the_overhead_is_this_frames_camera_not_last_frames.
+	_check(int(overlay.process_priority) > 0,
+			"the overlay ticks after the camera follow: priority %d"
+			% int(overlay.process_priority))
 	world.queue_free()
 	await process_frame
 	await process_frame
@@ -696,6 +699,100 @@ func _case(what: String, minimum: int, callable: Callable) -> void:
 			minimum])
 
 
+# The locked update mechanism (docs/status_UID.md, "Locked 2026-11-01 — update mechanism") is
+# "once per drawn frame, **after the camera has followed**". Godot 4 processes *lower*
+# `process_priority` values first, so a negative priority is *earlier* than the world's 0 and an
+# overlay at -100 would be projecting last frame's camera. This case measures the effect instead
+# of trusting the sign: a nudge ticking immediately after the world's camera follow moves the
+# camera, and a probe ticking after everything asks whether the overhead hangs from *this* frame's
+# camera. A stale overlay is off by the whole nudge - units, not rounding.
+class CameraNudge:
+	extends Node
+	var camera: Camera3D
+	var probe: Object
+	var armed := false
+	var done := false
+
+	func _process(_delta: float) -> void:
+		if not armed or done:
+			return
+		done = true
+		# Priority 1: right after the world (0), before anything that draws over the world.
+		probe.camera_before_nudge = camera.global_position
+		camera.global_position += Vector3(0.0, 0.6, 2.0)
+
+
+class AnchorProbe:
+	extends Control
+	var overlay: Control
+	var plate: Control
+	var camera: Camera3D
+	var anchor_actor: Node
+	var armed := false
+	var camera_before_nudge := Vector3.INF
+	var stale := -1.0
+	var moved := 0.0
+	var plate_hidden := true
+
+	func _process(_delta: float) -> void:
+		if not armed or camera_before_nudge == Vector3.INF:
+			return
+		# Both sides of this are the same frame: the nudge ticks at 1, this ticks at 1000.
+		moved = camera.global_position.distance_to(camera_before_nudge)
+		var anchor: Vector2 = overlay.call("head_anchor", anchor_actor)
+		var hung := plate.position + Vector2(plate.size.x / 2.0, plate.size.y)
+		stale = anchor.distance_to(hung)
+		plate_hidden = not bool(plate.visible)
+
+
+func _the_overhead_is_this_frames_camera_not_last_frames() -> void:
+	var world := _world()
+	await process_frame
+	await physics_frame
+	await process_frame
+	var overlay := _find(world, "StatusOverlay")
+	var camera: Camera3D = world.get("_camera")
+	var dummy := _find(world, "Friendly")
+	if overlay == null or camera == null or dummy == null:
+		_check(false, "the wired scene had an overlay, a camera and a dummy")
+		return
+	var plate: Control = _find(overlay, "WorldStatus_%d" % int(dummy.sheet.get_character_id()))
+	_check(plate != null, "the dummy carries an overhead plate")
+	if plate == null:
+		await _free_world(world)
+		return
+	var layer := overlay.get_parent() as CanvasLayer
+	var probe := AnchorProbe.new()
+	probe.name = "AnchorProbe"
+	probe.overlay = overlay
+	probe.plate = plate
+	probe.camera = camera
+	probe.anchor_actor = dummy
+	probe.process_priority = 1000
+	layer.add_child(probe)
+	var nudge := CameraNudge.new()
+	nudge.name = "CameraNudge"
+	nudge.camera = camera
+	nudge.probe = probe
+	nudge.process_priority = 1
+	layer.add_child(nudge)
+	await process_frame
+	_check(bool(plate.visible), "the plate is on screen for the measurement")
+	nudge.armed = true
+	probe.armed = true
+	await process_frame
+	_check(probe.moved > 1.5,
+			"the frame moved the camera by the nudge, so the measurement can see anything: %f"
+					% probe.moved)
+	_check(not probe.plate_hidden, "and the plate stayed visible while the camera moved")
+	_check(probe.stale >= 0.0 and probe.stale < 1.0,
+			"the overhead hangs from THIS frame's camera, not last frame's: off by %f px"
+					% probe.stale)
+	probe.queue_free()
+	nudge.queue_free()
+	await _free_world(world)
+
+
 func _run() -> void:
 	await _case("the scene carries one overlay bound to the player", 9,
 			_the_scene_carries_one_overlay_bound_to_the_player)
@@ -718,6 +815,8 @@ func _run() -> void:
 			_the_scene_shows_both_dummies_overhead)
 	await _case("live overheads answer clicks like the world they float on", 8,
 			_live_overheads_answer_clicks_like_the_world_they_float_on)
+	await _case("the overhead is this frame's camera", 5,
+			_the_overhead_is_this_frames_camera_not_last_frames)
 
 	_check(checks > 92, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:

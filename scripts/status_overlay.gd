@@ -1,9 +1,10 @@
 # The status overlay: one per scene, the only owner of status controls.
 #
 # It binds a player, a world roster, and the camera, then refreshes every view once per drawn
-# frame after the camera has followed (`process_priority -100` — the main scene ticks at 0), so
-# what the plaque and the overheads mirror is the frame the player is actually looking at, not
-# yesterday's projection. Ownership is keyed by actor *instance*, never by numeric id alone: a
+# frame after the camera has followed — `process_priority 50`, because Godot 4 ticks the *lower*
+# priority first and the world's camera follow ticks at 0 (measured, and pinned by
+# `scripts/tests/status_integration_test.gd`). What the plaque and the overheads mirror is
+# therefore the frame the player is actually looking at, not yesterday's projection. Ownership is keyed by actor *instance*, never by numeric id alone: a
 # freed actor's view is released, and a fresh node reusing an old id reads fresh identity.
 # Binding the same roster twice is idempotent, unbinding is safe to repeat, and everything the
 # overlay builds dies with the scene — no singleton holds status state.
@@ -34,7 +35,7 @@ func _init() -> void:
 	name = "StatusOverlay"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	process_priority = -100
+	process_priority = 50
 
 
 # Replace the whole bound scene. `player` gets the plaque; every other valid actor gets one
@@ -80,7 +81,7 @@ func refresh() -> void:
 		else:
 			_player_view.bind_sheet(null)
 		_player_view.refresh()
-	var show_any := _camera != null and is_instance_valid(_camera) and _camera.is_current()
+	var show_any := _has_view()
 	for actor_id in _entries.keys():
 		var entry: Dictionary = _entries[actor_id]
 		var view: Control = entry["view"]
@@ -118,15 +119,31 @@ func _passes_view_gate(actor: CharacterBody3D) -> bool:
 
 
 # The screen point a view hangs from above this actor: the same projection and the same head
-# height the plates already use. Public so a display that stacks over a plate - the answer bubble
-# - asks this one rule instead of writing a second one that can quietly disagree with it. A
-# camera that is not drawing gets the point it would have used: the caller's own gate decides
-# whether anything is shown at all.
+# height the plates already use. Public so a display that stacks over a plate - the answer card -
+# asks this one rule instead of writing a second one that can quietly disagree with it. No actor,
+# or no drawing camera, answers Vector2.INF: a caller that placed something there would be
+# painting at the top-left of nothing, and Vector2.INF cannot be mistaken for a place.
 func head_anchor(actor: CharacterBody3D) -> Vector2:
-	var feet := actor.global_position + Vector3(0.0, HEAD_ANCHOR_Y, 0.0)
-	if _camera == null or not is_instance_valid(_camera) or not _camera.is_current():
-		return _camera.unproject_position(feet) if _camera != null else Vector2.ZERO
-	return _camera.unproject_position(feet)
+	if actor == null or not is_instance_valid(actor):
+		return Vector2.INF
+	if not _has_view():
+		return Vector2.INF
+	return _camera.unproject_position(actor.global_position + Vector3(0.0, HEAD_ANCHOR_Y, 0.0))
+
+
+# The camera's own answer, without the plate: may this actor be seen at all right now? The status
+# views need "and does the overlay own a plate for them"; a display that follows a head the
+# overlay may not own - the player, who has no overhead - needs only this half.
+func camera_shows(actor: CharacterBody3D) -> bool:
+	if actor == null or not is_instance_valid(actor):
+		return false
+	if not _has_view():
+		return false
+	return _passes_view_gate(actor)
+
+
+func _has_view() -> bool:
+	return _camera != null and is_instance_valid(_camera) and _camera.is_current()
 
 
 func _process(_delta: float) -> void:

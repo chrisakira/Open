@@ -38,6 +38,9 @@ const BADGE_WIDTH := 38.0
 const BADGE_HEIGHT := 18.0
 const GAP := 4.0
 const PADDING := 7.0
+# One frame's height, stated once: the plate draws itself with it, and anything that has to stack
+# over the plate - the answer card - reads this instead of re-adding the same numbers and hoping.
+const PLATE_HEIGHT := NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT + 2.0 * PADDING
 
 var _actor: CharacterBody3D
 
@@ -52,7 +55,7 @@ var _badge_label: Label
 
 func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	custom_minimum_size = Vector2(180.0, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT + 2.0 * PADDING)
+	custom_minimum_size = Vector2(180.0, PLATE_HEIGHT)
 	var serif := SystemFont.new()
 	serif.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])
 
@@ -170,7 +173,7 @@ func _layout() -> void:
 	_badge_label.size = _badge.size
 	var skull_right := _skull.position.x + _skull.custom_minimum_size.x
 	var root_width := maxf(skull_right, _badge.position.x + _badge.size.x) + PADDING
-	custom_minimum_size = Vector2(root_width, NAME_ROW_HEIGHT + 2.0 + STACK_HEIGHT + 2.0 * PADDING)
+	custom_minimum_size = Vector2(root_width, PLATE_HEIGHT)
 	reset_size()
 	queue_redraw()
 

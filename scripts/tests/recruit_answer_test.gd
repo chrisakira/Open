@@ -461,10 +461,17 @@ func _the_card_stacks_over_the_plate_and_obeys_the_gate() -> void:
 	if bubble == null or overlay == null:
 		await _free_world(world)
 		return
-	for door in ["head_anchor", "status_visible"]:
+	for door in ["head_anchor", "camera_shows"]:
 		_check(overlay.has_method(door),
 				"the overlay lends its %s, so the card borrows one rule instead of a second"
 						% door)
+	# Godot 4 ticks the lower `process_priority` first, so "after the camera and after the
+	# overlay's own refresh" is a LARGER number than both - the pair of signs is the whole
+	# difference between this frame's answer and last frame's.
+	_check(int(bubble.process_priority) > int(overlay.process_priority)
+			and int(overlay.process_priority) > 0,
+			"the card ticks after the overlay, which ticks after the camera: %d, %d"
+			% [int(overlay.process_priority), int(bubble.process_priority)])
 	_in_reach_of_player(jane)
 	await physics_frame
 	_check(bool(await _press_action(world, jane, "RecruitButton")), "Jane is asked in reach")
@@ -493,6 +500,41 @@ func _the_card_stacks_over_the_plate_and_obeys_the_gate() -> void:
 	await process_frame
 	await process_frame
 	_check(bool(bubble.visible), "and in range again it shows the word it was already saying")
+	await _free_world(world)
+
+
+# The card is pointed at whoever answered, and the overlay owns no plate for the player. The
+# camera half of the gate is the useful question there - "can this head be seen" - so a verdict
+# the player is owed is never silently cancelled by a rule about overhead plates.
+func _the_card_can_be_said_over_the_player_too() -> void:
+	var world = await _world()
+	var player: Node = world.get_node("Player")
+	var bubble := _bubble_of(world)
+	var overlay := _overlay_of(world)
+	if bubble == null or overlay == null:
+		await _free_world(world)
+		return
+	var plate: Array = overlay.find_children("WorldStatus_%d" % PLAYER_ID, "", true, false)
+	_check(plate.is_empty(), "the player owns no overhead plate - the card cannot borrow one")
+	_check(not bool(overlay.call("status_visible", player)),
+			"the plate gate really does say no for the player: that is the trap")
+	bubble.call("open_for", player, true)
+	await process_frame
+	_check(bool(bubble.visible), "and the card still stands over the player, gate willing")
+	_check(String(bubble.call("word")) == "YES", "the word is the answer, not the actor: got [%s]"
+			% String(bubble.call("word")))
+	var wanted: Vector2 = overlay.call("head_anchor", player)
+	_check(_close(bubble.position.x + bubble.size.x / 2.0, wanted.x, 0.5),
+			"centred on the player's own head anchor: card %f, anchor %f" % [
+					bubble.position.x + bubble.size.x / 2.0, wanted.x])
+	# The gate is still the camera's: with nothing drawing, nothing may be painted.
+	var viewport: Viewport = player.get_viewport()
+	viewport.camera_3d = null
+	await process_frame
+	_check(not bool(bubble.visible), "no drawing camera, no card")
+	viewport.camera_3d = world.get("_camera")
+	await process_frame
+	_check(bool(bubble.visible), "and it comes back with the camera")
 	await _free_world(world)
 
 
@@ -552,10 +594,11 @@ func _run() -> void:
 			_the_watch_holds_then_fades_and_says_nothing_after)
 	await _case("stacks over the plate, obeys the gate", 9,
 			_the_card_stacks_over_the_plate_and_obeys_the_gate)
+	await _case("the card over the player too", 8, _the_card_can_be_said_over_the_player_too)
 	await _case("click-through under the popups", 10,
 			_the_bubble_is_click_through_and_hangs_under_the_popups)
 
-	_check(checks > 70, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 78, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Recruit answer display: all checks passed")
 	quit(1 if failures else 0)
