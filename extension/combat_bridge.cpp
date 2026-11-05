@@ -284,6 +284,13 @@ bool OpenCombat::step(float seconds) {
 	// nothing to add, and a listener may read the reports on its own schedule.
 	std::vector<open::CombatEvent> performed = session_.take_swing_events();
 	events_.insert(events_.end(), performed.begin(), performed.end());
+	// The session capped its own queue, but this second queue is the one a listener holds, and
+	// it survives across steps: a HUD that stops reading must not grow it without bound. The
+	// same documented rule applies here - sixty-four waiting, the oldest dropped beyond that.
+	if (events_.size() > open::CombatSession::kMaxPendingEvents) {
+		const std::size_t excess = events_.size() - open::CombatSession::kMaxPendingEvents;
+		events_.erase(events_.begin(), events_.begin() + static_cast<std::ptrdiff_t>(excess));
+	}
 	return true;
 }
 

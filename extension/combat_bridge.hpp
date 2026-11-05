@@ -144,7 +144,9 @@ private:
 	// its dependencies so the references it holds are always already alive.
 	open::WorkContext work_;
 	// Swings collected from the session on the step that performed them, so that reading them
-	// is a separate decision from fighting.
+	// is a separate decision from fighting. Bounded to `CombatSession::kMaxPendingEvents` with
+	// the oldest dropped, which is what lets a listener that never reads keep holding the most
+	// recent fights without growing this vector for as long as the coordinator lives.
 	std::vector<open::CombatEvent> events_;
 
 	std::vector<Entry> entries_;

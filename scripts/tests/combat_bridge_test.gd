@@ -399,6 +399,42 @@ func _swings_carry_their_clock() -> void:
 		_check(same_clock, note)
 
 
+# docs/combat_log.md: the reports wait for a read up to sixty-four, oldest dropped beyond that.
+# The session caps its own queue, but the bridge drains that queue into a second one every step,
+# so the cap has to exist on the surface the HUD actually holds - otherwise a listener that stops
+# reading grows the bridge without limit, which is the failure the sentence promises cannot happen.
+func _the_bridge_does_not_outgrow_the_documented_queue() -> void:
+	var combat = _combat()
+	var victim := _sheet(700, "Victim")
+	_check(combat.add_character(victim, Vector3.ZERO), "the victim registers first")
+	var attackers: Array = []
+	for id in range(1, 71):
+		var sheet := _sheet(id, "Brawler %d" % id)
+		attackers.append(sheet)
+		_check(combat.add_character(sheet, Vector3(0.0, 0.0, 1.0)),
+				"attacker %d registers in reach" % id)
+		_check(combat.issue_attack(id, 700), "attacker %d is ordered in" % id)
+	_check(combat.step(5.0), "a frame long enough for every opening swing runs")
+	# A second frame, still unread: the session caps its own queue each frame, but a bridge that
+	# only appends would now be holding both frames. The victim goes first on this frame (the
+	# first blow gave it a return), then the seventy attackers again.
+	_check(combat.step(5.0), "and a second frame, with nobody reading in between")
+	var events: Array = combat.take_combat_events()
+	_check(events.size() == 64,
+			"two unread frames wait as the documented sixty-four, not %d" % events.size())
+	if events.size() != 64:
+		return
+	# Oldest dropped: the bridge keeps only the last sixty-four reports, so every report of the
+	# first frame is gone and the second frame's six oldest with it; the first survivor is
+	# attacker 7, and the newest blow is still the last one performed.
+	_check(int(events[0]["actor_id"]) == 7,
+			"the oldest seven were dropped and nothing newer: first actor %d"
+					% int(events[0]["actor_id"]))
+	_check(int(events[-1]["actor_id"]) == 70,
+			"and the newest swing is still there: last actor %d" % int(events[-1]["actor_id"]))
+	_check(combat.take_combat_events().is_empty(), "the bounded queue drains like any other")
+
+
 func _events_name_the_defence_that_ran() -> void:
 	# The field exists because no number in an event can be read back into an answer: a
 	# zero-damage blow might be a dodge, a full block or armour, and a blow that prevented
@@ -495,6 +531,7 @@ func _run() -> void:
 	_registration_and_safe_defaults()
 	_end_to_end_fight()
 	_swings_carry_their_clock()
+	_the_bridge_does_not_outgrow_the_documented_queue()
 	_events_name_the_defence_that_ran()
 	_lifetime_and_safety()
 	_seeding_varies_per_session()
