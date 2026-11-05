@@ -38,6 +38,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 
+func _same_color(got: Color, want: Color) -> bool:
+	return _close(got.r, want.r) and _close(got.g, want.g) and _close(got.b, want.b) \
+			and _close(got.a, want.a)
+
+
 func _check(condition: bool, message: String) -> void:
 	checks += 1
 	if not condition:
@@ -509,6 +514,58 @@ func _the_watch_holds_then_fades_and_says_nothing_after() -> void:
 # The gate hides an answer nobody can see; it must not also keep counting it down behind the
 # curtain, or "comes back on the word it was already saying" would stop being true the moment an
 # answer took longer to walk back into view than the hold and fade together.
+# What the card actually paints, as far as a headless run can say: nothing rasterises here, so
+# the draw body submits its stack as a function and the test reads it - brass edge outside, wood
+# field inside, then a brass tail with a wood core, all four layers below the word. A dropped
+# tail or a field painted over the edge fails at the geometry, not in a screenshot.
+func _the_card_paints_an_edge_a_field_and_a_tail() -> void:
+	var world = await _world()
+	var bubble := _bubble_of(world)
+	if bubble == null:
+		await _free_world(world)
+		return
+	var script: Script = bubble.get_script()
+	_check(script.has_method("paint_layers"),
+			"the card's paint stack is a function, so the drawn order is assertable")
+	if not script.has_method("paint_layers"):
+		await _free_world(world)
+		return
+	var layers: Array = script.paint_layers()
+	var table: Dictionary = script.get_script_constant_map()
+	var width := float(table["CARD_WIDTH"])
+	var height := float(table["CARD_HEIGHT"])
+	var border := float(table["CARD_BORDER"])
+	var tail := float(table["TAIL_HEIGHT"])
+	_check(layers.size() == 4, "edge, field, tail and tail core, got %d" % layers.size())
+	if layers.size() != 4:
+		await _free_world(world)
+		return
+	var edge: Rect2 = layers[0]["rect"]
+	_check(edge.position == Vector2.ZERO and edge.size == Vector2(width, height),
+			"the edge is the whole card: %s" % str(edge))
+	_check(bool(layers[0].get("filled", true)) == false
+			and _close(float(layers[0].get("width", 0.0)), border),
+			"and it is a stroke the width of the locked border")
+	_check(_same_color(layers[0]["color"], Color("#806343")), "the edge is brass")
+	var field: Rect2 = layers[1]["rect"]
+	_check(_close(field.position.x, border) and _close(field.end.x, width - border)
+			and _close(field.position.y, border) and _close(field.end.y, height - border),
+			"the wood field sits inside the edge on all four sides: %s" % str(field))
+	_check(_same_color(layers[1]["color"], Color("#493326")), "and it is badge wood")
+	var outer: PackedVector2Array = layers[2]["points"]
+	var core: PackedVector2Array = layers[3]["points"]
+	_check(outer.size() == 3 and core.size() == 3, "both tails are three-point triangles")
+	_check(outer[2].y > height and core[2].y > height and core[2].y < outer[2].y,
+			"the tail hangs below the card and the core stops short of its tip: %f, %f"
+					% [outer[2].y, core[2].y])
+	_check(_close(outer[2].x, width / 2.0) and _close(core[2].x, width / 2.0),
+			"and both point at the head straight below the card's centre")
+	_check(_same_color(layers[2]["colors"][0], Color("#806343"))
+			and _same_color(layers[3]["colors"][0], Color("#493326")),
+			"brass outside, wood inside, the same badge as the card")
+	await _free_world(world)
+
+
 func _a_hidden_card_does_not_spend_its_moment_in_the_dark() -> void:
 	var world = await _world()
 	var jane: Node = world.get_node("Friendly")
@@ -736,6 +793,8 @@ func _run() -> void:
 	await _case("a blow on the recruiter is silent", 8, _a_blow_on_the_recruiter_is_silent)
 	await _case("hold, fade, then nothing", 10,
 			_the_watch_holds_then_fades_and_says_nothing_after)
+	await _case("the card paints an edge, field and tail", 9,
+			_the_card_paints_an_edge_a_field_and_a_tail)
 	await _case("a hidden card keeps its moment", 7,
 			_a_hidden_card_does_not_spend_its_moment_in_the_dark)
 	await _case("stacks over the plate, obeys the gate", 9,
@@ -744,7 +803,7 @@ func _run() -> void:
 	await _case("click-through under the popups", 23,
 			_the_bubble_is_click_through_and_hangs_under_the_popups)
 
-	_check(checks > 108, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 118, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Recruit answer display: all checks passed")
 	quit(1 if failures else 0)

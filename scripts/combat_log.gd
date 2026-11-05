@@ -311,7 +311,18 @@ func _single_line_height() -> float:
 	return maxf(font.get_height(FONT_SIZE), 1.0)
 
 
+# The stack this panel paints, bottom layer first: the brass frame across the whole panel, then
+# the wood field inset by the frame's own width. `_draw` submits exactly this list, so the order
+# and the insets a player sees are the order and the insets a test can read - nothing
+# rasterises in a headless run, so a screenshot could not have said so.
+static func paint_layers(panel_size: Vector2) -> Array:
+	var frame := Rect2(Vector2.ZERO, panel_size)
+	return [
+		{"rect": frame, "color": FRAME_COLOR},
+		{"rect": frame.grow(-FRAME_WIDTH), "color": PANEL_COLOR},
+	]
+
+
 func _draw() -> void:
-	var rect := Rect2(Vector2.ZERO, size)
-	draw_rect(rect, FRAME_COLOR)
-	draw_rect(rect.grow(-FRAME_WIDTH), PANEL_COLOR)
+	for layer in paint_layers(size):
+		draw_rect(layer["rect"] as Rect2, layer["color"] as Color)

@@ -110,3 +110,10 @@ hover and pressed states, close behavior, and pointer isolation. For floating
 popups, also check dragging and that existing world behavior continues when it
 should. The headless regression coverage for the reference popup is in
 `scripts/tests/character_popup_test.gd`.
+
+Drawn chrome — a panel's frame, a plaque's cast band, a card's tail — is worth
+exposing as a `paint_layers` function that `_draw` submits unchanged. Nothing
+rasterises under `--headless`, so the layer list (its order, its insets, its
+colors) is the only way a suite can assert that the frame is outside the field
+and the tail hangs below the card, instead of trusting that the right constants
+were handed to the right `draw_rect`.

@@ -236,10 +236,18 @@ func _serif() -> SystemFont:
 
 
 # The locked plaque surface, drawn the way the player's plaque draws itself: cast band, brass
-# frame, wood field.
-func _draw() -> void:
-	var full := Rect2(Vector2.ZERO, size)
-	draw_rect(full, CAST_BAND)
+# frame, wood field. The stack is a function because nothing rasterises in a headless run - the
+# insets and the order are the design, and this is the only way to assert either.
+static func paint_layers(plaque_size: Vector2) -> Array:
+	var full := Rect2(Vector2.ZERO, plaque_size)
 	var framed := full.grow(-3.0)
-	draw_rect(framed, BRASS)
-	draw_rect(framed.grow(-2.0), WOOD)
+	return [
+		{"rect": full, "color": CAST_BAND},
+		{"rect": framed, "color": BRASS},
+		{"rect": framed.grow(-2.0), "color": WOOD},
+	]
+
+
+func _draw() -> void:
+	for layer in paint_layers(size):
+		draw_rect(layer["rect"] as Rect2, layer["color"] as Color)

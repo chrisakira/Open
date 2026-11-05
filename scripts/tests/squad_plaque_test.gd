@@ -161,6 +161,40 @@ func _unstage(view: SubViewport, control: Control) -> void:
 # The name rule cuts at twenty characters, not at a pixel count: nineteen wide letters can
 # still ask for more room than the plaque has. A row that demanded that room would print past the
 # brass; it clips instead, the way the chat clips a word too long for its line.
+# The plaque is three painted layers, and the inset of each is the whole design: band at the
+# panel's edge, brass 3 px in, wood 2 px further. Nothing rasterises under `--headless`, so the
+# draw body submits the stack as a function and the test reads it back - a dropped layer, a
+# swapped colour or a wrong inset all fail here rather than in a screenshot nobody takes.
+func _the_plaque_paints_band_frame_and_field_in_that_order() -> void:
+	var plaque := _plaque()
+	if plaque == null:
+		return
+	var script: Script = plaque.get_script()
+	_check(script.has_method("paint_layers"),
+			"the plaque's paint stack is a function, so the drawn order is assertable")
+	if not script.has_method("paint_layers"):
+		plaque.queue_free()
+		await process_frame
+		return
+	var layers: Array = script.paint_layers(Vector2(176, 60))
+	_check(layers.size() == 3, "band, frame and field, got %d" % layers.size())
+	if layers.size() != 3:
+		plaque.queue_free()
+		await process_frame
+		return
+	var wants: Array = [[CAST_BAND, 0.0], [BRASS, 3.0], [WOOD, 5.0]]
+	for index in range(3):
+		var rect: Rect2 = layers[index]["rect"]
+		_check(_close_colors(layers[index]["color"], wants[index][0]),
+				"layer %d is %s: got %s" % [index, str(wants[index][0]), str(layers[index]["color"])])
+		var inset := float(wants[index][1])
+		_check(_close(rect.position.x, inset) and _close(rect.position.y, inset)
+				and _close(rect.end.x, 176.0 - inset) and _close(rect.end.y, 60.0 - inset),
+				"layer %d is inset %f on every side: %s" % [index, inset, str(rect)])
+	plaque.queue_free()
+	await process_frame
+
+
 func _a_wide_name_stays_inside_the_brass() -> void:
 	var plaque := _plaque()
 	if plaque == null:
@@ -539,13 +573,14 @@ func _run() -> void:
 			_a_joined_name_appears_and_a_dead_one_goes)
 	await _case("names from the sheet", 7, _the_names_come_from_the_sheet_and_stop_at_twenty)
 	await _case("a wide name stays inside the brass", 5, _a_wide_name_stays_inside_the_brass)
+	await _case("band, frame and field", 7, _the_plaque_paints_band_frame_and_field_in_that_order)
 	await _case("the right edge at three sizes", 18,
 			_the_plaque_stays_inside_the_screen_on_the_right_edge)
 	await _case("no write of anybody's state", 8,
 			_the_plaque_writes_nothing_it_was_told_to_read)
 	await _case("a rebind replaces the roster", 3, _it_folows_the_squad_across_a_rebind)
 
-	_check(checks > 76, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 84, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Squad plaque: all checks passed")
 	quit(1 if failures else 0)

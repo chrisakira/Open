@@ -39,6 +39,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 
+func _same_color(got: Color, want: Color) -> bool:
+	return _close(got.r, want.r) and _close(got.g, want.g) and _close(got.b, want.b) \
+			and _close(got.a, want.a)
+
+
 func _check(condition: bool, message: String) -> void:
 	checks += 1
 	if not condition:
@@ -468,6 +473,31 @@ func _the_panel_wears_the_locked_chrome() -> void:
 		if String(method.get("name", "")) == "_draw":
 			draws = true
 	_check(draws, "and the chat paints that frame itself rather than inheriting a default")
+	# Constants that are right prove nothing if the panel paints them in the wrong places, and
+	# nothing rasterises under `--headless`, so the draw body submits a list the test can read:
+	# the frame first, at the whole panel, then the wood inset by the frame's own width.
+	_check(log.get_script().has_method("paint_layers"),
+			"the chat's paint stack is a function, so the drawn order is assertable")
+	if not log.get_script().has_method("paint_layers"):
+		log.free()
+		return
+	var layers: Array = log.get_script().paint_layers(Vector2(200, 100))
+	_check(layers.size() == 2, "the chat paints a frame and a field, got %d" % layers.size())
+	if layers.size() != 2:
+		log.free()
+		return
+	var frame: Rect2 = layers[0]["rect"]
+	var field: Rect2 = layers[1]["rect"]
+	_check(frame.position == Vector2.ZERO and frame.size == Vector2(200, 100),
+			"the frame covers the whole panel: %s" % str(frame))
+	_check(_same_color(layers[0]["color"], table["FRAME_COLOR"]),
+			"and the outer layer is the brass, not the wood")
+	_check(_same_color(layers[1]["color"], table["PANEL_COLOR"]),
+			"and the inner layer is the wood")
+	var inset := float(table["FRAME_WIDTH"])
+	_check(_close(field.position.x, inset) and _close(field.position.y, inset)
+			and _close(field.end.x, 200.0 - inset) and _close(field.end.y, 100.0 - inset),
+			"the field is inset by the frame's own width on all four sides: %s" % str(field))
 	log.free()
 
 
@@ -757,7 +787,7 @@ func _run() -> void:
 	await _case("no second drain", 12, _the_chat_holds_no_second_drain_of_its_own)
 	await _case("an event comes through untouched", 4, _a_reported_event_comes_through_untouched)
 
-	_check(checks > 193, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 200, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Combat log: all checks passed")
 	quit(1 if failures else 0)

@@ -156,24 +156,44 @@ func _retire() -> void:
 	modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 
-func _draw() -> void:
-	# The card first, a brass edge and a wood field, then the tail below it pointing at the
-	# head: the same badge the level plate wears, cut to one word.
+# The badge the card wears, bottom layer first: a brass edge and a wood field, then the tail
+# below it pointing at the head, brass outside and wood inside. The stack is a function because
+# nothing rasterises in a headless run, and "the tail really hangs below the card" is a claim
+# about these points rather than about a screenshot nobody takes.
+static func paint_layers() -> Array:
 	var card := Rect2(Vector2.ZERO, Vector2(CARD_WIDTH, CARD_HEIGHT))
-	draw_rect(card, CARD_BRASS, false, CARD_BORDER)
-	draw_rect(card.grow(-CARD_BORDER), CARD_WOOD)
 	var tip := Vector2(CARD_WIDTH / 2.0, CARD_HEIGHT + TAIL_HEIGHT)
-	draw_polygon(PackedVector2Array([
-		Vector2(CARD_WIDTH / 2.0 - TAIL_HALF_WIDTH, CARD_HEIGHT),
-		Vector2(CARD_WIDTH / 2.0 + TAIL_HALF_WIDTH, CARD_HEIGHT),
-		tip,
-	]), PackedColorArray([CARD_BRASS]))
 	var inner := maxf(TAIL_HALF_WIDTH - CARD_BORDER * 2.0, 1.0)
 	var inner_tip := tip - Vector2(0.0, CARD_BORDER)
-	draw_polygon(PackedVector2Array([
-		Vector2(CARD_WIDTH / 2.0 - inner, CARD_HEIGHT),
-		Vector2(CARD_WIDTH / 2.0 + inner, CARD_HEIGHT),
-		inner_tip,
-	]), PackedColorArray([CARD_WOOD]))
+	return [
+		{"rect": card, "color": CARD_BRASS, "filled": false, "width": CARD_BORDER},
+		{"rect": card.grow(-CARD_BORDER), "color": CARD_WOOD},
+		{
+			"points": PackedVector2Array([
+				Vector2(CARD_WIDTH / 2.0 - TAIL_HALF_WIDTH, CARD_HEIGHT),
+				Vector2(CARD_WIDTH / 2.0 + TAIL_HALF_WIDTH, CARD_HEIGHT),
+				tip,
+			]),
+			"colors": PackedColorArray([CARD_BRASS]),
+		},
+		{
+			"points": PackedVector2Array([
+				Vector2(CARD_WIDTH / 2.0 - inner, CARD_HEIGHT),
+				Vector2(CARD_WIDTH / 2.0 + inner, CARD_HEIGHT),
+				inner_tip,
+			]),
+			"colors": PackedColorArray([CARD_WOOD]),
+		},
+	]
+
+
+func _draw() -> void:
+	for layer in paint_layers():
+		if layer.has("rect"):
+			draw_rect(layer["rect"] as Rect2, layer["color"] as Color,
+					bool(layer.get("filled", true)), float(layer.get("width", 1.0)))
+		else:
+			draw_polygon(layer["points"] as PackedVector2Array,
+					layer["colors"] as PackedColorArray)
 
 
