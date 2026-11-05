@@ -29,6 +29,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 
+func _same_colour(got: Color, want: Color) -> bool:
+	return _close(got.r, want.r) and _close(got.g, want.g) and _close(got.b, want.b) \
+			and _close(got.a, want.a)
+
+
 func _check(condition: bool, message: String) -> void:
 	checks += 1
 	if not condition:
@@ -307,6 +312,76 @@ func _binding_ownership_is_safe_and_idempotent() -> void:
 	first.queue_free()
 
 
+# The overhead plate is three painted layers, thinner than the player's plaque on purpose: the
+# cast band at the edge, the muted brass 2 px in, wood 1 px further. A test that only checked
+# the constants could not tell this frame from the plaque's 3/5 one, which is exactly the drift
+# the shared palette was locked to prevent.
+func _the_plate_paints_band_brass_and_wood_in_that_order() -> void:
+	var status := _status()
+	if status == null:
+		return
+	var script: Script = status.get_script()
+	_check(script.has_method("paint_layers"),
+			"the overhead's paint stack is a function, so the drawn order is assertable")
+	if not script.has_method("paint_layers"):
+		_free(status)
+		return
+	var layers: Array = script.paint_layers(Vector2(176, 48))
+	_check(layers.size() == 3, "band, brass and wood, got %d" % layers.size())
+	if layers.size() != 3:
+		_free(status)
+		return
+	var wants: Array = [[Color("#2E231C"), 0.0], [Color("#806343"), 2.0], [Color("#241B16"), 3.0]]
+	for index in range(3):
+		var rect: Rect2 = layers[index]["rect"]
+		_check(_same_colour(layers[index]["color"], wants[index][0]),
+				"layer %d is %s: got %s" % [index, str(wants[index][0]), str(layers[index]["color"])])
+		var inset := float(wants[index][1])
+		_check(_close(rect.position.x, inset) and _close(rect.position.y, inset)
+				and _close(rect.end.x, 176.0 - inset) and _close(rect.end.y, 48.0 - inset),
+				"layer %d is inset %f on every side: %s" % [index, inset, str(rect)])
+	_free(status)
+
+
+# The shared bar, bottom layer first: the sunken track, its one-pixel frame, the fill inside
+# both and the two-pixel top highlight. A full bar fills the whole inside; an empty bar is the
+# bare track, so ratio 0 paints only the first two layers. Nothing rasterises in a headless
+# run, so the submitted stack is the evidence that the fill cannot cover its own frame.
+func _the_bar_paints_track_frame_fill_and_highlight() -> void:
+	var script: Script = load(BAR_PATH)
+	_check(script != null, "the shared bar exists at %s" % BAR_PATH)
+	if script == null:
+		return
+	_check(script.has_method("paint_layers"),
+			"the bar's paint stack is a function, so the drawn order is assertable")
+	if not script.has_method("paint_layers"):
+		return
+	var full: Array = script.paint_layers(Vector2(120, 6), 0.0, 0.0, 1.0, Color("#8F423D"))
+	_check(full.size() == 4, "track, frame, fill and highlight, got %d" % full.size())
+	if full.size() != 4:
+		return
+	_check(full[0]["rect"] == Rect2(0.0, 0.0, 120.0, 6.0),
+			"the track spans the row at the locked six-pixel height")
+	_check(_same_colour(full[0]["color"], Color("#2E231C")), "the track is sunken brown")
+	_check(bool(full[1].get("filled", true)) == false
+			and _close(float(full[1].get("width", 0.0)), 1.0),
+			"the frame is a one-pixel stroke over the track, not a filled block")
+	_check(_same_colour(full[1]["color"], Color("#6E5539")), "and it is muted brass")
+	_check(full[2]["rect"] == Rect2(1.0, 1.0, 118.0, 4.0),
+			"a full bar fills the inside of its frame: %s" % str(full[2]["rect"]))
+	_check(_same_colour(full[2]["color"], Color("#8F423D")), "in the pool's own locked shade")
+	_check(full[3]["rect"] == Rect2(1.0, 1.0, 118.0, 2.0),
+			"the highlight is the top two pixels of the fill: %s" % str(full[3]["rect"]))
+	_check(_same_colour(full[3]["color"], Color(1.0, 1.0, 1.0, 0.14)),
+			"and it is the soft white the palette locks")
+	var half: Array = script.paint_layers(Vector2(120, 6), 0.0, 0.0, 0.5, Color("#4E7A4A"))
+	_check(half.size() == 4 and _close((half[2]["rect"] as Rect2).size.x, 59.0),
+			"half a pool is half the inside, got %s" % str(half[2]["rect"] if half.size() > 2 else null))
+	_check(_same_colour(half[2]["color"], Color("#4E7A4A")), "in the stamina shade it was given")
+	var empty: Array = script.paint_layers(Vector2(120, 6), 0.0, 0.0, 0.0, Color("#4A6690"))
+	_check(empty.size() == 2, "an empty bar is the bare track and its frame, got %d" % empty.size())
+
+
 # --- runner --------------------------------------------------------------------
 
 func _case(what: String, minimum: int, callable: Callable) -> void:
@@ -329,8 +404,12 @@ func _run() -> void:
 	await _case("names follow the locked policy", 3, _names_follow_the_locked_policy)
 	await _case("binding ownership is safe and idempotent", 9,
 			_binding_ownership_is_safe_and_idempotent)
+	await _case("band, brass and wood in that order", 8,
+			_the_plate_paints_band_brass_and_wood_in_that_order)
+	await _case("the bar draws track, frame, fill and highlight", 12,
+			_the_bar_paints_track_frame_fill_and_highlight)
 
-	_check(checks > 55, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 75, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("World status: all checks passed")
 	quit(1 if failures else 0)

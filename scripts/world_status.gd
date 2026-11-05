@@ -178,11 +178,21 @@ func _layout() -> void:
 	queue_redraw()
 
 
+# The plate's painted stack, bottom layer first: the cast band at the edge, the muted brass two
+# pixels in, wood one further. Thinner than the player's 3/5 plaque on purpose. The stack is a
+# function because nothing rasterises in a headless run, and the insets are the design.
+static func paint_layers(plate_size: Vector2) -> Array:
+	var full := Rect2(Vector2.ZERO, plate_size)
+	return [
+		{"rect": full, "color": CAST_BAND},
+		{"rect": full.grow(-2.0), "color": BADGE_BRASS},
+		{"rect": full.grow(-3.0), "color": WOOD},
+	]
+
+
 func _draw() -> void:
-	var full := Rect2(Vector2.ZERO, size)
-	draw_rect(full, CAST_BAND)
-	draw_rect(full.grow(-2.0), BADGE_BRASS)
-	draw_rect(full.grow(-3.0), WOOD)
+	for layer in paint_layers(size):
+		draw_rect(layer["rect"] as Rect2, layer["color"] as Color)
 
 
 # A quiet rotated square. A Control rather than a texture because it is one polygon of the

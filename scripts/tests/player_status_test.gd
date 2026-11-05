@@ -28,6 +28,11 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 
+func _same_colour(got: Color, want: Color) -> bool:
+	return _close(got.r, want.r) and _close(got.g, want.g) and _close(got.b, want.b) \
+			and _close(got.a, want.a)
+
+
 func _check(condition: bool, message: String) -> void:
 	checks += 1
 	if not condition:
@@ -388,6 +393,37 @@ func _a_small_window_moves_the_plaque_and_keeps_its_numbers() -> void:
 	viewport.free()
 
 
+# The plaque is three painted layers, and the inset of each is the design: the cast band at the
+# panel's edge, brass 3 px in, wood 2 px further. Nothing rasterises under `--headless`, so the
+# draw body submits the stack as a function and the test reads it back - a dropped layer, a
+# swapped colour or a wrong inset fails here rather than in a screenshot nobody takes.
+func _the_plaque_paints_band_brass_and_wood_in_that_order() -> void:
+	var plaque := _plaque()
+	if plaque == null:
+		return
+	var script: Script = plaque.get_script()
+	_check(script.has_method("paint_layers"),
+			"the plaque's paint stack is a function, so the drawn order is assertable")
+	if not script.has_method("paint_layers"):
+		plaque.get_parent().free()
+		return
+	var layers: Array = script.paint_layers(Vector2(440, 108))
+	_check(layers.size() == 3, "band, brass and wood, got %d" % layers.size())
+	if layers.size() != 3:
+		plaque.get_parent().free()
+		return
+	var wants: Array = [[Color("#2E231C"), 0.0], [Color("#806343"), 3.0], [Color("#241B16"), 5.0]]
+	for index in range(3):
+		var rect: Rect2 = layers[index]["rect"]
+		_check(_same_colour(layers[index]["color"], wants[index][0]),
+				"layer %d is %s: got %s" % [index, str(wants[index][0]), str(layers[index]["color"])])
+		var inset := float(wants[index][1])
+		_check(_close(rect.position.x, inset) and _close(rect.position.y, inset)
+				and _close(rect.end.x, 440.0 - inset) and _close(rect.end.y, 108.0 - inset),
+				"layer %d is inset %f on every side: %s" % [index, inset, str(rect)])
+	plaque.get_parent().free()
+
+
 # --- runner --------------------------------------------------------------------
 
 func _case(what: String, minimum: int, callable: Callable) -> void:
@@ -418,10 +454,12 @@ func _run() -> void:
 			_it_hides_itself_when_there_is_no_honest_thing_to_show)
 	await _case("a zero maximum draws empty and prints the truth", 6,
 			_a_zero_maximum_draws_empty_and_prints_the_truth)
+	await _case("band, brass and wood in that order", 8,
+			_the_plaque_paints_band_brass_and_wood_in_that_order)
 	await _case("a small window moves the plaque and keeps its numbers", 6,
 			_a_small_window_moves_the_plaque_and_keeps_its_numbers)
 
-	_check(checks > 62, "the suite ran its full set of checks (ran %d)" % checks)
+	_check(checks > 70, "the suite ran its full set of checks (ran %d)" % checks)
 	if failures == 0:
 		print("Player status: all checks passed")
 	quit(1 if failures else 0)

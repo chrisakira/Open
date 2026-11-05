@@ -103,19 +103,36 @@ func _notification(what: int) -> void:
 
 
 # The bar sits between the two columns (whichever exist), vertically centred in the row.
-func _draw() -> void:
-	var bar_left := role_width + (GAP if role_width > 0.0 else 0.0)
-	var bar_right := size.x - value_width - (GAP if value_width > 0.0 else 0.0)
+# The painted stack, bottom layer first: the sunken track, its one-pixel frame, then the fill
+# inside both and the two-pixel top highlight. An empty bar stops after the frame, which is how
+# the locked "bare track" rule is drawn. The stack is a function because nothing rasterises in
+# a headless run, so the order and the insets are the only evidence a suite can hold.
+static func paint_layers(bar_size: Vector2, role_w: float, value_w: float, ratio_value: float,
+		colour: Color) -> Array:
+	var bar_left := role_w + (GAP if role_w > 0.0 else 0.0)
+	var bar_right := bar_size.x - value_w - (GAP if value_w > 0.0 else 0.0)
 	if bar_right <= bar_left:
-		return
-	var bar_height := minf(BAR_HEIGHT, size.y)
-	var top := (size.y - bar_height) / 2.0
+		return []
+	var bar_height := minf(BAR_HEIGHT, bar_size.y)
+	var top := (bar_size.y - bar_height) / 2.0
 	var track := Rect2(bar_left, top, bar_right - bar_left, bar_height)
-	draw_rect(track, TRACK)
-	draw_rect(track, FRAME, false, 1.0)
-	if ratio > 0.0:
+	var layers: Array = [
+		{"rect": track, "color": TRACK},
+		{"rect": track, "color": FRAME, "filled": false, "width": 1.0},
+	]
+	if ratio_value > 0.0:
 		var inner := track.grow(-1.0)
 		var fill := Rect2(inner.position,
-				Vector2(inner.size.x * clampf(ratio, 0.0, 1.0), inner.size.y))
-		draw_rect(fill, fill_color)
-		draw_rect(Rect2(fill.position, Vector2(fill.size.x, minf(2.0, inner.size.y))), HIGHLIGHT)
+				Vector2(inner.size.x * clampf(ratio_value, 0.0, 1.0), inner.size.y))
+		layers.append({"rect": fill, "color": colour})
+		layers.append({
+			"rect": Rect2(fill.position, Vector2(fill.size.x, minf(2.0, inner.size.y))),
+			"color": HIGHLIGHT,
+		})
+	return layers
+
+
+func _draw() -> void:
+	for layer in paint_layers(size, role_width, value_width, ratio, fill_color):
+		draw_rect(layer["rect"] as Rect2, layer["color"] as Color,
+				bool(layer.get("filled", true)), float(layer.get("width", 1.0)))
