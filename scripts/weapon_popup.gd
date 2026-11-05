@@ -13,7 +13,7 @@ var _model_name := ""
 func _ready() -> void:
 	custom_minimum_size = Vector2(150.0, 34.0)
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	modulate.a = 0.94
+	modulate.a = 0.9
 	visible = false
 	var panel := StyleBoxFlat.new()
 	panel.bg_color = Color("241b16")

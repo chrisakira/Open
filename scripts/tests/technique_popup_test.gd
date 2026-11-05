@@ -35,6 +35,27 @@ func _check(condition: bool, message: String) -> void:
 		failures += 1
 
 
+# The documented popup frame: the palette's dark wood, muted brass and two-pixel border, and the
+# whole surface at the locked ninety percent. A stylebox is what the engine actually draws, so
+# these are drawn values, not the constants that fed them.
+func _check_frame(popup: Control, what: String) -> void:
+	_check(popup != null, "%s panel exists" % what)
+	if popup == null:
+		return
+	_check(is_equal_approx(popup.modulate.a, 0.9), "%s is the locked ninety percent opaque" % what)
+	_check(popup.has_theme_stylebox_override("panel"), "%s carries its own frame" % what)
+	var panel := popup.get_theme_stylebox("panel")
+	_check(panel is StyleBoxFlat, "%s frame is a flat panel" % what)
+	if panel is StyleBoxFlat:
+		_check(panel.bg_color == Color("241b16"), "%s field is the palette's dark wood" % what)
+		_check(panel.border_color == Color("806343"), "%s frame is muted brass" % what)
+		_check(panel.border_width_left == 2 and panel.border_width_right == 2
+				and panel.border_width_top == 2 and panel.border_width_bottom == 2,
+				"%s wears the documented two-pixel border" % what)
+
+
+
+
 func _click_at(point: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = point
@@ -365,6 +386,15 @@ func _close(a: float, b: float, epsilon: float = 0.0001) -> bool:
 	return absf(a - b) < epsilon
 
 
+# The panel chrome itself, once: the palette's dark wood field, its muted brass frame and the
+# locked ninety percent, read off the stylebox the engine draws with.
+func _the_popup_wears_the_documented_frame() -> void:
+	var world = await _world()
+	var popup = _popup_of(world)
+	_check_frame(popup, "the technique popup")
+	await _free(world)
+
+
 func _run() -> void:
 	_viewport_size = root.get_visible_rect().size
 	await _entry_and_live_sheet()
@@ -372,6 +402,7 @@ func _run() -> void:
 	await _input_isolation()
 	await _edges()
 	await _a_real_sword_offers_real_moves()
+	await _the_popup_wears_the_documented_frame()
 	if failures == 0:
 		print("Technique popup: all checks passed")
 	quit(1 if failures else 0)

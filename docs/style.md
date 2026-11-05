@@ -117,3 +117,9 @@ rasterises under `--headless`, so the layer list (its order, its insets, its
 colors) is the only way a suite can assert that the frame is outside the field
 and the tail hangs below the card, instead of trusting that the right constants
 were handed to the right `draw_rect`.
+
+A style box is already the drawn result, so each popup suite reads it back
+(`_check_frame`): the panel's field and border colours, the two-pixel border on
+all four sides, and the surface's 90% opacity. Without that pin the palette can
+drift one panel at a time — the attack, weapon, equipment, technique and
+workbench panels all once sat at 92–94% while this document said 90%.

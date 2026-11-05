@@ -53,7 +53,7 @@ func _ready() -> void:
 	custom_minimum_size = OPEN_SIZE
 	size = OPEN_SIZE
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	modulate.a = 0.92
+	modulate.a = 0.9
 	visible = false
 	_serif_font = SystemFont.new()
 	_serif_font.font_names = PackedStringArray(["Georgia", "DejaVu Serif", "Liberation Serif", "serif"])

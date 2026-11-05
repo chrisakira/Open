@@ -35,6 +35,27 @@ func _check(condition: bool, message: String) -> void:
 		failures += 1
 
 
+# The documented popup frame: the palette's dark wood, muted brass and two-pixel border, and the
+# whole surface at the locked ninety percent. A stylebox is what the engine actually draws, so
+# these are drawn values, not the constants that fed them.
+func _check_frame(popup: Control, what: String) -> void:
+	_check(popup != null, "%s panel exists" % what)
+	if popup == null:
+		return
+	_check(is_equal_approx(popup.modulate.a, 0.9), "%s is the locked ninety percent opaque" % what)
+	_check(popup.has_theme_stylebox_override("panel"), "%s carries its own frame" % what)
+	var panel := popup.get_theme_stylebox("panel")
+	_check(panel is StyleBoxFlat, "%s frame is a flat panel" % what)
+	if panel is StyleBoxFlat:
+		_check(panel.bg_color == Color("241b16"), "%s field is the palette's dark wood" % what)
+		_check(panel.border_color == Color("806343"), "%s frame is muted brass" % what)
+		_check(panel.border_width_left == 2 and panel.border_width_right == 2
+				and panel.border_width_top == 2 and panel.border_width_bottom == 2,
+				"%s wears the documented two-pixel border" % what)
+
+
+
+
 func _close(a: float, b: float, epsilon: float = 0.0001) -> bool:
 	return absf(a - b) < epsilon
 
@@ -1081,6 +1102,15 @@ func _the_power_key_lifts_the_player() -> void:
 	await _free_world(world)
 
 
+# The panel chrome itself, once: the palette's dark wood field, its muted brass frame and the
+# locked ninety percent, read off the stylebox the engine draws with.
+func _the_attack_popup_wears_the_documented_frame() -> void:
+	var world := await _new_world()
+	var popup := _attack_popup_of(world)
+	_check_frame(popup, "the attack popup")
+	await _free_world(world)
+
+
 func _run() -> void:
 	# Read the viewport the tests actually run in, so a project window-size change
 	# moves the edge cases with it instead of stranding them off screen. In headless
@@ -1090,6 +1120,7 @@ func _run() -> void:
 	_check(_viewport_size.x > 0.0 and _viewport_size.y > 0.0, "the test viewport has a size")
 
 	await _living_dummy_click_opens_attack()
+	await _the_attack_popup_wears_the_documented_frame()
 	await _attack_button_is_not_floor_input()
 	await _dismiss_and_stale_target()
 	await _popup_ignores_a_non_positive_target_id()

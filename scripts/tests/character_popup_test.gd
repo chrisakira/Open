@@ -38,6 +38,27 @@ func _check(condition: bool, message: String) -> void:
 		failures += 1
 
 
+# The documented popup frame: the palette's dark wood, muted brass and two-pixel border, and the
+# whole surface at the locked ninety percent. A stylebox is what the engine actually draws, so
+# these are drawn values, not the constants that fed them.
+func _check_frame(popup: Control, what: String) -> void:
+	_check(popup != null, "%s panel exists" % what)
+	if popup == null:
+		return
+	_check(is_equal_approx(popup.modulate.a, 0.9), "%s is the locked ninety percent opaque" % what)
+	_check(popup.has_theme_stylebox_override("panel"), "%s carries its own frame" % what)
+	var panel := popup.get_theme_stylebox("panel")
+	_check(panel is StyleBoxFlat, "%s frame is a flat panel" % what)
+	if panel is StyleBoxFlat:
+		_check(panel.bg_color == Color("241b16"), "%s field is the palette's dark wood" % what)
+		_check(panel.border_color == Color("806343"), "%s frame is muted brass" % what)
+		_check(panel.border_width_left == 2 and panel.border_width_right == 2
+				and panel.border_width_top == 2 and panel.border_width_bottom == 2,
+				"%s wears the documented two-pixel border" % what)
+
+
+
+
 func _close(a: float, b: float, epsilon: float = 0.0001) -> bool:
 	return absf(a - b) < epsilon
 
@@ -133,16 +154,9 @@ func _run() -> void:
 	await process_frame
 	_check(popup.visible, "the popup is open for the content checks")
 	await process_frame
-	_check(_close(popup.modulate.a, 0.9), "the popup is 90 percent opaque")
-	# The approved design uses a dark, framed panel with warm readable text.
-	_check(popup.has_theme_stylebox_override("panel"), "the sheet has its own medieval frame")
-	var panel_style := popup.get_theme_stylebox("panel")
-	_check(panel_style is StyleBoxFlat, "the sheet frame has a solid background")
-	if panel_style is StyleBoxFlat:
-		_check(panel_style.bg_color.r > panel_style.bg_color.b and panel_style.bg_color.r < 0.3,
-			"the sheet background is dark and warm")
-		_check(panel_style.border_width_left > 0 and panel_style.border_color.r > panel_style.border_color.b,
-			"the sheet has a warm metal-colored border")
+	# The approved design uses a dark, framed panel with warm readable text; the frame itself is
+	# the documented palette and opacity, not a loose range that browned brass could still pass.
+	_check_frame(popup, "the character popup")
 	var attribute_label := _label_with_text(popup, "Strength")
 	if attribute_label != null:
 		var ink := attribute_label.get_theme_color("font_color")

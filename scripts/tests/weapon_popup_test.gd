@@ -14,6 +14,27 @@ func _check(condition: bool, message: String) -> void:
 		failures += 1
 
 
+# The documented popup frame: the palette's dark wood, muted brass and two-pixel border, and the
+# whole surface at the locked ninety percent. A stylebox is what the engine actually draws, so
+# these are drawn values, not the constants that fed them.
+func _check_frame(popup: Control, what: String) -> void:
+	_check(popup != null, "%s panel exists" % what)
+	if popup == null:
+		return
+	_check(is_equal_approx(popup.modulate.a, 0.9), "%s is the locked ninety percent opaque" % what)
+	_check(popup.has_theme_stylebox_override("panel"), "%s carries its own frame" % what)
+	var panel := popup.get_theme_stylebox("panel")
+	_check(panel is StyleBoxFlat, "%s frame is a flat panel" % what)
+	if panel is StyleBoxFlat:
+		_check(panel.bg_color == Color("241b16"), "%s field is the palette's dark wood" % what)
+		_check(panel.border_color == Color("806343"), "%s frame is muted brass" % what)
+		_check(panel.border_width_left == 2 and panel.border_width_right == 2
+				and panel.border_width_top == 2 and panel.border_width_bottom == 2,
+				"%s wears the documented two-pixel border" % what)
+
+
+
+
 func _click(point: Vector2) -> void:
 	var motion := InputEventMouseMotion.new()
 	motion.position = point
@@ -45,6 +66,7 @@ func _run() -> void:
 		quit(1)
 		return
 	var popup: Control = popups[0]
+	_check_frame(popup, "the weapon popup")
 	_check(popup.has_signal("equip_requested"), "the popup exposes an equip trigger")
 	if popup.has_signal("equip_requested"):
 		popup.connect("equip_requested", _requested)

@@ -35,7 +35,7 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(112.0, 34.0)
 	# STOP, not an overlay: only the panel's own rectangle is consumed.
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	modulate.a = 0.94
+	modulate.a = 0.9
 	visible = false
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = PANEL_COLOR
